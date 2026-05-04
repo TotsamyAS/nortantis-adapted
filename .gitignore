@@ -42,6 +42,11 @@ temp.nort
 *.exe
 *.deb
 /installers/*.pkg
+/installers/*.pkg.tar.zst
+/installers/nortantis.jar
+/installers/nortantis.png
+/installers/src/
+/installers/pkg/
 Nortantis.jar
 .gradle
 build

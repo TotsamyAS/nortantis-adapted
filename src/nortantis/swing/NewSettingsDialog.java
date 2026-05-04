@@ -691,7 +691,6 @@ public class NewSettingsDialog extends JDialog
 		resultSettings.worldSize = worldSizeSlider.getValue();
 		resultSettings.landShape = (LandShape) landShapeComboBox.getSelectedItem();
 		resultSettings.regionCount = regionCountSlider.getValue();
-		// Derive old probability fields for backwards compatibility.
 		switch (resultSettings.landShape)
 		{
 			case Continents:
