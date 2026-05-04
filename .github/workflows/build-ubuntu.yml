@@ -11,7 +11,7 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v2
+      uses: actions/checkout@v5.0.0
 
     - name: Set up JDK
       uses: actions/setup-java@v2
@@ -37,7 +37,7 @@ jobs:
         bash create_ubuntu_installer.sh
 
     - name: Upload Linux Installer
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7.0.1
       with:
         name: linux-installer.zip
         path: installers/nortantis_${{ env.VERSION }}_amd64.deb
