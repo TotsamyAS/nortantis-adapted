@@ -464,8 +464,8 @@ public class RoadDrawer
 	}
 
 	/**
-	 * Creates a Road from a list of RI-coordinate points and adds it to roads, merging with any existing road whose endpoint is close to the
-	 * new road's endpoint.
+	 * Creates a Road from a list of RI-coordinate points and adds it to roads, merging with any existing road whose endpoint is close to
+	 * the new road's endpoint.
 	 *
 	 * @return The new or modified road (for incremental redraw), or null if the path is too short.
 	 */
@@ -555,8 +555,7 @@ public class RoadDrawer
 		{
 			Point p1 = curve.get(i);
 			Point p2 = curve.get(i + 1);
-			Rectangle segmentBounds = Rectangle.fromCorners(Math.min(p1.x, p2.x), Math.min(p1.y, p2.y),
-					Math.max(p1.x, p2.x), Math.max(p1.y, p2.y));
+			Rectangle segmentBounds = Rectangle.fromCorners(Math.min(p1.x, p2.x), Math.min(p1.y, p2.y), Math.max(p1.x, p2.x), Math.max(p1.y, p2.y));
 			if (bounds.overlaps(segmentBounds))
 			{
 				return true;

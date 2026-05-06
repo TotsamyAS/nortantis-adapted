@@ -119,6 +119,20 @@ public class Helper
 		return maxEntry.getValue();
 	}
 
+	public static <T> T minItem(Collection<T> list, Comparator<T> comparator)
+	{
+		T minItem = null;
+
+		for (T item : list)
+		{
+			if (minItem == null || comparator.compare(item, minItem) < 0)
+			{
+				minItem = item;
+			}
+		}
+		return minItem;
+	}
+
 	public static <T> T maxItem(Collection<T> list, Comparator<T> comparator)
 	{
 		T maxItem = null;

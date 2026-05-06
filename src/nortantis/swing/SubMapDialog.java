@@ -28,7 +28,8 @@ import java.util.Random;
 /**
  * A two-step dialog for creating a higher-detail sub-map from a region of the current map.
  *
- * Step 1 (non-modal): User drags on the map to select a region. Step 2 (modal): User chooses detail level and previews the sub-map before creating it.
+ * Step 1 (non-modal): User drags on the map to select a region. Step 2 (modal): User chooses detail level and previews the sub-map before
+ * creating it.
  */
 public class SubMapDialog
 {
@@ -82,7 +83,8 @@ public class SubMapDialog
 	private static final Color warningMessageColor = new java.awt.Color(160, 90, 0);
 
 	/**
-	 * Computes the clamped 1× world size (polygon count) for a sub-map selection. This matches the default "Match source detail" value shown in the sub-map dialog.
+	 * Computes the clamped 1× world size (polygon count) for a sub-map selection. This matches the default "Match source detail" value
+	 * shown in the sub-map dialog.
 	 */
 	public static int computeDefaultWorldSize(MapSettings origSettings, Rectangle selectionBoundsRI)
 	{
@@ -178,7 +180,9 @@ public class SubMapDialog
 		heightSpinner.setPreferredSize(spinnerSize);
 
 		organizer.addLabelAndComponentsHorizontalWithTopInset(Translation.get("subMapDialog.step1.position.label"), "",
-				Arrays.asList(new JLabel(Translation.get("subMapDialog.step1.x")), xSpinner, new JLabel(Translation.get("subMapDialog.step1.y")), ySpinner, new JLabel(Translation.get("subMapDialog.step1.width")), widthSpinner, new JLabel(Translation.get("subMapDialog.step1.height")), heightSpinner), topInset);
+				Arrays.asList(new JLabel(Translation.get("subMapDialog.step1.x")), xSpinner, new JLabel(Translation.get("subMapDialog.step1.y")), ySpinner,
+						new JLabel(Translation.get("subMapDialog.step1.width")), widthSpinner, new JLabel(Translation.get("subMapDialog.step1.height")), heightSpinner),
+				topInset);
 
 		organizer.addVerticalFillerRow();
 
@@ -399,7 +403,8 @@ public class SubMapDialog
 	}
 
 	/**
-	 * Adjusts the selection box to match the given aspect ratio (width / height), keeping the top-left corner fixed and clamping to the map bounds.
+	 * Adjusts the selection box to match the given aspect ratio (width / height), keeping the top-left corner fixed and clamping to the map
+	 * bounds.
 	 */
 	private Rectangle adjustSelectionBoxToAspectRatio(Rectangle box, double ratio)
 	{
@@ -607,8 +612,8 @@ public class SubMapDialog
 		previewLabel.setBorder(BorderFactory.createEmptyBorder(0, 0, 2, 0));
 		previewWrapper.add(previewLabel, BorderLayout.NORTH);
 
-		BufferedImage placeholder = AwtBridge.toBufferedImage(nortantis.platform.ImageHelper.getInstance()
-				.createPlaceholderImage(new String[] { Translation.get("subMapDialog.step2.drawingPreview") }, AwtBridge.fromAwtColor(SwingHelper.getTextColorForPlaceholderImages())));
+		BufferedImage placeholder = AwtBridge.toBufferedImage(nortantis.platform.ImageHelper.getInstance().createPlaceholderImage(new String[] { Translation.get("subMapDialog.step2.drawingPreview") },
+				AwtBridge.fromAwtColor(SwingHelper.getTextColorForPlaceholderImages())));
 		previewPanel = new MapEditingPanel(placeholder);
 
 		previewContainer = new JPanel(new FlowLayout(FlowLayout.CENTER, 0, 0));

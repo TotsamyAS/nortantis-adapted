@@ -614,8 +614,7 @@ public class NewSettingsDialog extends JDialog
 				enableOrDisableProgressBar(false);
 				if (exception != null)
 				{
-					mapEditingPanel.setImage(AwtBridge.toBufferedImage(ImageHelper.getInstance().createPlaceholderImage(
-							new String[] { Translation.get("newSettingsDialog.previewFailedToDraw") },
+					mapEditingPanel.setImage(AwtBridge.toBufferedImage(ImageHelper.getInstance().createPlaceholderImage(new String[] { Translation.get("newSettingsDialog.previewFailedToDraw") },
 							AwtBridge.fromAwtColor(SwingHelper.getTextColorForPlaceholderImages()))));
 					SwingHelper.handleException(exception, NewSettingsDialog.this, false);
 				}
@@ -727,8 +726,7 @@ public class NewSettingsDialog extends JDialog
 		GeneratedDimension selected = (GeneratedDimension) dimensionsComboBox.getSelectedItem();
 		if (selected == GeneratedDimension.Custom)
 		{
-			return normalizeCustomDimensions(((Number) customWidthSpinner.getValue()).intValue(),
-					((Number) customHeightSpinner.getValue()).intValue());
+			return normalizeCustomDimensions(((Number) customWidthSpinner.getValue()).intValue(), ((Number) customHeightSpinner.getValue()).intValue());
 		}
 		return new Dimension(selected.width, selected.height);
 	}

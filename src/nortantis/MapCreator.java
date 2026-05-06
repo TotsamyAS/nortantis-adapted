@@ -153,18 +153,19 @@ public class MapCreator implements WarningLogger
 	 * Updates a piece of a map, given a list of centers that changed. Also updates things in mapParts.
 	 *
 	 * @param settings
-	 * 		Map settings for drawing
+	 *            Map settings for drawing
 	 * @param mapParts
-	 * 		Assumed to be populated by createMap the last time the map was generated at full size
+	 *            Assumed to be populated by createMap the last time the map was generated at full size
 	 * @param fullSizedMap
-	 * 		The full sized map to update
+	 *            The full sized map to update
 	 * @param centersChangedIds
-	 * 		Ids of the edits for centers that need to be re-drawn
+	 *            Ids of the edits for centers that need to be re-drawn
 	 * @param edgesChangedIds
-	 * 		If edges changed, this is the list of ids for edge edits that changed
+	 *            If edges changed, this is the list of ids for edge edits that changed
 	 * @param isLowPriorityChange
-	 * 		Tells whether this update was submitted as a low priority change. In theory the drawing code doesn't need to know this because low priority changes should never change something that then
-	 * 		requires submitting more low priority changes, but since my code for detecting when coastlines need to be smoothed is imperfect, I added this flag.
+	 *            Tells whether this update was submitted as a low priority change. In theory the drawing code doesn't need to know this
+	 *            because low priority changes should never change something that then requires submitting more low priority changes, but
+	 *            since my code for detecting when coastlines need to be smoothed is imperfect, I added this flag.
 	 */
 	public IntRectangle incrementalUpdateForCentersAndEdges(final MapSettings settings, MapParts mapParts, Image fullSizedMap, Set<Integer> centersChangedIds, Set<Integer> edgesChangedIds,
 			boolean isLowPriorityChange)
@@ -185,21 +186,8 @@ public class MapCreator implements WarningLogger
 		}
 
 		applyRegionEdits(mapParts.graph, settings.edits);
-		// Apply edge edits before center edits because applying center edits smoothes region boundaries, which depends on rivers, which are
-		// edge edits.
-		{
-			Set<EdgeEdit> edgeEdits;
-			if (edgesChangedIds != null)
-			{
-				edgeEdits = getEdgeEditsForEdgeIds(settings.edits, edgesChangedIds);
-			}
-			else
-			{
-				edgeEdits = new HashSet<EdgeEdit>();
-			}
-			edgeEdits.addAll(getEdgeEditsForCenters(settings.edits, centersChanged));
-			applyEdgeEdits(mapParts.graph, settings.edits, edgeEdits);
-		}
+		// Apply river edits before center edits because applying center edits smoothes region boundaries, which depends on rivers.
+		applyRiverEdits(mapParts.graph, settings.edits, settings.resolution);
 		Set<Center> centersChangedThatAffectedLandOrRegionBoundaries = applyCenterEdits(mapParts.graph, settings.edits, getCenterEditsForCenters(settings.edits, centersChanged),
 				settings.drawRegionBoundaries || settings.drawRegionColors);
 
@@ -380,8 +368,7 @@ public class MapCreator implements WarningLogger
 
 			checkForCancel();
 
-			Set<Edge> edgesToDraw = mapParts.graph.getEdgesFromCenters(centersToDraw);
-			drawRivers(settings, mapParts.graph, mapSnippet, edgesToDraw, drawBounds);
+			new RiverDrawer(settings, mapParts.graph).drawRivers(mapSnippet, drawBounds);
 
 			checkForCancel();
 
@@ -567,10 +554,10 @@ public class MapCreator implements WarningLogger
 		// effects, and with widest possible line that can be drawn,
 		// whichever is largest.
 
-		double concentricWaveWidth = settings.hasConcentricWaves() ? settings.concentricWaveCount * (concentricWaveLineWidth * sizeMultiplier + concentricWaveWidthBetweenWaves * sizeMultiplier) + (
-				settings.jitterToConcentricWaves
-						? calcJitterVarianceRange(settings.resolution)
-						: 0) : 0;
+		double concentricWaveWidth = settings.hasConcentricWaves()
+				? settings.concentricWaveCount * (concentricWaveLineWidth * sizeMultiplier + concentricWaveWidthBetweenWaves * sizeMultiplier)
+						+ (settings.jitterToConcentricWaves ? calcJitterVarianceRange(settings.resolution) : 0)
+				: 0;
 		// In theory, I shouldn't multiply by 0.75 below, but realistically there doesn't seem to be any visual difference and it helps a
 		// lot
 		// with performance.
@@ -594,12 +581,12 @@ public class MapCreator implements WarningLogger
 	 * Draws a map.
 	 *
 	 * @param settings
-	 * 		Setting for the map to create
+	 *            Setting for the map to create
 	 * @param maxDimensions
-	 * 		The maximum width and height (in pixels) at which to draw the map. This is needed for creating previews. null means draw at normal resolution. Warning: If maxDimensions is specified, then
-	 * 		settings.resolution will be modified to fit that size.
+	 *            The maximum width and height (in pixels) at which to draw the map. This is needed for creating previews. null means draw
+	 *            at normal resolution. Warning: If maxDimensions is specified, then settings.resolution will be modified to fit that size.
 	 * @param mapParts
-	 * 		If not null, then parts of the map created while generating will be stored in it.
+	 *            If not null, then parts of the map created while generating will be stored in it.
 	 * @return The map
 	 */
 	public Image createMap(final MapSettings settings, Dimension maxDimensions, MapParts mapParts) throws CancelledException
@@ -1163,7 +1150,11 @@ public class MapCreator implements WarningLogger
 
 		// Add rivers.
 		Logger.println("Adding rivers.");
-		drawRivers(settings, graph, map, null, null);
+		if (!settings.edits.hasInitializedRivers)
+		{
+			settings.edits.initializeRiversFromGraph(graph, settings.resolution);
+		}
+		new RiverDrawer(settings, graph).drawRivers(map, null);
 
 		checkForCancel();
 
@@ -1313,8 +1304,9 @@ public class MapCreator implements WarningLogger
 	}
 
 	/**
-	 * If land near coastlines and region borders should be darkened, then this creates a copy of mapOrSnippet but with that darkening. Otherwise, it returns mapOrSnippet in the first piece of the
-	 * tuple unchanged. The second piece is the coast shading mask, which can be re-used for performance.
+	 * If land near coastlines and region borders should be darkened, then this creates a copy of mapOrSnippet but with that darkening.
+	 * Otherwise, it returns mapOrSnippet in the first piece of the tuple unchanged. The second piece is the coast shading mask, which can
+	 * be re-used for performance.
 	 */
 	private Tuple2<Image, Image> darkenLandNearCoastlinesAndRegionBorders(MapSettings settings, WorldGraph graph, double resolutionScaled, Image mapOrSnippet, Background background,
 			Image coastShading, Collection<Center> centersToDraw, Rectangle drawBounds, boolean addLoggingEntry)
@@ -1338,8 +1330,9 @@ public class MapCreator implements WarningLogger
 
 			if (drawRegionColorShading)
 			{
-				scale = ((float) settings.coastShadingColor.getAlpha()) / ((float) (maxPixelValue)) * scaleForDarkening * calcScaleToMakeConvolutionEffectsLightnessInvariantToKernelSize(
-						settings.coastShadingLevel, sizeMultiplier) * calcScaleCompensateForCoastlineShadingDrawingAtAFullPixelWideAtLowerResolutions(targetStrokeWidth);
+				scale = ((float) settings.coastShadingColor.getAlpha()) / ((float) (maxPixelValue)) * scaleForDarkening
+						* calcScaleToMakeConvolutionEffectsLightnessInvariantToKernelSize(settings.coastShadingLevel, sizeMultiplier)
+						* calcScaleCompensateForCoastlineShadingDrawingAtAFullPixelWideAtLowerResolutions(targetStrokeWidth);
 			}
 			else
 			{
@@ -1542,8 +1535,8 @@ public class MapCreator implements WarningLogger
 				BiFunction<Boolean, Random, Double> getNewSkipDistance = (isDrawing, rand) ->
 				{
 					int waveNumber = settings.concentricWaveCount - i;
-					double scaleToMakeFartherOutWavesShorter = ((((((double) SettingsGenerator.maxConcentricWaveCountInEditor - 1) - (waveNumber - 1))) / (
-							(double) SettingsGenerator.maxConcentricWaveCountInEditor - 1)));
+					double scaleToMakeFartherOutWavesShorter = ((((((double) SettingsGenerator.maxConcentricWaveCountInEditor - 1) - (waveNumber - 1)))
+							/ ((double) SettingsGenerator.maxConcentricWaveCountInEditor - 1)));
 					final double scaleAtLastWave = 0.5;
 					scaleToMakeFartherOutWavesShorter = 1.0 - ((1.0 - scaleToMakeFartherOutWavesShorter) * (1.0 - scaleAtLastWave));
 
@@ -1590,8 +1583,8 @@ public class MapCreator implements WarningLogger
 	private static float calcScaleToMakeConvolutionEffectsLightnessInvariantToKernelSize(int kernelSize, double sizeMultiplier)
 	{
 		int lightnessBasedOnKernelSizesBeforeIAddedFixToMakeShadingNotGetLighterWhenItGotWider = (int) (15 * sizeMultiplier);
-		return ImageHelper.getInstance().getGaussianMode(lightnessBasedOnKernelSizesBeforeIAddedFixToMakeShadingNotGetLighterWhenItGotWider) / ImageHelper.getInstance()
-				.getGaussianMode((int) (kernelSize * sizeMultiplier));
+		return ImageHelper.getInstance().getGaussianMode(lightnessBasedOnKernelSizesBeforeIAddedFixToMakeShadingNotGetLighterWhenItGotWider)
+				/ ImageHelper.getInstance().getGaussianMode((int) (kernelSize * sizeMultiplier));
 	}
 
 	private static Image removeOceanEffectsFromLandAndLandLockedLakes(WorldGraph graph, Image oceanEffects, Collection<Center> centersToDraw, Rectangle drawBounds)
@@ -1633,7 +1626,8 @@ public class MapCreator implements WarningLogger
 		float[] landHsb = settings.regionBaseColor.getHSB();
 		List<Color> regionColorOptions = new ArrayList<>();
 		Random rand = new Random(settings.regionsRandomSeed);
-		for (@SuppressWarnings("unused") int i : new Range(graph.regions.size()))
+		for (@SuppressWarnings("unused")
+		int i : new Range(graph.regions.size()))
 		{
 			regionColorOptions.add(generateRegionColor(rand, landHsb, settings.hueRange, settings.saturationRange, settings.brightnessRange));
 		}
@@ -1674,7 +1668,8 @@ public class MapCreator implements WarningLogger
 	}
 
 	/**
-	 * Creates a WorldGraph and applies edge edits (e.g. river levels) from settings.edits. Intended for use in unit tests that need a fully initialized graph without rendering.
+	 * Creates a WorldGraph and applies edge edits (e.g. river levels) from settings.edits. Intended for use in unit tests that need a fully
+	 * initialized graph without rendering.
 	 */
 	public static WorldGraph createGraphForUnitTests(MapSettings settings)
 	{
@@ -1708,9 +1703,17 @@ public class MapCreator implements WarningLogger
 		assignRandomRegionColors(graph, settings);
 
 		applyRegionEdits(graph, settings.edits);
-		// Apply edge edits before center edits because applying center edits smoothes region boundaries, which depends on rivers, which are
-		// edge edits.
-		applyEdgeEdits(graph, settings.edits, null);
+		// Apply river edits before center edits because applying center edits smoothes region boundaries, which depends on rivers.
+		// For old files that have not yet been converted (hasInitializedRivers == false), fall back to applyEdgeEdits which reads the legacy
+		// edgeEdits data. initializeRiversFromGraph will run on the first full draw to seed River objects from the restored edge.river values.
+		if (settings.edits != null && settings.edits.hasInitializedRivers)
+		{
+			applyRiverEdits(graph, settings.edits, resolutionScale);
+		}
+		else
+		{
+			applyEdgeEdits(graph, settings.edits, null);
+		}
 		applyCenterEdits(graph, settings.edits, null, settings.drawRegionBoundaries || settings.drawRegionColors);
 
 		return graph;
@@ -1725,7 +1728,8 @@ public class MapCreator implements WarningLogger
 	}
 
 	/**
-	 * Like calcSizeMultiplierFromResolutionScale, but rounds to the nearest tenth for use with components that have that limit on numeric precision.
+	 * Like calcSizeMultiplierFromResolutionScale, but rounds to the nearest tenth for use with components that have that limit on numeric
+	 * precision.
 	 */
 	public static double calcSizeMultiplierFromResolutionScaleRounded(double resolutionScale)
 	{
@@ -1760,14 +1764,16 @@ public class MapCreator implements WarningLogger
 	 * Applies changes to Centers from user edits to the Center objects in the graph.
 	 *
 	 * @param graph
-	 * 		The graph being drawn
+	 *            The graph being drawn
 	 * @param edits
-	 * 		User edits
+	 *            User edits
 	 * @param centerEditChanges
-	 * 		Edits of centers that changed. Pass this in if only some of the center edits changed, avoid having to loop over all of them.
+	 *            Edits of centers that changed. Pass this in if only some of the center edits changed, avoid having to loop over all of
+	 *            them.
 	 * @param areRegionBoundariesVisible
-	 * 		whether region boundaries are visible on the map
-	 * @return A set of centers whose noisy edges have been recalculated, meaning something about their terrain or region boundaries changed.
+	 *            whether region boundaries are visible on the map
+	 * @return A set of centers whose noisy edges have been recalculated, meaning something about their terrain or region boundaries
+	 *         changed.
 	 */
 	private static Set<Center> applyCenterEdits(WorldGraph graph, MapEdits edits, Collection<CenterEdit> centerEditChanges, boolean areRegionBoundariesVisible)
 	{
@@ -1846,6 +1852,16 @@ public class MapCreator implements WarningLogger
 		return needsRebuildNoisyEdges;
 	}
 
+	/**
+	 * Copies stored legacy {@link EdgeEdit} data onto the corresponding {@link Edge} objects in the graph.
+	 * <p>
+	 * This is a migration path for old save files. {@code EdgeEdit} originally stored river width levels, which have since moved to
+	 * {@link nortantis.editor.River} inside {@link MapEdits#rivers}. On the first draw of an old file,
+	 * {@link MapEdits#hasInitializedRivers} is {@code false}, so this method restores {@code edge.river} from the stored
+	 * {@code edgeEdits}; then {@link MapEdits#initializeRiversFromGraph} will seed the new {@code River} objects from those values.
+	 * For new files, {@link #applyRiverEdits} is used instead.
+	 * </p>
+	 */
 	private static void applyEdgeEdits(WorldGraph graph, MapEdits edits, Collection<EdgeEdit> edgeChanges)
 	{
 		if (edits == null || edits.edgeEdits.isEmpty())
@@ -1855,7 +1871,8 @@ public class MapCreator implements WarningLogger
 
 		if (edgeChanges == null)
 		{
-			// Since edits.edgeEdits does not always contain an entry for every edge, when the list of changes to apply is null, clear out the fields that can change before applying edge edits.
+			// Since edits.edgeEdits does not always contain an entry for every edge, when the list of changes to apply is null, clear out
+			// the fields that can change before applying edge edits.
 			for (Edge edge : graph.edges)
 			{
 				edge.river = 0;
@@ -1876,12 +1893,70 @@ public class MapCreator implements WarningLogger
 		}
 	}
 
-	public static void drawRivers(MapSettings settings, WorldGraph graph, Image map, Collection<Edge> edgesToDraw, Rectangle drawBounds)
+	/**
+	 * Restores {@link Edge#river} levels on the graph from the {@link River} objects in {@link MapEdits#rivers}. Clears all edge river
+	 * levels first, then re-applies them from the stored River paths. River path points are matched to graph corners within a tolerance;
+	 * freehand river segments that do not land on a graph corner are silently skipped.
+	 *
+	 * @param resolutionScale
+	 *            Used to convert RI corner coordinates in the River path back to graph pixel space for corner matching.
+	 */
+	private static void applyRiverEdits(WorldGraph graph, MapEdits edits, double resolutionScale)
 	{
-		try (Painter p = map.createPainter(DrawQuality.High))
+		int[] oldRivers = new int[graph.edges.size()];
+		for (Edge edge : graph.edges)
 		{
-			graph.drawRivers(p, edgesToDraw, drawBounds, settings.riverColor);
+			oldRivers[edge.index] = edge.river;
+			edge.river = 0;
 		}
+
+		final double cornerMatchTolerancePixels = 0.5;
+		if (edits != null)
+		{
+			for (River river : edits.rivers)
+			{
+				for (int i = 0; i < river.path.size() - 1; i++)
+				{
+					Point p1 = river.path.get(i).mult(resolutionScale);
+					Point p2 = river.path.get(i + 1).mult(resolutionScale);
+					Corner c1 = graph.findClosestCorner(p1);
+					Corner c2 = graph.findClosestCorner(p2);
+					if (c1 == null || c2 == null)
+					{
+						continue;
+					}
+					if (c1.loc.distanceTo(p1) > cornerMatchTolerancePixels || c2.loc.distanceTo(p2) > cornerMatchTolerancePixels)
+					{
+						continue;
+					}
+					Edge edge = findEdgeBetweenCorners(c1, c2);
+					if (edge != null)
+					{
+						edge.river = Math.max(edge.river, river.segmentWidthLevels.get(i));
+					}
+				}
+			}
+		}
+
+		for (Edge edge : graph.edges)
+		{
+			if (edge.river != oldRivers[edge.index] && edge.d0 != null)
+			{
+				graph.rebuildNoisyEdgesForCenter(edge.d0);
+			}
+		}
+	}
+
+	private static Edge findEdgeBetweenCorners(Corner c1, Corner c2)
+	{
+		for (Edge edge : c1.protrudes)
+		{
+			if (edge.v0 == c2 || edge.v1 == c2)
+			{
+				return edge;
+			}
+		}
+		return null;
 	}
 
 	public Image createHeightMap(MapSettings settings)
@@ -1903,29 +1978,6 @@ public class MapCreator implements WarningLogger
 	private List<CenterEdit> getCenterEditsForCenters(MapEdits edits, Collection<Center> centers)
 	{
 		return centers.stream().map(center -> edits.centerEdits.get(center.index)).collect(Collectors.toList());
-	}
-
-	private Set<EdgeEdit> getEdgeEditsForEdgeIds(MapEdits edits, Collection<Integer> edgeIds)
-	{
-		return edgeIds.stream().map(id -> edits.edgeEdits.containsKey(id) ? edits.edgeEdits.get(id) : new EdgeEdit(id, 0)).collect(Collectors.toSet());
-	}
-
-	private Set<EdgeEdit> getEdgeEditsForCenters(MapEdits edits, Collection<Center> centers)
-	{
-		Set<EdgeEdit> edgeEdits = new HashSet<>();
-		for (Center center : centers)
-		{
-			for (Edge edge : center.borders)
-			{
-				EdgeEdit edgeEdit = edits.edgeEdits.get(edge.index);
-				if (edgeEdit != null)
-				{
-					edgeEdits.add(edgeEdit);
-				}
-
-			}
-		}
-		return edgeEdits;
 	}
 
 	public void cancel()
@@ -2002,13 +2054,14 @@ public class MapCreator implements WarningLogger
 	 * Draws an overlay image on top of mapOrSnippet, scaled to the maximum size it can be and still fit into the center of mapOrSnippet.
 	 *
 	 * @param mapOrSnippet
-	 * 		Either the entire map, or a snippet out of the map whose bounds is drawBounds.
+	 *            Either the entire map, or a snippet out of the map whose bounds is drawBounds.
 	 * @param settings
-	 * 		Map settings
+	 *            Map settings
 	 * @param drawBounds
-	 * 		For incremental updates. When not null, mapOrSnippet should be a snippet from the main map, and this is the bounds of that snippet. Does not include border width.
+	 *            For incremental updates. When not null, mapOrSnippet should be a snippet from the main map, and this is the bounds of that
+	 *            snippet. Does not include border width.
 	 * @param mapSize
-	 * 		The size of the entire map, including borders, as it is drawn.
+	 *            The size of the entire map, including borders, as it is drawn.
 	 */
 	public static void drawOverlayImage(Image mapOrSnippet, MapSettings settings, Rectangle drawBounds, IntDimension mapSize)
 	{

@@ -48,26 +48,24 @@ public class CustomImagesDialog extends JDialog
 		String cif = Translation.get("customImages.placeholder.customImagesFolder");
 		organizer.addLeftAlignedComponent(new JLabel(cif + File.separator + "background textures" + File.separator + Translation.get("customImages.placeholder.backgroundTextureImages")), space,
 				spaceBetweenPaths, false);
-		organizer.addLeftAlignedComponent(
-				new JLabel(cif + File.separator + "borders" + File.separator + Translation.get("customImages.placeholder.borderType") + File.separator + Translation.get("customImages.placeholder.borderImages")),
+		organizer.addLeftAlignedComponent(new JLabel(
+				cif + File.separator + "borders" + File.separator + Translation.get("customImages.placeholder.borderType") + File.separator + Translation.get("customImages.placeholder.borderImages")),
 				space, spaceBetweenPaths, false);
-		organizer.addLeftAlignedComponent(
-				new JLabel(cif + File.separator + "cities" + File.separator + Translation.get("customImages.placeholder.cityType") + File.separator + Translation.get("customImages.placeholder.cityImages")),
+		organizer.addLeftAlignedComponent(new JLabel(
+				cif + File.separator + "cities" + File.separator + Translation.get("customImages.placeholder.cityType") + File.separator + Translation.get("customImages.placeholder.cityImages")),
 				spaceBetweenPaths, spaceBetweenPaths, false);
-		organizer.addLeftAlignedComponent(
-				new JLabel(cif + File.separator + "decorations" + File.separator + Translation.get("customImages.placeholder.decorationType") + File.separator + Translation.get("customImages.placeholder.decorationImages")),
+		organizer.addLeftAlignedComponent(new JLabel(cif + File.separator + "decorations" + File.separator + Translation.get("customImages.placeholder.decorationType") + File.separator
+				+ Translation.get("customImages.placeholder.decorationImages")), spaceBetweenPaths, spaceBetweenPaths, false);
+		organizer.addLeftAlignedComponent(new JLabel(
+				cif + File.separator + "hills" + File.separator + Translation.get("customImages.placeholder.hillType") + File.separator + Translation.get("customImages.placeholder.hillImages")),
 				spaceBetweenPaths, spaceBetweenPaths, false);
-		organizer.addLeftAlignedComponent(
-				new JLabel(cif + File.separator + "hills" + File.separator + Translation.get("customImages.placeholder.hillType") + File.separator + Translation.get("customImages.placeholder.hillImages")),
+		organizer.addLeftAlignedComponent(new JLabel(cif + File.separator + "mountains" + File.separator + Translation.get("customImages.placeholder.mountainType") + File.separator
+				+ Translation.get("customImages.placeholder.mountainImages")), spaceBetweenPaths, spaceBetweenPaths, false);
+		organizer.addLeftAlignedComponent(new JLabel(
+				cif + File.separator + "sand" + File.separator + Translation.get("customImages.placeholder.duneType") + File.separator + Translation.get("customImages.placeholder.sandDuneImages")),
 				spaceBetweenPaths, spaceBetweenPaths, false);
-		organizer.addLeftAlignedComponent(
-				new JLabel(cif + File.separator + "mountains" + File.separator + Translation.get("customImages.placeholder.mountainType") + File.separator + Translation.get("customImages.placeholder.mountainImages")),
-				spaceBetweenPaths, spaceBetweenPaths, false);
-		organizer.addLeftAlignedComponent(
-				new JLabel(cif + File.separator + "sand" + File.separator + Translation.get("customImages.placeholder.duneType") + File.separator + Translation.get("customImages.placeholder.sandDuneImages")),
-				spaceBetweenPaths, spaceBetweenPaths, false);
-		organizer.addLeftAlignedComponent(
-				new JLabel(cif + File.separator + "trees" + File.separator + Translation.get("customImages.placeholder.treeType") + File.separator + Translation.get("customImages.placeholder.treeImages")),
+		organizer.addLeftAlignedComponent(new JLabel(
+				cif + File.separator + "trees" + File.separator + Translation.get("customImages.placeholder.treeType") + File.separator + Translation.get("customImages.placeholder.treeImages")),
 				spaceBetweenPaths, spaceBetweenPaths, false);
 
 		organizer.addLeftAlignedComponent(new JLabel("<html>" + Translation.get("customImages.folderStructureNote") + "</html>"), space, space, false);

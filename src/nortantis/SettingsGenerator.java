@@ -29,7 +29,9 @@ public class SettingsGenerator
 	public static final int maxConcentricWaveCountToGenerate = 3;
 	public static final int minRegionCount = 2;
 	public static int maxRegionCount = 20;
-	/** The maximum number of regions in new, generated settings.
+
+	/**
+	 * The maximum number of regions in new, generated settings.
 	 */
 	public static int maxGeneratedRegionCount(int worldSize)
 	{

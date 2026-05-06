@@ -1,14 +1,18 @@
 package nortantis.swing;
 
 import nortantis.FreeIconCollection;
+import nortantis.GraphRiver;
 import nortantis.MapText;
 import nortantis.Region;
+import nortantis.WorldGraph;
 import nortantis.editor.CenterEdit;
 import nortantis.editor.EdgeEdit;
 import nortantis.editor.RegionEdit;
+import nortantis.editor.River;
 import nortantis.editor.Road;
 import nortantis.geom.Point;
 import nortantis.graph.voronoi.Center;
+import nortantis.graph.voronoi.Corner;
 import nortantis.graph.voronoi.Edge;
 import nortantis.util.Range;
 
@@ -20,10 +24,10 @@ import java.util.concurrent.CopyOnWriteArrayList;
 /**
  * Stores edits made by a user to a map. This is initialized from the generated map the first time the map is drawn, and then afterwards the
  * edits are the source of truth for what the map should look like.
- * 
+ *
  * Everything in this class that can change after the edits are first generated needs to be thread safe so that the editor can edit it wall
  * the map creator draws. And the text drawer needs to update MapText objects with areas and bounds.
- * 
+ *
  * @author joseph
  *
  */
@@ -40,6 +44,13 @@ public class MapEdits implements Serializable
 	public Map<Integer, EdgeEdit> edgeEdits;
 	public FreeIconCollection freeIcons;
 	public CopyOnWriteArrayList<Road> roads;
+	/** All rivers (both generated from the graph and user-drawn). */
+	public CopyOnWriteArrayList<River> rivers;
+	/**
+	 * True once rivers have been initialized from the graph (either at first draw or by SubMapCreator). When false, the first full draw will
+	 * call {@link #initializeRiversFromGraph} to populate {@link #rivers} from the graph's edge river levels plus any rivers already present.
+	 */
+	public boolean hasInitializedRivers;
 
 	/**
 	 * Not stored. A flag the editor uses to tell TextDrawer to generate text and store it as edits.
@@ -59,6 +70,8 @@ public class MapEdits implements Serializable
 		edgeEdits = new TreeMap<>();
 		freeIcons = new FreeIconCollection();
 		roads = new CopyOnWriteArrayList<Road>();
+		rivers = new CopyOnWriteArrayList<River>();
+		hasInitializedRivers = false;
 	}
 
 	public boolean isInitialized()
@@ -88,6 +101,46 @@ public class MapEdits implements Serializable
 				edgeEdits.put(edge.index, new EdgeEdit(edge.index, edge.river));
 			}
 		}
+	}
+
+	/**
+	 * Extracts rivers from the graph and appends them to {@link #rivers}. Any rivers already in the list (e.g. loaded from an old save file)
+	 * are preserved. Sets {@link #hasInitializedRivers} to {@code true}.
+	 *
+	 * @param graph
+	 *            The graph whose edge river levels are read.
+	 * @param resolutionScale
+	 *            Used to convert graph-pixel corner locations to RI coordinates.
+	 */
+	public void initializeRiversFromGraph(WorldGraph graph, double resolutionScale)
+	{
+		List<GraphRiver> graphRivers = graph.findRivers();
+		for (GraphRiver graphRiver : graphRivers)
+		{
+			List<Corner> corners = graphRiver.getOrderedCorners();
+			List<Edge> edges = graphRiver.getEdges();
+			if (corners.size() < 2 || edges.isEmpty())
+			{
+				continue;
+			}
+
+			List<Point> path = new ArrayList<>(corners.size());
+			for (Corner corner : corners)
+			{
+				path.add(corner.loc.mult(1.0 / resolutionScale));
+			}
+
+			List<Integer> widthLevels = new ArrayList<>(edges.size());
+			long seed = 0L;
+			for (Edge edge : edges)
+			{
+				widthLevels.add(edge.river);
+				seed ^= edge.noisyEdgesSeed;
+			}
+
+			rivers.add(new River(path, widthLevels, seed));
+		}
+		hasInitializedRivers = true;
 	}
 
 	public void initializeRegionEdits(Collection<Region> regions)
@@ -176,11 +229,6 @@ public class MapEdits implements Serializable
 
 		copy.hasIconEdits = hasIconEdits;
 
-		for (EdgeEdit eEdit : edgeEdits.values())
-		{
-			copy.edgeEdits.put(eEdit.index, eEdit.deepCopy());
-		}
-
 		copy.freeIcons = new FreeIconCollection(freeIcons);
 
 		copy.bakeGeneratedTextAsEdits = bakeGeneratedTextAsEdits;
@@ -189,6 +237,12 @@ public class MapEdits implements Serializable
 		List<Road> deepCopyOfRoads = roads.stream().map(road -> new Road(road)).toList();
 		copy.roads = new CopyOnWriteArrayList<Road>();
 		copy.roads.addAll(deepCopyOfRoads);
+
+		List<River> deepCopyOfRivers = rivers.stream().map(river -> new River(river)).toList();
+		copy.rivers = new CopyOnWriteArrayList<River>();
+		copy.rivers.addAll(deepCopyOfRivers);
+
+		copy.hasInitializedRivers = hasInitializedRivers;
 
 		return copy;
 	}
@@ -212,9 +266,9 @@ public class MapEdits implements Serializable
 			return false;
 		}
 		MapEdits other = (MapEdits) obj;
-		return bakeGeneratedTextAsEdits == other.bakeGeneratedTextAsEdits && Objects.equals(centerEdits, other.centerEdits) && Objects.equals(edgeEdits, other.edgeEdits)
+		return bakeGeneratedTextAsEdits == other.bakeGeneratedTextAsEdits && Objects.equals(centerEdits, other.centerEdits)
 				&& Objects.equals(freeIcons, other.freeIcons) && hasIconEdits == other.hasIconEdits && Objects.equals(regionEdits, other.regionEdits) && Objects.equals(text, other.text)
-				&& Objects.equals(roads, other.roads);
+				&& Objects.equals(roads, other.roads) && Objects.equals(rivers, other.rivers) && hasInitializedRivers == other.hasInitializedRivers;
 	}
 
 }

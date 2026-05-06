@@ -7,6 +7,8 @@ import java.util.Objects;
 public class EdgeEdit implements Serializable
 {
 
+	/** @deprecated River data is now stored in {@link nortantis.swing.MapEdits#rivers}. Kept only for loading legacy save files. */
+	@Deprecated
 	public int riverLevel;
 	public final int index;
 	// Note - if you add any new fields here, make sure to clear them in MapCreator.applyEdgeEdits when edgeChanges is null.

@@ -185,6 +185,33 @@ public abstract class MapUpdater
 		}
 	}
 
+	public void addRiversToRedrawLowPriority(List<River> rivers, double resolutionScale)
+	{
+		if (mapParts != null && mapParts.graph != null)
+		{
+			for (River river : rivers)
+			{
+				if (river == null)
+				{
+					continue;
+				}
+
+				for (Point point : river.path)
+				{
+					Center center = mapParts.graph.findClosestCenter(point.mult(resolutionScale), true);
+					if (center != null)
+					{
+						centersToRedrawLowPriority.put(center.index, center);
+					}
+				}
+			}
+		}
+		else
+		{
+			assert false;
+		}
+	}
+
 	public void reprocessBooks()
 	{
 		createAndShowMap(UpdateType.ReprocessBooks, null, null, null, null, null, null);
@@ -208,13 +235,13 @@ public abstract class MapUpdater
 		else
 		{
 			Set<Integer> centersChanged = getIdsOfCentersWithChangesInEdits(change.settings.edits);
-			Set<Integer> edgesChanged = getIdsOfEdgesWithChangesInEdits(change.settings.edits);
 			Collection<MapText> textChanged = getTextWithChangesInEdits(change.settings.edits);
 			List<FreeIcon> iconsChanged = getIconsWithChangesInEdits(change.settings.edits);
 			// I haven't bothered to add roads to the changes that can be passed in to createAndShowMapUsingIds, so I'm just passing in the
 			// id's of centers under those roads. The downside to doing this is that it will do a little extra drawing.
 			centersChanged.addAll(getCentersIdsOfRoadsChanged(change.settings.edits, getSettingsFromGUI().resolution));
-			createAndShowMapUsingIds(UpdateType.Incremental, centersChanged, edgesChanged, textChanged, iconsChanged, change.preRun, null);
+			centersChanged.addAll(getCentersIdsOfRiversChanged(change.settings.edits, getSettingsFromGUI().resolution));
+			createAndShowMapUsingIds(UpdateType.Incremental, centersChanged, null, textChanged, iconsChanged, change.preRun, null);
 		}
 	}
 
@@ -222,6 +249,15 @@ public abstract class MapUpdater
 	{
 		Set<List<Point>> changePaths = edits.roads.stream().map(road -> road.path).collect(Collectors.toSet());
 		Set<List<Point>> currentPaths = getEdits().roads.stream().map(road -> road.path).collect(Collectors.toSet());
+		Set<List<Point>> diff = Helper.getElementsNotInIntersection(changePaths, currentPaths);
+		Set<Integer> diffCenterIds = getIdsOfCentersPointsAreOn(pointListsToPointSet(diff), resolutionScale);
+		return diffCenterIds;
+	}
+
+	private Collection<Integer> getCentersIdsOfRiversChanged(MapEdits edits, double resolutionScale)
+	{
+		Set<List<Point>> changePaths = edits.rivers.stream().map(river -> river.path).collect(Collectors.toSet());
+		Set<List<Point>> currentPaths = getEdits().rivers.stream().map(river -> river.path).collect(Collectors.toSet());
 		Set<List<Point>> diff = Helper.getElementsNotInIntersection(changePaths, currentPaths);
 		Set<Integer> diffCenterIds = getIdsOfCentersPointsAreOn(pointListsToPointSet(diff), resolutionScale);
 		return diffCenterIds;
@@ -269,23 +305,6 @@ public abstract class MapUpdater
 		}
 
 		return changedCentersIds;
-	}
-
-	private Set<Integer> getIdsOfEdgesWithChangesInEdits(MapEdits changeEdits)
-	{
-		Map<Integer, EdgeEdit> original = getEdits().edgeEdits;
-		Map<Integer, EdgeEdit> changed = changeEdits.edgeEdits;
-
-		Set<Integer> allIndices = new HashSet<>();
-		allIndices.addAll(original.keySet());
-		allIndices.addAll(changed.keySet());
-
-		return allIndices.stream().filter(index ->
-		{
-			EdgeEdit originalEdit = original.get(index);
-			EdgeEdit changedEdit = changed.get(index);
-			return !Objects.equals(originalEdit, changedEdit);
-		}).collect(Collectors.toSet());
 	}
 
 	private Collection<MapText> getTextWithChangesInEdits(MapEdits changeEdits)
@@ -623,7 +642,6 @@ public abstract class MapUpdater
 						{
 							initializeCenterEditsIfEmpty(settings.edits);
 							initializeRegionEditsIfEmpty(settings.edits);
-							initializeEdgeEditsIfEmpty(settings.edits);
 						}
 
 						if (currentMapCreator != null)
@@ -867,14 +885,6 @@ public abstract class MapUpdater
 		if (edits.centerEdits.isEmpty())
 		{
 			edits.initializeCenterEdits(mapParts.graph.centers);
-		}
-	}
-
-	private void initializeEdgeEditsIfEmpty(MapEdits edits)
-	{
-		if (edits.edgeEdits.isEmpty())
-		{
-			edits.initializeEdgeEdits(mapParts.graph.edges);
 		}
 	}
 

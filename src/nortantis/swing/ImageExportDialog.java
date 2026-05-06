@@ -86,12 +86,9 @@ public class ImageExportDialog extends JDialog
 
 		// Compute the base map pixel dimensions (at 100% resolution) to display in the slider label.
 		MapSettings exportSettings = mainWindow.getSettingsFromGUI(false);
-		final int exportBaseWidth = (exportSettings.rightRotationCount == 1 || exportSettings.rightRotationCount == 3)
-				? exportSettings.generatedHeight : exportSettings.generatedWidth;
-		final int exportBaseHeight = (exportSettings.rightRotationCount == 1 || exportSettings.rightRotationCount == 3)
-				? exportSettings.generatedWidth : exportSettings.generatedHeight;
-		final int borderPaddingPerSide = exportSettings.drawBorder && exportSettings.borderPosition == BorderPosition.Outside_map
-				? exportSettings.borderWidth : 0;
+		final int exportBaseWidth = (exportSettings.rightRotationCount == 1 || exportSettings.rightRotationCount == 3) ? exportSettings.generatedHeight : exportSettings.generatedWidth;
+		final int exportBaseHeight = (exportSettings.rightRotationCount == 1 || exportSettings.rightRotationCount == 3) ? exportSettings.generatedWidth : exportSettings.generatedHeight;
+		final int borderPaddingPerSide = exportSettings.drawBorder && exportSettings.borderPosition == BorderPosition.Outside_map ? exportSettings.borderWidth : 0;
 		SliderWithDisplayedValue resolutionSliderWithDisplay = new SliderWithDisplayedValue(resolutionSlider, value ->
 		{
 			double resolution = value / 100.0;

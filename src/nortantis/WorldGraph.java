@@ -290,9 +290,10 @@ public class WorldGraph extends VoronoiGraph
 	 * Rebuilds noisy edges for a center.
 	 *
 	 * @param center
-	 * 		The center to rebuild noisy edges for.
+	 *            The center to rebuild noisy edges for.
 	 * @param centersInLoop
-	 * 		For performance. The set of centers that the caller is already looping over, so that we don't rebuild noisy edges for neighbors unnecessarily.
+	 *            For performance. The set of centers that the caller is already looping over, so that we don't rebuild noisy edges for
+	 *            neighbors unnecessarily.
 	 */
 	public void rebuildNoisyEdgesForCenter(Center center, Set<Center> centersInLoop)
 	{
@@ -714,7 +715,8 @@ public class WorldGraph extends VoronoiGraph
 	}
 
 	/**
-	 * Finds the smallest neighboring region of the given region. Two regions are neighbors if any center in one is a neighbor of a center in the other.
+	 * Finds the smallest neighboring region of the given region. Two regions are neighbors if any center in one is a neighbor of a center
+	 * in the other.
 	 */
 	private Region findNeighboringRegion(Region region)
 	{
@@ -861,7 +863,8 @@ public class WorldGraph extends VoronoiGraph
 	}
 
 	/**
-	 * Find which center contains the point by checking pie slices. Uses angular sector as a hint to try the likely edge first, then falls back to exhaustive search.
+	 * Find which center contains the point by checking pie slices. Uses angular sector as a hint to try the likely edge first, then falls
+	 * back to exhaustive search.
 	 */
 	private Center findCenterFromEdgeSector(Point point, Center candidate)
 	{
@@ -930,7 +933,8 @@ public class WorldGraph extends VoronoiGraph
 	}
 
 	/**
-	 * Find which edge's angular sector contains the point (fast test using straight lines). Returns the edge position in center.borders, or -1 if no sector contains the point.
+	 * Find which edge's angular sector contains the point (fast test using straight lines). Returns the edge position in center.borders, or
+	 * -1 if no sector contains the point.
 	 */
 	private int findAngularSectorEdgePosition(Point point, Center center)
 	{
@@ -980,7 +984,8 @@ public class WorldGraph extends VoronoiGraph
 	}
 
 	/**
-	 * Walk from the starting center to the center whose loc is closest to the query point. This is faster than BFS and converges quickly since Voronoi diagrams are well-structured.
+	 * Walk from the starting center to the center whose loc is closest to the query point. This is faster than BFS and converges quickly
+	 * since Voronoi diagrams are well-structured.
 	 */
 	private Center walkToClosestCenter(Point query, Center start)
 	{
@@ -1383,11 +1388,11 @@ public class WorldGraph extends VoronoiGraph
 	}
 
 	/**
-	 * Updates the center lookup table, which is used to lookup which center draws at a given point. This needs to be done when a center potentially changed its noisy edges, such as when it switched
-	 * from inland to coast.
+	 * Updates the center lookup table, which is used to lookup which center draws at a given point. This needs to be done when a center
+	 * potentially changed its noisy edges, such as when it switched from inland to coast.
 	 *
 	 * @param centersToUpdate
-	 * 		Centers to update
+	 *            Centers to update
 	 */
 	public void updateCenterLookupTable(Collection<Center> centersToUpdate)
 	{
@@ -1495,9 +1500,10 @@ public class WorldGraph extends VoronoiGraph
 	 * Performs a breadth-first search starting from the given center, exploring all connected centers that satisfy the accept predicate.
 	 *
 	 * @param accept
-	 * 		A predicate that determines whether a neighboring center should be included in the search. Returns true if the center should be explored, false otherwise.
+	 *            A predicate that determines whether a neighboring center should be included in the search. Returns true if the center
+	 *            should be explored, false otherwise.
 	 * @param start
-	 * 		The center to begin the search from. This center is always included in the result, regardless of the accept predicate.
+	 *            The center to begin the search from. This center is always included in the result, regardless of the accept predicate.
 	 * @return A set containing the start center and all connected centers that satisfy the accept predicate.
 	 */
 	public Set<Center> breadthFirstSearch(Function<Center, Boolean> accept, Center start)
@@ -1531,13 +1537,15 @@ public class WorldGraph extends VoronoiGraph
 	 * Performs a breadth-first search to find the first center that satisfies the goal predicate.
 	 *
 	 * @param accept
-	 * 		A predicate that determines whether to explore a neighboring center. Takes three arguments: the current center being expanded, the neighbor being considered, and the distance from the start
-	 * 		(in number of hops). Returns true if the neighbor should be added to the search frontier, false otherwise.
+	 *            A predicate that determines whether to explore a neighboring center. Takes three arguments: the current center being
+	 *            expanded, the neighbor being considered, and the distance from the start (in number of hops). Returns true if the neighbor
+	 *            should be added to the search frontier, false otherwise.
 	 * @param isGoal
-	 * 		A predicate that determines whether a center is the goal. Returns true if the center satisfies the search criteria.
+	 *            A predicate that determines whether a center is the goal. Returns true if the center satisfies the search criteria.
 	 * @param start
-	 * 		The center to begin the search from.
-	 * @return The first center found that satisfies the isGoal predicate, or null if no such center is reachable within the constraints of the accept predicate.
+	 *            The center to begin the search from.
+	 * @return The first center found that satisfies the isGoal predicate, or null if no such center is reachable within the constraints of
+	 *         the accept predicate.
 	 */
 	public Center breadthFirstSearchForGoal(TriFunction<Center, Center, Integer, Boolean> accept, Function<Center, Boolean> isGoal, Center start)
 	{
@@ -2043,7 +2051,9 @@ public class WorldGraph extends VoronoiGraph
 
 			// Each factor scales from 0 to 1. Use the max so that either being high is sufficient.
 			double worldSizeFactor = worldSize >= worldSizeThreshold ? Math.min(1.0, (worldSize - worldSizeThreshold) / (double) (SettingsGenerator.maxWorldSize - worldSizeThreshold)) : 0;
-			double regionFactor = regionCount >= regionCountThreshold ? Math.min(1.0, (regionCount - regionCountThreshold) / (double) Math.max(1, SettingsGenerator.maxRegionCount - regionCountThreshold)) : 0;
+			double regionFactor = regionCount >= regionCountThreshold
+					? Math.min(1.0, (regionCount - regionCountThreshold) / (double) Math.max(1, SettingsGenerator.maxRegionCount - regionCountThreshold))
+					: 0;
 			double factor = Math.max(worldSizeFactor, regionFactor);
 
 			final double maxExtraOceanicRatio = 0.9;
@@ -2372,13 +2382,13 @@ public class WorldGraph extends VoronoiGraph
 	 * Returns the amount the centers p1 and p2 are from are converging. This is between -1 and 1.
 	 *
 	 * @param p1
-	 * 		Location of a center along a tectonic plate border.
+	 *            Location of a center along a tectonic plate border.
 	 * @param p1Velocity
-	 * 		The velocity of the plate p1 is on.
+	 *            The velocity of the plate p1 is on.
 	 * @param p2
-	 * 		Location of a center along a tectonic plate border: not the same tectonic plate as p1
+	 *            Location of a center along a tectonic plate border: not the same tectonic plate as p1
 	 * @param p2Velocity
-	 * 		The velocity of the plate p2 is on.
+	 *            The velocity of the plate p2 is on.
 	 */
 	private double calcLevelOfConvergence(Point p1, PolarCoordinate p1Velocity, Point p2, PolarCoordinate p2Velocity)
 	{
@@ -2407,9 +2417,9 @@ public class WorldGraph extends VoronoiGraph
 	 * Calculates the minimum distance (in radians) from angle a1 to angle a2. The result will be in the range [0, pi].
 	 *
 	 * @param a1
-	 * 		An angle in radians. This must be between 0 and 2*pi.
+	 *            An angle in radians. This must be between 0 and 2*pi.
 	 * @param a2
-	 * 		An angle in radians. This must be between 0 and 2*pi.
+	 *            An angle in radians. This must be between 0 and 2*pi.
 	 * @return
 	 */
 	private static double calcAngleDifference(double a1, double a2)
@@ -2495,9 +2505,10 @@ public class WorldGraph extends VoronoiGraph
 	}
 
 	/**
-	 * Greedily finds a path between the 2 given corners using Voronoi edges, skipping any neighbor corner for which {@code avoidCorner} or {@code avoidEdge} return true. The destination corner is
-	 * always reachable even if the predicate would exclude it, so a path can still terminate at an otherwise-avoided corner. If no path exists under these constraints, returns an empty set. Pass
-	 * {@code null} for {@code avoidCorner} to allow all corners. Pass null for {@code avoidEdge} to allow all corners.
+	 * Greedily finds a path between the 2 given corners using Voronoi edges, skipping any neighbor corner for which {@code avoidCorner} or
+	 * {@code avoidEdge} return true. The destination corner is always reachable even if the predicate would exclude it, so a path can still
+	 * terminate at an otherwise-avoided corner. If no path exists under these constraints, returns an empty set. Pass {@code null} for
+	 * {@code avoidCorner} to allow all corners. Pass null for {@code avoidEdge} to allow all corners.
 	 */
 	public Set<Edge> findPathGreedy(Corner start, Corner end, Predicate<Corner> avoidCorner, Predicate<Edge> avoidEdge)
 	{
@@ -2548,10 +2559,11 @@ public class WorldGraph extends VoronoiGraph
 	}
 
 	/**
-	 * Expands the frontier of a best-first search by enqueuing unvisited neighbors of {@code node}. Each adjacent corner is added to {@code frontier} unless it is already in {@code frontier} or
-	 * {@code explored}. Two predicates allow callers to prune the search: {@code avoidCorner} skips a neighbor corner if the predicate returns true for it, and {@code avoidEdge} skips a neighbor if
-	 * the Voronoi edge connecting it to {@code node} satisfies the predicate. Both predicates are ignored when the candidate corner equals {@code destination}, ensuring the search can always reach its
-	 * goal regardless of avoidance rules.
+	 * Expands the frontier of a best-first search by enqueuing unvisited neighbors of {@code node}. Each adjacent corner is added to
+	 * {@code frontier} unless it is already in {@code frontier} or {@code explored}. Two predicates allow callers to prune the search:
+	 * {@code avoidCorner} skips a neighbor corner if the predicate returns true for it, and {@code avoidEdge} skips a neighbor if the
+	 * Voronoi edge connecting it to {@code node} satisfies the predicate. Both predicates are ignored when the candidate corner equals
+	 * {@code destination}, ensuring the search can always reach its goal regardless of avoidance rules.
 	 */
 	private void expandFrontier(CornerSearchNode node, Set<CornerSearchNode> frontier, Set<CornerSearchNode> explored, Corner destination, Predicate<Corner> avoidCorner, Predicate<Edge> avoidEdge)
 	{
@@ -2601,7 +2613,7 @@ public class WorldGraph extends VoronoiGraph
 	 * Create path using back pointers in search does for Voronoi edges.
 	 *
 	 * @param end
-	 * 		The end of the search
+	 *            The end of the search
 	 * @return A path
 	 */
 	private Set<Edge> createPathFromBackPointers(CornerSearchNode end)
@@ -2656,12 +2668,12 @@ public class WorldGraph extends VoronoiGraph
 	 * Uses A* search to find the shortest path between the 2 given centers using Delaunay edges.
 	 *
 	 * @param start
-	 * 		Where to begin the search
+	 *            Where to begin the search
 	 * @param end
-	 * 		The goal
+	 *            The goal
 	 * @param calculateWeight
-	 * 		Finds the weight of an edge for determining whether to explore it. This should be the weight of it the Delaunay edge. Likely this will be calculated based on the distance from one end of the
-	 * 		Delaunay age
+	 *            Finds the weight of an edge for determining whether to explore it. This should be the weight of it the Delaunay edge.
+	 *            Likely this will be calculated based on the distance from one end of the Delaunay age
 	 * @return A path if one is found; null if the and is unreachable from the start.
 	 */
 	public List<Edge> findShortestPath(Center start, Center end, TriFunction<Edge, Center, Double, Double> calculateWeight)
@@ -2754,7 +2766,7 @@ public class WorldGraph extends VoronoiGraph
 	 * Create path using back pointers in search does for Voronoi edges.
 	 *
 	 * @param end
-	 * 		The end of the search
+	 *            The end of the search
 	 * @return A path
 	 */
 	private List<Edge> createPathFromBackPointers(CenterSearchNode end)
@@ -3277,16 +3289,18 @@ public class WorldGraph extends VoronoiGraph
 	}
 
 	/**
-	 * Finds all edges that the 'accept' function accepts which are touching centersToDraw or are connected to an edge that touches those centers.
+	 * Finds all edges that the 'accept' function accepts which are touching centersToDraw or are connected to an edge that touches those
+	 * centers.
 	 *
 	 * @param centersToDraw
-	 * 		Only edges either in/touching this collection or connected to edges that are in it will be returned.
+	 *            Only edges either in/touching this collection or connected to edges that are in it will be returned.
 	 * @param accept
-	 * 		Function to determine what edge is to include in results.
+	 *            Function to determine what edge is to include in results.
 	 * @param searchEntireGraph
-	 * 		When false, only centers in centersToDraw will be searched. When true, all centers will be searched. Passing this as false is much more performant, but can cause subtle differences in the
-	 * 		results depending on which centers are passed in. Setting this to true enforces that the lists of edges returned are ordered and found the same way for full redraws vs incremental for any
-	 * 		edges that touch or pass through centersToDraw.
+	 *            When false, only centers in centersToDraw will be searched. When true, all centers will be searched. Passing this as false
+	 *            is much more performant, but can cause subtle differences in the results depending on which centers are passed in. Setting
+	 *            this to true enforces that the lists of edges returned are ordered and found the same way for full redraws vs incremental
+	 *            for any edges that touch or pass through centersToDraw.
 	 * @return
 	 */
 	public List<List<Edge>> findEdges(Collection<Center> centersToDraw, Function<Edge, Boolean> accept, boolean searchEntireGraph)
@@ -3327,11 +3341,12 @@ public class WorldGraph extends VoronoiGraph
 	 * Given an edge to start at, this returns an ordered sequence of edges in the path that edge is included in.
 	 *
 	 * @param found
-	 * 		Edges that have already been searched, and so will not be searched again.
+	 *            Edges that have already been searched, and so will not be searched again.
 	 * @param start
-	 * 		Where to start to search. Not necessarily the start of the path we're searching for.
+	 *            Where to start to search. Not necessarily the start of the path we're searching for.
 	 * @param accept
-	 * 		Used to test whether edges are part of the desired path. If "edge" returns false for this function, then an empty list is returned.
+	 *            Used to test whether edges are part of the desired path. If "edge" returns false for this function, then an empty list is
+	 *            returned.
 	 * @return A list of edges forming a path.
 	 */
 	private List<Edge> findPath(Set<Edge> found, Edge start, Function<Edge, Boolean> accept)
@@ -3393,8 +3408,8 @@ public class WorldGraph extends VoronoiGraph
 	}
 
 	/**
-	 * Updates coast and corner water/ocean flags based on center.isWater flags. Call this after setting center.isWater and center.isLake manually (i.e., without going through the elevation-based
-	 * assignOceanCoastAndLand).
+	 * Updates coast and corner water/ocean flags based on center.isWater flags. Call this after setting center.isWater and center.isLake
+	 * manually (i.e., without going through the elevation-based assignOceanCoastAndLand).
 	 */
 	public void updateCoastAndCornerFlags()
 	{
@@ -3419,13 +3434,15 @@ public class WorldGraph extends VoronoiGraph
 	}
 
 	/**
-	 * Finds all rivers in the graph and returns them as ordered lists of edges. Each tributary that joins a main river is returned as a separate {@link River} object.
+	 * Finds all rivers in the graph and returns them as ordered lists of edges. Each tributary that joins a main river is returned as a
+	 * separate {@link GraphRiver} object.
 	 * <p>
-	 * Seeding is done from corners adjacent to drawable river edges (i.e. {@code edge.river > RIVERS_THIS_SIZE_OR_SMALLER_WILL_NOT_BE_DRAWN}), so both procedurally generated rivers and
-	 * user-drawn rivers are found.
+	 * Seeding is done from corners adjacent to drawable river edges (i.e.
+	 * {@code edge.river > RIVERS_THIS_SIZE_OR_SMALLER_WILL_NOT_BE_DRAWN}), so both procedurally generated rivers and user-drawn rivers are
+	 * found.
 	 * </p>
 	 */
-	public List<River> findRivers()
+	public List<GraphRiver> findRivers()
 	{
 		Set<Corner> riverCorners = new HashSet<>();
 		for (Edge e : edges)
@@ -3437,13 +3454,13 @@ public class WorldGraph extends VoronoiGraph
 			}
 		}
 
-		List<River> rivers = new ArrayList<>();
+		List<GraphRiver> rivers = new ArrayList<>();
 		Set<Corner> riversAlreadyFound = new HashSet<>();
 		for (Corner corner : riverCorners)
 		{
 			if (!riversAlreadyFound.contains(corner))
 			{
-				River river = findRiver(riversAlreadyFound, corner);
+				GraphRiver river = findRiver(riversAlreadyFound, corner);
 				riversAlreadyFound.addAll(river.getCorners());
 				rivers.add(river);
 			}
@@ -3451,12 +3468,12 @@ public class WorldGraph extends VoronoiGraph
 		return rivers;
 	}
 
-	private River findRiver(Set<Corner> riversAlreadyFound, Corner start)
+	private GraphRiver findRiver(Set<Corner> riversAlreadyFound, Corner start)
 	{
 		List<Edge> options = new ArrayList<>();
 		for (Edge e : start.protrudes)
 		{
-			if (e.river > River.RIVERS_THIS_SIZE_OR_SMALLER_WILL_NOT_BE_DRAWN && e.v0 != null && e.v1 != null)
+			if (e.river > GraphRiver.RIVERS_THIS_SIZE_OR_SMALLER_WILL_NOT_BE_DRAWN && e.v0 != null && e.v1 != null)
 			{
 				options.add(e);
 			}
@@ -3465,7 +3482,7 @@ public class WorldGraph extends VoronoiGraph
 		if (options.size() == 0)
 		{
 			assert false;
-			return new River();
+			return new GraphRiver();
 		}
 		else if (options.size() == 1)
 		{
@@ -3474,8 +3491,8 @@ public class WorldGraph extends VoronoiGraph
 		}
 		else
 		{
-			River river1 = followRiver(riversAlreadyFound, start, options.get(0).getOtherCorner(start));
-			River river2 = followRiver(riversAlreadyFound, start, options.get(1).getOtherCorner(start));
+			GraphRiver river1 = followRiver(riversAlreadyFound, start, options.get(0).getOtherCorner(start));
+			GraphRiver river2 = followRiver(riversAlreadyFound, start, options.get(1).getOtherCorner(start));
 			river2.reverse();
 			river2.addAll(river1);
 			return river2;
@@ -3483,22 +3500,22 @@ public class WorldGraph extends VoronoiGraph
 	}
 
 	/**
-	 * Searches along edges to find corners connected by a river. If the river forks, only the widest direction is followed; narrower tributaries are picked up as separate rivers by
-	 * {@link #findRivers()}.
+	 * Searches along edges to find corners connected by a river. If the river forks, only the widest direction is followed; narrower
+	 * tributaries are picked up as separate rivers by {@link #findRivers()}.
 	 *
 	 * @param last
 	 *            The search will not go in the direction of this corner.
 	 * @param head
 	 *            The search will go in the direction of this corner.
 	 */
-	private River followRiver(Set<Corner> riversAlreadyFound, Corner last, Corner head)
+	private GraphRiver followRiver(Set<Corner> riversAlreadyFound, Corner last, Corner head)
 	{
 		Set<Corner> visitedCorners = new HashSet<>();
 		visitedCorners.add(last);
 		return followRiver(riversAlreadyFound, last, head, visitedCorners);
 	}
 
-	private River followRiver(Set<Corner> riversAlreadyFound, Corner last, Corner head, Set<Corner> visitedCorners)
+	private GraphRiver followRiver(Set<Corner> riversAlreadyFound, Corner last, Corner head, Set<Corner> visitedCorners)
 	{
 		assert last != null;
 		assert head != null;
@@ -3506,7 +3523,7 @@ public class WorldGraph extends VoronoiGraph
 
 		visitedCorners.add(head);
 		Edge lastToHead = edgeWithCorners(last, head);
-		River result = new River();
+		GraphRiver result = new GraphRiver();
 		result.add(lastToHead);
 
 		List<Edge> riverEdges = new ArrayList<>();

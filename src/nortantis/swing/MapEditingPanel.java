@@ -227,7 +227,7 @@ public class MapEditingPanel extends UnscaledImagePanel
 		this.freeHandPreviewPath = path;
 	}
 
-	public void clearFreeHandPreviewPath()
+	public void clearFreeHandRoadPreviewPath()
 	{
 		this.freeHandPreviewPath = null;
 	}
@@ -1183,8 +1183,7 @@ public class MapEditingPanel extends UnscaledImagePanel
 		// Compute the offset from the click point to the edge(s) being moved,
 		// so dragging doesn't snap the edge to the cursor on the first move event.
 		double offsetX = 0, offsetY = 0;
-		if (selectionBoxRIAtDragStart != null && selectionBoxDraggedHandle != BoxSelectHandle.NONE
-				&& selectionBoxDraggedHandle != BoxSelectHandle.CENTER)
+		if (selectionBoxRIAtDragStart != null && selectionBoxDraggedHandle != BoxSelectHandle.NONE && selectionBoxDraggedHandle != BoxSelectHandle.CENTER)
 		{
 			double left = selectionBoxRIAtDragStart.x;
 			double top = selectionBoxRIAtDragStart.y;
@@ -1247,14 +1246,13 @@ public class MapEditingPanel extends UnscaledImagePanel
 	}
 
 	/**
-	 * Computes the new selection box rectangle given the handle being dragged and the current mouse position in RI coordinates. Applies aspect
-	 * ratio and bounds constraints. Returns null if the resulting box is degenerate.
+	 * Computes the new selection box rectangle given the handle being dragged and the current mouse position in RI coordinates. Applies
+	 * aspect ratio and bounds constraints. Returns null if the resulting box is degenerate.
 	 */
 	private nortantis.geom.Rectangle computeNewSelectionBox(BoxSelectHandle handle, nortantis.geom.Point currentRI)
 	{
 		// When aspect ratio is locked, edge handles act like CENTER (move the whole box).
-		if (selectionBoxLockedAspectRatio > 0 && handle != null && handle != BoxSelectHandle.NONE && handle != BoxSelectHandle.CENTER
-				&& !handle.isCorner())
+		if (selectionBoxLockedAspectRatio > 0 && handle != null && handle != BoxSelectHandle.NONE && handle != BoxSelectHandle.CENTER && !handle.isCorner())
 		{
 			handle = BoxSelectHandle.CENTER;
 		}
@@ -1279,8 +1277,8 @@ public class MapEditingPanel extends UnscaledImagePanel
 			// Translate the whole box; keep it fully inside the constraints.
 			double dx = currentRI.x - selectionBoxDragStartRI.x;
 			double dy = currentRI.y - selectionBoxDragStartRI.y;
-			nortantis.geom.Rectangle moved = new nortantis.geom.Rectangle(selectionBoxRIAtDragStart.x + dx, selectionBoxRIAtDragStart.y + dy,
-					selectionBoxRIAtDragStart.width, selectionBoxRIAtDragStart.height);
+			nortantis.geom.Rectangle moved = new nortantis.geom.Rectangle(selectionBoxRIAtDragStart.x + dx, selectionBoxRIAtDragStart.y + dy, selectionBoxRIAtDragStart.width,
+					selectionBoxRIAtDragStart.height);
 			return clampMoveToConstraints(moved);
 		}
 
@@ -1366,7 +1364,8 @@ public class MapEditingPanel extends UnscaledImagePanel
 	}
 
 	/**
-	 * Returns box unchanged if it is within selectionBoxMaxAspectRatio, or returns the current selectionBoxRI (no-op) if it would exceed it.
+	 * Returns box unchanged if it is within selectionBoxMaxAspectRatio, or returns the current selectionBoxRI (no-op) if it would exceed
+	 * it.
 	 */
 	private nortantis.geom.Rectangle clampToMaxAspectRatio(nortantis.geom.Rectangle box)
 	{
@@ -1418,6 +1417,7 @@ public class MapEditingPanel extends UnscaledImagePanel
 	}
 
 	final double boxSelectHandleSizePercent = 0.2;
+
 	private void drawSelectionBox(Graphics2D g2)
 	{
 		if (selectionBoxRI == null)
@@ -1438,8 +1438,7 @@ public class MapEditingPanel extends UnscaledImagePanel
 		// When the aspect ratio is locked, edge handles are disabled: treat them as CENTER for highlight purposes.
 		boolean aspectRatioLocked = selectionBoxLockedAspectRatio > 0;
 		BoxSelectHandle effectiveHandle = boxHandle;
-		if (aspectRatioLocked && effectiveHandle != null && !effectiveHandle.isCorner()
-				&& effectiveHandle != BoxSelectHandle.NONE && effectiveHandle != BoxSelectHandle.CENTER)
+		if (aspectRatioLocked && effectiveHandle != null && !effectiveHandle.isCorner() && effectiveHandle != BoxSelectHandle.NONE && effectiveHandle != BoxSelectHandle.CENTER)
 		{
 			effectiveHandle = BoxSelectHandle.CENTER;
 		}
@@ -1478,9 +1477,7 @@ public class MapEditingPanel extends UnscaledImagePanel
 
 		// Move icon centered in the box, only if it fits within the CENTER handle area
 		Rectangle centerHandle = getSelectionBoxHandleLocation(BoxSelectHandle.CENTER);
-		if (moveIconScaledSmall != null && centerHandle != null
-				&& moveIconScaledSmall.getWidth() <= centerHandle.width
-				&& moveIconScaledSmall.getHeight() <= centerHandle.height)
+		if (moveIconScaledSmall != null && centerHandle != null && moveIconScaledSmall.getWidth() <= centerHandle.width && moveIconScaledSmall.getHeight() <= centerHandle.height)
 		{
 			int iconX = centerHandle.x + (int) Math.round(centerHandle.width / 2.0) - (int) Math.round(moveIconScaledSmall.getWidth() / 2.0);
 			int iconY = centerHandle.y + (int) Math.round(centerHandle.height / 2.0) - (int) Math.round(moveIconScaledSmall.getHeight() / 2.0);
@@ -1586,7 +1583,7 @@ public class MapEditingPanel extends UnscaledImagePanel
 
 		public boolean isCorner()
 		{
-			return this == BoxSelectHandle.UPPER_LEFT || this == BoxSelectHandle.UPPER_RIGHT ||  this == BoxSelectHandle.LOWER_LEFT || this == BoxSelectHandle.LOWER_RIGHT;
+			return this == BoxSelectHandle.UPPER_LEFT || this == BoxSelectHandle.UPPER_RIGHT || this == BoxSelectHandle.LOWER_LEFT || this == BoxSelectHandle.LOWER_RIGHT;
 		}
 	}
 
@@ -1609,7 +1606,7 @@ public class MapEditingPanel extends UnscaledImagePanel
 		clearHighlightedPolylines();
 		clearRoadControlPointCircles();
 		clearHoveredRoadControlPoint();
-		clearFreeHandPreviewPath();
+		clearFreeHandRoadPreviewPath();
 		hideBrush();
 		clearHighlightedAreas();
 		clearProcessingAreas();

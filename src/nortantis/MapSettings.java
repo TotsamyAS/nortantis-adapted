@@ -38,7 +38,7 @@ public class MapSettings implements Serializable
 	/**
 	 * When updating this, also update installers/version.txt
 	 */
-	public static final String currentVersion = "3.18";
+	public static final String currentVersion = "3.19";
 	public static final String fileExtension = "nort";
 	public static final String fileExtensionWithDot = "." + fileExtension;
 	public static final double defaultPointPrecision = 2.0;
@@ -533,9 +533,16 @@ public class MapSettings implements Serializable
 			editsJson.put("centerEdits", centerEditsToJson());
 			editsJson.put("iconEdits", iconsToJson());
 			editsJson.put("regionEdits", regionEditsToJson());
-			editsJson.put("edgeEdits", edgeEditsToJson());
 			editsJson.put("hasIconEdits", edits.hasIconEdits);
 			editsJson.put("roads", roadsToJson());
+			editsJson.put("rivers", riversToJson());
+			editsJson.put("hasInitializedRivers", edits.hasInitializedRivers);
+			// Only write edgeEdits when migration hasn't happened yet (old file being converted). New files have hasInitializedRivers=true
+			// and empty edgeEdits, so this key is omitted to keep file size small.
+			if (!edits.hasInitializedRivers && !edits.edgeEdits.isEmpty())
+			{
+				editsJson.put("edgeEdits", edgeEditsToJson());
+			}
 		}
 
 		return root.toJSONString();
@@ -706,6 +713,60 @@ public class MapSettings implements Serializable
 	}
 
 	@SuppressWarnings("unchecked")
+	private JSONArray riversToJson()
+	{
+		JSONArray riversJson = new JSONArray();
+		if (edits.rivers == null || edits.rivers.isEmpty())
+		{
+			return riversJson;
+		}
+
+		for (River river : edits.rivers)
+		{
+			JSONObject riverObj = new JSONObject();
+			riverObj.put("seed", river.noisyEdgesSeed);
+
+			JSONArray pathJson = new JSONArray();
+			if (river.path != null)
+			{
+				for (Point point : river.path)
+				{
+					pathJson.add(point.toJson());
+				}
+			}
+			riverObj.put("path", pathJson);
+
+			JSONArray widthsJson = new JSONArray();
+			for (int widthLevel : river.segmentWidthLevels)
+			{
+				widthsJson.add((long) widthLevel);
+			}
+			riverObj.put("widths", widthsJson);
+
+			riversJson.add(riverObj);
+		}
+
+		return riversJson;
+	}
+
+	@SuppressWarnings("unchecked")
+	private JSONArray edgeEditsToJson()
+	{
+		JSONArray list = new JSONArray();
+		for (EdgeEdit eEdit : edits.edgeEdits.values())
+		{
+			if (eEdit.riverLevel > GraphRiver.RIVERS_THIS_SIZE_OR_SMALLER_WILL_NOT_BE_DRAWN)
+			{
+				JSONObject mpObj = new JSONObject();
+				mpObj.put("riverLevel", (long) eEdit.riverLevel);
+				mpObj.put("index", (long) eEdit.index);
+				list.add(mpObj);
+			}
+		}
+		return list;
+	}
+
+	@SuppressWarnings("unchecked")
 	private JSONArray regionEditsToJson()
 	{
 		JSONArray list = new JSONArray();
@@ -736,23 +797,6 @@ public class MapSettings implements Serializable
 		obj.put("type", enumToJson(stroke.type));
 		obj.put("width", stroke.width);
 		return obj;
-	}
-
-	@SuppressWarnings("unchecked")
-	private JSONArray edgeEditsToJson()
-	{
-		JSONArray list = new JSONArray();
-		for (EdgeEdit eEdit : edits.edgeEdits.values())
-		{
-			JSONObject mpObj = new JSONObject();
-			if (eEdit.riverLevel > River.RIVERS_THIS_SIZE_OR_SMALLER_WILL_NOT_BE_DRAWN)
-			{
-				mpObj.put("riverLevel", eEdit.riverLevel);
-				mpObj.put("index", eEdit.index);
-				list.add(mpObj);
-			}
-		}
-		return list;
 	}
 
 	private String colorToString(Color c)
@@ -1323,6 +1367,8 @@ public class MapSettings implements Serializable
 		edits.edgeEdits = parseEdgeEdits(editsJson);
 		edits.hasIconEdits = (boolean) editsJson.get("hasIconEdits");
 		edits.roads = parseRoads(editsJson);
+		edits.rivers = parseRivers(editsJson);
+		edits.hasInitializedRivers = editsJson.containsKey("hasInitializedRivers") && (boolean) editsJson.get("hasInitializedRivers");
 
 		runConversionForShadingAlphaChange();
 		runConversionForAllowingMultipleCityTypesInOneMap();
@@ -1925,6 +1971,62 @@ public class MapSettings implements Serializable
 		return roads;
 	}
 
+	private CopyOnWriteArrayList<River> parseRivers(JSONObject editsJson)
+	{
+		CopyOnWriteArrayList<River> rivers = new CopyOnWriteArrayList<>();
+
+		// Prefer new "rivers" key; fall back to legacy "freehandRivers" key.
+		String key = editsJson.containsKey("rivers") ? "rivers" : editsJson.containsKey("freehandRivers") ? "freehandRivers" : null;
+		if (key == null)
+		{
+			return rivers;
+		}
+
+		boolean isLegacy = key.equals("freehandRivers");
+
+		JSONArray list = (JSONArray) editsJson.get(key);
+		for (Object obj : list)
+		{
+			JSONObject riverJson = (JSONObject) obj;
+			long seed = riverJson.containsKey("seed") ? (long) riverJson.get("seed") : 0L;
+
+			List<Point> path = new ArrayList<>();
+			if (riverJson.containsKey("path"))
+			{
+				for (Object obj2 : (JSONArray) riverJson.get("path"))
+				{
+					path.add(Point.fromJSonValue((String) obj2));
+				}
+			}
+
+			List<Integer> widths;
+			if (isLegacy)
+			{
+				// Old format: single "width" slider value → convert to river-level scale for all segments.
+				int sliderWidth = riverJson.containsKey("width") ? (int) (long) riverJson.get("width") : 1;
+				int base = sliderWidth - 1;
+				int riverLevel = base * base * 2 + GraphRiver.RIVERS_THIS_SIZE_OR_SMALLER_WILL_NOT_BE_DRAWN + 1;
+				int segmentCount = Math.max(0, path.size() - 1);
+				widths = Collections.nCopies(segmentCount, riverLevel);
+			}
+			else
+			{
+				// New format: per-segment "widths" array.
+				widths = new ArrayList<>();
+				if (riverJson.containsKey("widths"))
+				{
+					for (Object w : (JSONArray) riverJson.get("widths"))
+					{
+						widths.add((int) (long) w);
+					}
+				}
+			}
+
+			rivers.add(new River(path, widths, seed));
+		}
+		return rivers;
+	}
+
 	private ConcurrentHashMap<Integer, RegionEdit> parseRegionEdits(JSONObject editsJson)
 	{
 		if (editsJson == null)
@@ -1975,6 +2077,10 @@ public class MapSettings implements Serializable
 		}
 		JSONArray array = (JSONArray) editsJson.get("edgeEdits");
 		Map<Integer, EdgeEdit> result = new TreeMap<>();
+		if (array == null)
+		{
+			return result;
+		}
 		for (Object obj : array)
 		{
 			JSONObject jsonObj = (JSONObject) obj;
@@ -1983,7 +2089,7 @@ public class MapSettings implements Serializable
 			{
 				riverLevel = (int) (long) jsonObj.get("riverLevel");
 			}
-			if (riverLevel <= River.RIVERS_THIS_SIZE_OR_SMALLER_WILL_NOT_BE_DRAWN)
+			if (riverLevel <= GraphRiver.RIVERS_THIS_SIZE_OR_SMALLER_WILL_NOT_BE_DRAWN)
 			{
 				continue;
 			}

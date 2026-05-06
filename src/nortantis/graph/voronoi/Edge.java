@@ -1,6 +1,6 @@
 package nortantis.graph.voronoi;
 
-import nortantis.River;
+import nortantis.GraphRiver;
 import nortantis.geom.Point;
 
 import java.util.Objects;
@@ -156,7 +156,7 @@ public class Edge implements Comparable<Edge>
 
 	public boolean isRiver()
 	{
-		return river > River.RIVERS_THIS_SIZE_OR_SMALLER_WILL_NOT_BE_DRAWN;
+		return river > GraphRiver.RIVERS_THIS_SIZE_OR_SMALLER_WILL_NOT_BE_DRAWN;
 	}
 
 	public boolean isRegionBoundary()

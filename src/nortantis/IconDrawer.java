@@ -763,9 +763,12 @@ public class IconDrawer
 
 	public static CenterIconType iconTypeToCenterIconType(IconType type)
 	{
-		if (type == IconType.mountains) return CenterIconType.Mountain;
-		if (type == IconType.hills) return CenterIconType.Hill;
-		if (type == IconType.sand) return CenterIconType.Dune;
+		if (type == IconType.mountains)
+			return CenterIconType.Mountain;
+		if (type == IconType.hills)
+			return CenterIconType.Hill;
+		if (type == IconType.sand)
+			return CenterIconType.Dune;
 		throw new IllegalArgumentException("Cannot convert IconType '" + type + "' to a CenterIconType.");
 	}
 

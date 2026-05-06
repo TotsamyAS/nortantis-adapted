@@ -550,7 +550,8 @@ public class IconsTool extends EditorTool
 			{
 				if (isSelected() && modeWidget.isEditMode() && !isMoving && !isScaling && SwingHelper.isCommandModifierKeyCode(e.getKeyCode()))
 				{
-					updater.doIfMapIsReadyForInteractions(() -> {
+					updater.doIfMapIsReadyForInteractions(() ->
+					{
 						if (e.getID() == KeyEvent.KEY_PRESSED)
 						{
 							addOrRemoveIconHoverHighlightSelection(true);

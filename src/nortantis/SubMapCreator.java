@@ -4,7 +4,6 @@ import nortantis.editor.CenterEdit;
 import nortantis.editor.CenterIcon;
 import nortantis.editor.CenterIconType;
 import nortantis.editor.CenterTrees;
-import nortantis.editor.EdgeEdit;
 import nortantis.editor.FreeIcon;
 import nortantis.editor.RegionEdit;
 import nortantis.editor.Road;
@@ -14,6 +13,8 @@ import nortantis.graph.voronoi.Center;
 import nortantis.graph.voronoi.Corner;
 import nortantis.graph.voronoi.Edge;
 import nortantis.platform.Font;
+import nortantis.GraphRiver;
+import nortantis.editor.River;
 import nortantis.swing.MapEdits;
 
 import nortantis.util.Tuple2;
@@ -23,7 +24,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Predicate;
 
 /**
- * Creates a new MapSettings for a zoomed-in sub-map of an existing map. The sub-map inherits the original map's land/water shape, region colors, text, icons, and roads within the selected area.
+ * Creates a new MapSettings for a zoomed-in sub-map of an existing map. The sub-map inherits the original map's land/water shape, region
+ * colors, text, icons, and roads within the selected area.
  */
 public class SubMapCreator
 {
@@ -31,19 +33,20 @@ public class SubMapCreator
 	 * Creates a new MapSettings for a sub-map of the given original map.
 	 *
 	 * @param originalSettings
-	 * 		The original map settings.
+	 *            The original map settings.
 	 * @param originalGraph
-	 * 		The original world graph (used for land/water lookup).
+	 *            The original world graph (used for land/water lookup).
 	 * @param selectionBoundsRI
-	 * 		The selection bounds in resolution-invariant (RI) coordinates.
+	 *            The selection bounds in resolution-invariant (RI) coordinates.
 	 * @param subMapWorldSize
-	 * 		The number of Voronoi polygons for the sub-map.
+	 *            The number of Voronoi polygons for the sub-map.
 	 * @param originalResolution
-	 * 		The resolution at which originalGraph was created (i.e. the display quality scale), used to convert resolution-invariant coordinates to originalGraph pixel coordinates.
+	 *            The resolution at which originalGraph was created (i.e. the display quality scale), used to convert resolution-invariant
+	 *            coordinates to originalGraph pixel coordinates.
 	 * @return New MapSettings for the sub-map, with pre-populated edits.
 	 */
-	public static MapSettings createSubMapSettings(MapSettings originalSettings, WorldGraph originalGraph, Rectangle selectionBoundsRI, int subMapWorldSize,
-			double originalResolution, long seed, boolean redistributeIcons)
+	public static MapSettings createSubMapSettings(MapSettings originalSettings, WorldGraph originalGraph, Rectangle selectionBoundsRI, int subMapWorldSize, double originalResolution, long seed,
+			boolean redistributeIcons)
 	{
 		// Compute new dimensions and world size.
 		// The largest dimension of the sub-map matches the largest dimension of the original map.
@@ -109,12 +112,15 @@ public class SubMapCreator
 		newSettings.edits = new MapEdits();
 
 		// Build the WorldGraph for the sub-map (to get center positions and count).
-		// We call this with createElevationBiomesLakesAndRegions=false because land/water and icon placement will be determined by the source map, not by a new, generated world.
+		// We call this with createElevationBiomesLakesAndRegions=false because land/water and icon placement will be determined by the
+		// source map, not by a new, generated world.
 		// This gives us the same Voronoi structure MapCreator will use when rendering (same seed, same params).
 		WorldGraph newGraph = MapCreator.createGraph(newSettings, false);
 
 		// For each new center, use majority/plurality voting to assign water/lake/region.
 		MapEdits newEdits = new MapEdits();
+		// Rivers are populated directly by transferRivers; prevent MapCreator from re-initializing them from the new graph.
+		newEdits.hasInitializedRivers = true;
 		Map<Integer, List<Integer>> originalRegionToNewCenters = buildCenterEdits(newGraph, originalGraph, originalSettings.edits, selectionBoundsRI, originalResolution, newEdits);
 
 		// Propagate coast/corner flags now that isWater/isLake are set on all centers.
@@ -129,7 +135,7 @@ public class SubMapCreator
 
 		transferRegionEdits(originalGraph, originalSettings.edits, originalRegionToNewCenters, newEdits);
 
-		transferRivers(originalGraph, originalSettings.edits, newGraph, selectionBoundsRI, newEdits, originalResolution);
+		transferRivers(originalGraph, originalSettings.edits, newGraph, selectionBoundsRI, newEdits, originalResolution, redistributeIcons, newGenWidth, newGenHeight);
 
 		transferText(originalSettings.edits, selectionBoundsRI, newEdits, newGenWidth, newGenHeight, fontScale);
 
@@ -198,8 +204,9 @@ public class SubMapCreator
 	}
 
 	/**
-	 * For each center in {@code newGraph}, samples its loc and all Voronoi corners in original-graph space and uses majority/plurality voting to assign water, lake, and region. Populates
-	 * {@code newEdits.centerEdits} and mutates {@code newCenter.isWater} / {@code newCenter.isLake} (required before {@code updateCoastAndCornerFlags}).
+	 * For each center in {@code newGraph}, samples its loc and all Voronoi corners in original-graph space and uses majority/plurality
+	 * voting to assign water, lake, and region. Populates {@code newEdits.centerEdits} and mutates {@code newCenter.isWater} /
+	 * {@code newCenter.isLake} (required before {@code updateCoastAndCornerFlags}).
 	 *
 	 * @return A map from original region ID to the list of new center indices assigned to that region.
 	 */
@@ -284,8 +291,8 @@ public class SubMapCreator
 	}
 
 	/**
-	 * Transfers free icons from the original edits into {@code newEdits}. Cities and decorations are always copied by position. Mountains, hills, sand, and trees are either redistributed by center
-	 * (if {@code redistributeIcons}) or copied by position.
+	 * Transfers free icons from the original edits into {@code newEdits}. Cities and decorations are always copied by position. Mountains,
+	 * hills, sand, and trees are either redistributed by center (if {@code redistributeIcons}) or copied by position.
 	 */
 	private static void transferFreeIcons(MapEdits originalEdits, WorldGraph originalGraph, WorldGraph newGraph, Rectangle selectionBoundsRI, double originalResolution, MapEdits newEdits,
 			int newGenWidth, int newGenHeight, boolean redistributeIcons, long seed)
@@ -311,9 +318,8 @@ public class SubMapCreator
 						newCenterIndex = nearestNewCenter.index;
 					}
 				}
-				newEdits.freeIcons.addOrReplace(
-						new FreeIcon(newLoc, icon.scale, icon.type, icon.artPack, icon.groupId, icon.iconIndex, icon.iconName, newCenterIndex, icon.density, icon.fillColor, icon.filterColor,
-								icon.maximizeOpacity, icon.fillWithColor, icon.originalScale));
+				newEdits.freeIcons.addOrReplace(new FreeIcon(newLoc, icon.scale, icon.type, icon.artPack, icon.groupId, icon.iconIndex, icon.iconName, newCenterIndex, icon.density, icon.fillColor,
+						icon.filterColor, icon.maximizeOpacity, icon.fillWithColor, icon.originalScale));
 			}
 		}
 
@@ -334,9 +340,8 @@ public class SubMapCreator
 				if (selectionBoundsRI.containsOrOverlaps(icon.locationResolutionInvariant))
 				{
 					Point newLoc = transformRIPoint(icon.locationResolutionInvariant, selectionBoundsRI, newGenWidth, newGenHeight);
-					newEdits.freeIcons.addOrReplace(
-							new FreeIcon(newLoc, icon.scale, icon.type, icon.artPack, icon.groupId, icon.iconIndex, icon.iconName, null, icon.density, icon.fillColor, icon.filterColor,
-									icon.maximizeOpacity, icon.fillWithColor, icon.originalScale));
+					newEdits.freeIcons.addOrReplace(new FreeIcon(newLoc, icon.scale, icon.type, icon.artPack, icon.groupId, icon.iconIndex, icon.iconName, null, icon.density, icon.fillColor,
+							icon.filterColor, icon.maximizeOpacity, icon.fillWithColor, icon.originalScale));
 				}
 			}
 		}
@@ -347,20 +352,20 @@ public class SubMapCreator
 	 * <p>
 	 * <b>Non-tree icons (mountains, hills, sand)</b> use a two-step approach:
 	 * <ol>
-	 * <li>Direct mapping: each original icon within the selection is placed at the nearest new center as a CenterIcon, so that
-	 * IconDrawer will correctly compute position and scale for the new graph during rendering.</li>
+	 * <li>Direct mapping: each original icon within the selection is placed at the nearest new center as a CenterIcon, so that IconDrawer
+	 * will correctly compute position and scale for the new graph during rendering.</li>
 	 * <li>Zoom-in expansion: for new centers that still have no icon after step 1, the new center's loc is mapped back to the original
-	 * graph to check if that original center had an icon. If so, a CenterIcon with a random iconIndex is placed. This adds extra icons
-	 * when the sub-map has more polygons than the original segment, preserving per-polygon density.</li>
+	 * graph to check if that original center had an icon. If so, a CenterIcon with a random iconIndex is placed. This adds extra icons when
+	 * the sub-map has more polygons than the original segment, preserving per-polygon density.</li>
 	 * </ol>
 	 * Centers that already have a non-tree icon (e.g. a city placed earlier) are always skipped.
 	 * </p>
 	 * <p>
 	 * <b>Trees</b>: for each new center, the original center at its loc is found. If that original center has a {@code CenterTrees}
 	 * (including dormant ones), it is copied to the new center with a fresh random seed. If there is no {@code CenterTrees} but the
-	 * original center has visible tree FreeIcons, a {@code CenterTrees} is derived from those icons. Direct loc mapping naturally
-	 * preserves density at any zoom level: many new centers that map to the same original tree center each receive their own
-	 * {@code CenterTrees}, and IconDrawer handles per-polygon placement during rendering.
+	 * original center has visible tree FreeIcons, a {@code CenterTrees} is derived from those icons. Direct loc mapping naturally preserves
+	 * density at any zoom level: many new centers that map to the same original tree center each receive their own {@code CenterTrees}, and
+	 * IconDrawer handles per-polygon placement during rendering.
 	 * </p>
 	 */
 	private static void redistributeIconsByCenter(WorldGraph originalGraph, MapEdits originalEdits, WorldGraph newGraph, Rectangle selectionBoundsRI, double originalResolution, MapEdits newEdits,
@@ -561,35 +566,53 @@ public class SubMapCreator
 	}
 
 	/**
-	 * Transfers rivers from the original graph into the new graph's edge edits.
+	 * Transfers rivers from the original map into {@code newEdits.rivers}.
 	 * <p>
-	 * River edges are collected from EdgeEdits and reconstructed as ordered polylines (connected corner chains). Each edge in a polyline is transferred individually: its corners are converted to RI
-	 * space and clipped to the selection boundary using actual line intersection (so rivers exit the map at the correct position), then mapped to sub-map corners for a findPathGreedy call. River
-	 * levels are scaled up by the zoom factor and capped at {@link River#MAX_RIVER_LEVEL}.
+	 * When {@code redistributeIcons} is {@code false}, each river path is clipped to the selection bounds and transformed directly into
+	 * sub-map RI coordinates (same coordinate transform used for roads). When {@code redistributeIcons} is {@code true}, each river is
+	 * re-routed through the new graph using greedy pathfinding so that river paths align with the new polygon topology.
 	 * </p>
 	 */
-	private static void transferRivers(WorldGraph originalGraph, MapEdits originalEdits, WorldGraph newGraph, Rectangle selectionBoundsRI, MapEdits newEdits, double originalResolution)
+	private static void transferRivers(WorldGraph originalGraph, MapEdits originalEdits, WorldGraph newGraph, Rectangle selectionBoundsRI, MapEdits newEdits, double originalResolution,
+			boolean redistributeIcons, int newGenWidth, int newGenHeight)
 	{
-		List<River> rivers = originalGraph.findRivers();
-		if (rivers.isEmpty())
+		if (originalEdits.rivers.isEmpty())
 		{
 			return;
 		}
 
 		double riverLevelScale = computeRiverLevelScale(originalGraph, originalResolution, selectionBoundsRI, newGraph);
 
-		for (River river : rivers)
+		if (!redistributeIcons)
 		{
-			transferPolylineToSubMap(river.getOrderedCorners(), river.getEdges(), riverLevelScale, selectionBoundsRI, newGraph, originalEdits, newEdits, originalResolution);
+			for (River river : originalEdits.rivers)
+			{
+				for (River clippedRiver : clipRiverPath(river, selectionBoundsRI, newGenWidth, newGenHeight, riverLevelScale))
+				{
+					newEdits.rivers.add(clippedRiver);
+				}
+			}
+		}
+		else
+		{
+			for (River river : originalEdits.rivers)
+			{
+				River transferredRiver = transferPolylineToSubMap(river, riverLevelScale, selectionBoundsRI, newGraph, originalGraph, originalEdits, newEdits, originalResolution);
+				if (transferredRiver != null)
+				{
+					newEdits.rivers.add(transferredRiver);
+				}
+			}
 		}
 	}
 
 	/**
 	 * Computes a scale factor for river levels when transferring from the original graph to the sub-map.
 	 * <p>
-	 * Rivers should appear proportionally wider when zoomed in. Width ∝ sqrt(riverLevel), so scaling width by zoomFactor requires scaling level by zoomFactor². When the sub-map has higher polygon
-	 * density than a 1× equivalent (detailRatio > 1), rivers are widened less, matching the same attenuation used for font scaling in transferText. The floor of 1.0 ensures rivers are never narrower
-	 * in the sub-map than in the source.
+	 * Rivers should appear proportionally wider when zoomed in. Width ∝ sqrt(riverLevel), so scaling width by zoomFactor requires scaling
+	 * level by zoomFactor². When the sub-map has higher polygon density than a 1× equivalent (detailRatio > 1), rivers are widened less,
+	 * matching the same attenuation used for font scaling in transferText. The floor of 1.0 ensures rivers are never narrower in the
+	 * sub-map than in the source.
 	 * </p>
 	 */
 	private static double computeRiverLevelScale(WorldGraph originalGraph, double originalResolution, Rectangle selectionBoundsRI, WorldGraph newGraph)
@@ -611,11 +634,11 @@ public class SubMapCreator
 	}
 
 	/**
-	 * Transfers each edge of an ordered river polyline to the sub-map. Delegates endpoint computation to {@link #computeRiverSegments}, then routes each segment via {@link WorldGraph#findPathGreedy}
-	 * with per-segment finger pruning. A final {@link #simplifyToPath} pass removes cross-segment loops and branches; if the polyline has a gap from a failed routing it falls back to per-component
-	 * simplification so that each disconnected piece is also cleaned up.
+	 * Re-routes an original river through the new graph using greedy pathfinding. Each segment of the original river's RI path is clipped to
+	 * the selection bounds, mapped to new-graph corners, and routed via {@link WorldGraph#findPathGreedy}. A final {@link #simplifyToPath}
+	 * pass removes cross-segment loops and branches. Returns the resulting {@link River}, or {@code null} if no edges could be routed.
 	 */
-	private static void transferPolylineToSubMap(List<Corner> polylineCorners, List<Edge> polylineEdges, double riverLevelScale, Rectangle selectionBoundsRI, WorldGraph newGraph,
+	private static River transferPolylineToSubMap(River originalRiver, double riverLevelScale, Rectangle selectionBoundsRI, WorldGraph newGraph, WorldGraph originalGraph,
 			MapEdits originalEdits, MapEdits newEdits, double originalResolution)
 	{
 		// Avoid routing river paths along coastlines, lakeshores, or through water bodies.
@@ -624,7 +647,8 @@ public class SubMapCreator
 		// between adjacent coast corners.
 		Predicate<Corner> avoidCoastAndOcean = c -> c.isCoast || c.isOcean || c.isWater;
 
-		List<RiverSegment> segments = computeRiverSegments(polylineCorners, polylineEdges, riverLevelScale, selectionBoundsRI, newGraph, originalEdits, newEdits, originalResolution);
+		List<RiverSegment> segments = computeRiverSegments(originalRiver.path, originalRiver.segmentWidthLevels, riverLevelScale, selectionBoundsRI, newGraph, originalGraph, originalEdits,
+				newEdits, originalResolution);
 
 		// New-graph edges → their river level, accumulated across all source segments of this polyline.
 		Map<Edge, Integer> polylineEdgeLevels = new HashMap<>();
@@ -671,9 +695,9 @@ public class SubMapCreator
 				}
 			}
 
-					Predicate<Corner> avoidForSegment = avoidCoastAndOcean;
+			Predicate<Corner> avoidForSegment = avoidCoastAndOcean;
 			collectGreedyPathEdges(routeStart, routeEnd, segment.level(), newGraph, segmentEdgeLevels, avoidForSegment, avoidIncomingEdge);
-				pruneFingers(segmentEdgeLevels, routeStart, routeEnd);
+			pruneFingers(segmentEdgeLevels, routeStart, routeEnd);
 
 			if (segment.loopClosing())
 			{
@@ -700,37 +724,33 @@ public class SubMapCreator
 		simplifyToPath(polylineEdgeLevels, firstCorner, lastCorner);
 		loopClosingEdgeLevels.forEach((k, v) -> polylineEdgeLevels.merge(k, v, Math::max));
 
-		for (Map.Entry<Edge, Integer> entry : polylineEdgeLevels.entrySet())
-		{
-			newEdits.edgeEdits.put(entry.getKey().index, new EdgeEdit(entry.getKey().index, entry.getValue()));
-		}
+		return buildRiverFromEdgePath(polylineEdgeLevels, firstCorner, lastCorner, originalResolution);
 	}
 
 	/**
-	 * Computes the list of new-graph river segments to route for the given source polyline. Handles clipping of source edges to the selection bounds, boundary intersection for entering/exiting
-	 * segments, and selection of the appropriate new-graph corners (water-adjacent, border, or plain closest). Stops early — including the triggering segment — when the river exits the selection.
+	 * Computes the list of new-graph river segments to route for the given source polyline. The polyline is given as RI-space path points
+	 * (from an {@link River#path}) and per-segment width levels. Handles clipping of segments to the selection bounds, boundary
+	 * intersection for entering/exiting segments, and selection of the appropriate new-graph corners (water-adjacent, border, or plain
+	 * closest). Stops early — including the triggering segment — when the river exits the selection.
 	 */
-	private static List<RiverSegment> computeRiverSegments(List<Corner> polylineCorners, List<Edge> polylineEdges, double riverLevelScale, Rectangle selectionBoundsRI, WorldGraph newGraph,
-			MapEdits originalEdits, MapEdits newEdits, double originalResolution)
+	private static List<RiverSegment> computeRiverSegments(List<Point> riPath, List<Integer> widthLevels, double riverLevelScale, Rectangle selectionBoundsRI, WorldGraph newGraph,
+			WorldGraph originalGraph, MapEdits originalEdits, MapEdits newEdits, double originalResolution)
 	{
 		List<RiverSegment> segments = new ArrayList<>();
-		// Tracks source corner indexes (not new-graph corners) of each segment's c0 so that loop
-		// detection uses source identity. Two distinct source corners that happen to map to the
-		// same new-graph corner in a narrow area would otherwise cause a false positive.
-		Set<Integer> sourceC0Indexes = new HashSet<>();
-		for (int i = 0; i < polylineEdges.size(); i++)
+		// Tracks which path indexes were used as c0 so that loop detection uses source path identity.
+		Set<Integer> sourceC0PathIndexes = new HashSet<>();
+		int numEdges = riPath.size() - 1;
+		for (int i = 0; i < numEdges; i++)
 		{
-			int edgeLevel = polylineEdges.get(i).river;
+			int edgeLevel = i < widthLevels.size() ? widthLevels.get(i) : 0;
 			if (edgeLevel <= 0)
 				continue;
 
-			Corner sourceV0 = polylineCorners.get(i);
-			Corner sourceV1 = polylineCorners.get(i + 1);
-			Point sourceV0RI = new Point(sourceV0.loc.x / originalResolution, sourceV0.loc.y / originalResolution);
-			Point sourceV1RI = new Point(sourceV1.loc.x / originalResolution, sourceV1.loc.y / originalResolution);
+			Point sourceV0RI = riPath.get(i);
+			Point sourceV1RI = riPath.get(i + 1);
 			boolean v0Inside = selectionBoundsRI.contains(sourceV0RI.x, sourceV0RI.y);
 			boolean v1Inside = selectionBoundsRI.contains(sourceV1RI.x, sourceV1RI.y);
-			int scaledLevel = Math.min(River.MAX_RIVER_LEVEL, (int) Math.round(edgeLevel * riverLevelScale));
+			int scaledLevel = Math.min(GraphRiver.MAX_RIVER_LEVEL, (int) Math.round(edgeLevel * riverLevelScale));
 
 			if (!v0Inside && !v1Inside)
 			{
@@ -740,12 +760,11 @@ public class SubMapCreator
 				{
 					Corner c0 = riToNewCorner(through.get().getFirst(), selectionBoundsRI, newGraph);
 					Corner c1 = riToNewCorner(through.get().getSecond(), selectionBoundsRI, newGraph);
-					if (c0 != null && c1 != null && !c0.equals(c1)
-						&& !isNewCornerAdjacentToWater(c0, newEdits) && !isNewCornerAdjacentToWater(c1, newEdits))
+					if (c0 != null && c1 != null && !c0.equals(c1) && !isNewCornerAdjacentToWater(c0, newEdits) && !isNewCornerAdjacentToWater(c1, newEdits))
 					{
-						boolean loopDetected = sourceC0Indexes.contains(sourceV1.index);
+						boolean loopDetected = sourceC0PathIndexes.contains(i + 1);
 						segments.add(new RiverSegment(c0, c1, scaledLevel, loopDetected));
-						sourceC0Indexes.add(sourceV0.index);
+						sourceC0PathIndexes.add(i);
 						if (loopDetected)
 							break;
 					}
@@ -777,7 +796,7 @@ public class SubMapCreator
 				effectiveV1 = sourceV1RI;
 			}
 
-			boolean c0WaterAdjacentIntentional = i == 0 && v0Inside && isSourceCornerAdjacentToWater(sourceV0, originalEdits);
+			boolean c0WaterAdjacentIntentional = i == 0 && v0Inside && isRIPointAdjacentToWater(sourceV0RI, originalGraph, originalEdits, originalResolution);
 			Corner c0;
 			if (c0WaterAdjacentIntentional)
 			{
@@ -790,7 +809,7 @@ public class SubMapCreator
 				c0 = riToNewCorner(effectiveV0, selectionBoundsRI, newGraph);
 			}
 
-			boolean c1WaterAdjacentIntentional = stopAfter || (i == polylineEdges.size() - 1 && isSourceCornerAdjacentToWater(sourceV1, originalEdits));
+			boolean c1WaterAdjacentIntentional = stopAfter || (i == numEdges - 1 && isRIPointAdjacentToWater(sourceV1RI, originalGraph, originalEdits, originalResolution));
 			Corner c1;
 			if (stopAfter)
 			{
@@ -798,7 +817,7 @@ public class SubMapCreator
 				// reaches the map edge rather than stopping at the nearest interior corner.
 				c1 = riToNewBorderCorner(effectiveV1, selectionBoundsRI, newGraph);
 			}
-			else if (i == polylineEdges.size() - 1 && isSourceCornerAdjacentToWater(sourceV1, originalEdits))
+			else if (i == numEdges - 1 && isRIPointAdjacentToWater(sourceV1RI, originalGraph, originalEdits, originalResolution))
 			{
 				// Terminal corner is adjacent to water: seek the closest water-adjacent new-graph
 				// corner so the river reliably terminates at a lake or ocean.
@@ -813,17 +832,17 @@ public class SubMapCreator
 			// greedy search avoids coast/ocean/water corners and cannot route to or from such a
 			// corner, so the segment would contribute nothing. Discard it so the routing chain
 			// flows through without this broken waypoint. However, if the corresponding source
-			// corner was itself adjacent to water, the new-graph corner landing near water is
+			// path point was itself adjacent to water, the new-graph corner landing near water is
 			// expected (river approaching the ocean), so keep the segment in that case.
 			if (c0 != null && !c0WaterAdjacentIntentional && !c1WaterAdjacentIntentional && isNewCornerAdjacentToWater(c0, newEdits)
-					&& !isSourceCornerAdjacentToWater(sourceV0, originalEdits))
+					&& !isRIPointAdjacentToWater(sourceV0RI, originalGraph, originalEdits, originalResolution))
 			{
 				if (stopAfter)
 					break;
 				continue;
 			}
 			if (c1 != null && !c1WaterAdjacentIntentional && isNewCornerAdjacentToWater(c1, newEdits)
-					&& !isSourceCornerAdjacentToWater(sourceV1, originalEdits))
+					&& !isRIPointAdjacentToWater(sourceV1RI, originalGraph, originalEdits, originalResolution))
 			{
 				if (stopAfter)
 					break;
@@ -832,9 +851,9 @@ public class SubMapCreator
 
 			if (c0 != null && c1 != null && !c0.equals(c1))
 			{
-				boolean loopDetected = sourceC0Indexes.contains(sourceV1.index);
+				boolean loopDetected = sourceC0PathIndexes.contains(i + 1);
 				segments.add(new RiverSegment(c0, c1, scaledLevel, loopDetected));
-				sourceC0Indexes.add(sourceV0.index);
+				sourceC0PathIndexes.add(i);
 				if (stopAfter || loopDetected)
 					break;
 			}
@@ -845,8 +864,9 @@ public class SubMapCreator
 	}
 
 	/**
-	 * Runs findPathGreedy between c0 and c1, merging all result edges into edgeLevels (keeping the max level if an edge is already present). {@code avoidCorner} is forwarded to
-	 * {@link WorldGraph#findPathGreedy(Corner, Corner, Predicate, Predicate)} to exclude unwanted corners during the search; pass {@code null} to allow all corners.
+	 * Runs findPathGreedy between c0 and c1, merging all result edges into edgeLevels (keeping the max level if an edge is already
+	 * present). {@code avoidCorner} is forwarded to {@link WorldGraph#findPathGreedy(Corner, Corner, Predicate, Predicate)} to exclude
+	 * unwanted corners during the search; pass {@code null} to allow all corners.
 	 */
 	private static void collectGreedyPathEdges(Corner c0, Corner c1, int scaledLevel, WorldGraph newGraph, Map<Edge, Integer> edgeLevels, Predicate<Corner> avoidCorner, Predicate<Edge> avoidEdge)
 	{
@@ -869,7 +889,8 @@ public class SubMapCreator
 	}
 
 	/**
-	 * Iteratively removes edges whose one endpoint has degree 1 in edgeLevels and is not startCorner or endCorner. This prunes finger branches without touching valid river endpoints or loops.
+	 * Iteratively removes edges whose one endpoint has degree 1 in edgeLevels and is not startCorner or endCorner. This prunes finger
+	 * branches without touching valid river endpoints or loops.
 	 */
 	private static void pruneFingers(Map<Edge, Integer> edgeLevels, Corner startCorner, Corner endCorner)
 	{
@@ -890,7 +911,7 @@ public class SubMapCreator
 			{
 				if (entry.getValue() == 1 && !entry.getKey().equals(startCorner) && !entry.getKey().equals(endCorner))
 				{
-					for (Iterator<Edge> it = edgeLevels.keySet().iterator(); it.hasNext(); )
+					for (Iterator<Edge> it = edgeLevels.keySet().iterator(); it.hasNext();)
 					{
 						Edge e = it.next();
 						if ((e.v0 != null && e.v0.equals(entry.getKey())) || (e.v1 != null && e.v1.equals(entry.getKey())))
@@ -909,9 +930,10 @@ public class SubMapCreator
 
 
 	/**
-	 * Reduces {@code edgeLevels} to a simple path from {@code start} to {@code end} by BFS within the edgeLevels subgraph, discarding any loops or dangling branches that {@link #pruneFingers}
-	 * cannot detect. If {@code start} cannot reach {@code end} — which should not happen after the segment-chaining fix in {@link #transferPolylineToSubMap} but is handled defensively — leaves
-	 * {@code edgeLevels} unchanged.
+	 * Reduces {@code edgeLevels} to a simple path from {@code start} to {@code end} by BFS within the edgeLevels subgraph, discarding any
+	 * loops or dangling branches that {@link #pruneFingers} cannot detect. If {@code start} cannot reach {@code end} — which should not
+	 * happen after the segment-chaining fix in {@link #transferPolylineToSubMap} but is handled defensively — leaves {@code edgeLevels}
+	 * unchanged.
 	 */
 	private static void simplifyToPath(Map<Edge, Integer> edgeLevels, Corner start, Corner end)
 	{
@@ -963,7 +985,141 @@ public class SubMapCreator
 	}
 
 	/**
-	 * Returns the corner on the opposite end of {@code e} from {@code corner}, or {@code null} if {@code corner} is not an endpoint of {@code e}.
+	 * Clips a river's RI-coordinate path to the selection rectangle, inserting intersection points at the boundary where segments cross it.
+	 * Returns a list of {@link River} sub-paths (each with ≥ 2 points) in new-map RI coordinates, with width levels scaled by
+	 * {@code riverLevelScale} and capped at {@link GraphRiver#MAX_RIVER_LEVEL}.
+	 */
+	private static List<River> clipRiverPath(River river, Rectangle selectionBounds, int newWidth, int newHeight, double riverLevelScale)
+	{
+		List<River> result = new ArrayList<>();
+		List<Point> path = river.path;
+		List<Integer> widths = river.segmentWidthLevels;
+		if (path.isEmpty())
+			return result;
+
+		List<Point> currentPath = new ArrayList<>();
+		List<Integer> currentWidths = new ArrayList<>();
+		boolean prevInside = selectionBounds.contains(path.get(0));
+		if (prevInside)
+			currentPath.add(transformRIPoint(path.get(0), selectionBounds, newWidth, newHeight));
+
+		for (int i = 1; i < path.size(); i++)
+		{
+			Point prev = path.get(i - 1);
+			Point curr = path.get(i);
+			int rawWidth = (i - 1) < widths.size() ? widths.get(i - 1) : 1;
+			int scaledWidth = Math.min(GraphRiver.MAX_RIVER_LEVEL, (int) Math.round(rawWidth * riverLevelScale));
+			boolean currInside = selectionBounds.contains(curr);
+
+			if (prevInside && currInside)
+			{
+				currentPath.add(transformRIPoint(curr, selectionBounds, newWidth, newHeight));
+				currentWidths.add(scaledWidth);
+			}
+			else if (prevInside && !currInside)
+			{
+				Point exit = segmentBoundaryIntersection(prev, curr, selectionBounds);
+				if (exit != null)
+				{
+					currentPath.add(transformRIPoint(exit, selectionBounds, newWidth, newHeight));
+					currentWidths.add(scaledWidth);
+				}
+				if (currentPath.size() >= 2)
+					result.add(new River(currentPath, currentWidths, river.noisyEdgesSeed));
+				currentPath = new ArrayList<>();
+				currentWidths = new ArrayList<>();
+			}
+			else if (!prevInside && currInside)
+			{
+				Point entry = segmentBoundaryIntersection(prev, curr, selectionBounds);
+				if (entry != null)
+					currentPath.add(transformRIPoint(entry, selectionBounds, newWidth, newHeight));
+				currentPath.add(transformRIPoint(curr, selectionBounds, newWidth, newHeight));
+				currentWidths.add(scaledWidth);
+			}
+			else
+			{
+				// Both outside: the segment may still pass through the rectangle.
+				Optional<Tuple2<Point, Point>> through = segmentThroughIntersections(prev, curr, selectionBounds);
+				if (through.isPresent())
+				{
+					List<Point> subPath = new ArrayList<>();
+					List<Integer> subWidths = new ArrayList<>();
+					subPath.add(transformRIPoint(through.get().getFirst(), selectionBounds, newWidth, newHeight));
+					subPath.add(transformRIPoint(through.get().getSecond(), selectionBounds, newWidth, newHeight));
+					subWidths.add(scaledWidth);
+					result.add(new River(subPath, subWidths, river.noisyEdgesSeed));
+				}
+			}
+			prevInside = currInside;
+		}
+
+		if (currentPath.size() >= 2)
+			result.add(new River(currentPath, currentWidths, river.noisyEdgesSeed));
+
+		return result;
+	}
+
+	/**
+	 * Walks the edge chain in {@code edgeLevels} from {@code start} to {@code end} and builds a {@link River} with RI-space path points
+	 * and per-segment width levels. Returns {@code null} if the path has fewer than 2 points. After {@link #simplifyToPath} the edge map is
+	 * a simple chain, so the visited-set walk will always reach {@code end} without backtracking.
+	 */
+	private static River buildRiverFromEdgePath(Map<Edge, Integer> edgeLevels, Corner start, Corner end, double resolution)
+	{
+		if (start == null || end == null || edgeLevels.isEmpty())
+			return null;
+
+		List<Point> path = new ArrayList<>();
+		List<Integer> widths = new ArrayList<>();
+		path.add(start.loc.mult(1.0 / resolution));
+
+		Corner current = start;
+		Set<Corner> visited = new HashSet<>();
+		visited.add(current);
+
+		while (!current.equals(end))
+		{
+			Corner next = null;
+			Edge nextEdge = null;
+			for (Edge e : edgeLevels.keySet())
+			{
+				Corner neighbor = edgeOtherCorner(e, current);
+				if (neighbor != null && !visited.contains(neighbor))
+				{
+					next = neighbor;
+					nextEdge = e;
+					break;
+				}
+			}
+			if (next == null)
+				break;
+			path.add(next.loc.mult(1.0 / resolution));
+			widths.add(edgeLevels.get(nextEdge));
+			visited.add(next);
+			current = next;
+		}
+
+		if (path.size() < 2)
+			return null;
+
+		return new River(path, widths);
+	}
+
+	/**
+	 * Returns true if the nearest original-graph corner to {@code riPoint} is adjacent to a water center (using originalEdits where
+	 * present, falling back to the center's own flag). Used to determine intentional water proximity at river endpoints.
+	 */
+	private static boolean isRIPointAdjacentToWater(Point riPoint, WorldGraph originalGraph, MapEdits originalEdits, double originalResolution)
+	{
+		Point pixelPoint = new Point(riPoint.x * originalResolution, riPoint.y * originalResolution);
+		Corner corner = originalGraph.findClosestCorner(pixelPoint);
+		return corner != null && isSourceCornerAdjacentToWater(corner, originalEdits);
+	}
+
+	/**
+	 * Returns the corner on the opposite end of {@code e} from {@code corner}, or {@code null} if {@code corner} is not an endpoint of
+	 * {@code e}.
 	 */
 	private static Corner edgeOtherCorner(Edge e, Corner corner)
 	{
@@ -975,8 +1131,9 @@ public class SubMapCreator
 	}
 
 	/**
-	 * Like {@link #riToNewCorner}, but searches for the closest border corner ({@code isBorder == true}) instead of the closest corner overall. Used when a river exits the selection boundary so that
-	 * the river reliably reaches the sub-map edge rather than stopping at an interior corner that happens to be nearest to the boundary intersection point.
+	 * Like {@link #riToNewCorner}, but searches for the closest border corner ({@code isBorder == true}) instead of the closest corner
+	 * overall. Used when a river exits the selection boundary so that the river reliably reaches the sub-map edge rather than stopping at
+	 * an interior corner that happens to be nearest to the boundary intersection point.
 	 */
 	private static Corner riToNewBorderCorner(Point riPoint, Rectangle selectionBoundsRI, WorldGraph newGraph)
 	{
@@ -988,7 +1145,8 @@ public class SubMapCreator
 
 
 	/**
-	 * Returns true if any center adjacent to {@code sourceCorner} is water (using originalEdits where present, otherwise the center's own flag).
+	 * Returns true if any center adjacent to {@code sourceCorner} is water (using originalEdits where present, otherwise the center's own
+	 * flag).
 	 */
 	private static boolean isSourceCornerAdjacentToWater(Corner sourceCorner, MapEdits originalEdits)
 	{
@@ -1022,7 +1180,8 @@ public class SubMapCreator
 	}
 
 	/**
-	 * Like {@link #riToNewCorner}, but prefers the closest water-adjacent (coast) corner so rivers reliably originate from or terminate at a shoreline. Falls back to the plain closest corner if no coast corner exists.
+	 * Like {@link #riToNewCorner}, but prefers the closest water-adjacent (coast) corner so rivers reliably originate from or terminate at
+	 * a shoreline. Falls back to the plain closest corner if no coast corner exists.
 	 */
 	private static Corner riToNewCornerAdjacentToWater(Point riPoint, Rectangle selectionBoundsRI, WorldGraph newGraph, MapEdits newEdits)
 	{
@@ -1056,7 +1215,8 @@ public class SubMapCreator
 	}
 
 	/**
-	 * Converts an RI-space point to new-graph pixel coordinates, clamping to the selection bounds as a safety net for floating-point edge cases from intersection calculations.
+	 * Converts an RI-space point to new-graph pixel coordinates, clamping to the selection bounds as a safety net for floating-point edge
+	 * cases from intersection calculations.
 	 */
 	private static Point riToNewGraphPoint(Point riPoint, Rectangle selectionBoundsRI, WorldGraph newGraph)
 	{
@@ -1068,7 +1228,8 @@ public class SubMapCreator
 	}
 
 	/**
-	 * Maps an RI-space point to the closest corner in the new graph. Clamps to the selection bounds as a safety net for floating-point edge cases from intersection calculations.
+	 * Maps an RI-space point to the closest corner in the new graph. Clamps to the selection bounds as a safety net for floating-point edge
+	 * cases from intersection calculations.
 	 */
 	private static Corner riToNewCorner(Point riPoint, Rectangle selectionBoundsRI, WorldGraph newGraph)
 	{
@@ -1097,8 +1258,8 @@ public class SubMapCreator
 	}
 
 	/**
-	 * Clips a road's RI-coordinate path to the selection rectangle, inserting intersection points at the boundary where segments cross it. Returns a list of sub-paths (each with >= 2 points) in
-	 * new-map RI coordinates, ready to become Road objects.
+	 * Clips a road's RI-coordinate path to the selection rectangle, inserting intersection points at the boundary where segments cross it.
+	 * Returns a list of sub-paths (each with >= 2 points) in new-map RI coordinates, ready to become Road objects.
 	 */
 	private static List<List<Point>> clipRoadPath(List<Point> path, Rectangle selectionBounds, int newWidth, int newHeight)
 	{
@@ -1173,8 +1334,8 @@ public class SubMapCreator
 	}
 
 	/**
-	 * When both endpoints of segment P1→P2 are outside {@code rect}, finds the two boundary intersection points (ordered from P1 to P2) if the segment passes through the rectangle. Returns empty if
-	 * there are fewer than two distinct intersections.
+	 * When both endpoints of segment P1→P2 are outside {@code rect}, finds the two boundary intersection points (ordered from P1 to P2) if
+	 * the segment passes through the rectangle. Returns empty if there are fewer than two distinct intersections.
 	 */
 	private static Optional<Tuple2<Point, Point>> segmentThroughIntersections(Point p1, Point p2, Rectangle rect)
 	{
@@ -1249,8 +1410,8 @@ public class SubMapCreator
 	}
 
 	/**
-	 * Returns the intersection point of segment P1→P2 with the boundary of {@code rect}. P1 and P2 should be on opposite sides (one inside, one outside). Returns null if no valid intersection is
-	 * found.
+	 * Returns the intersection point of segment P1→P2 with the boundary of {@code rect}. P1 and P2 should be on opposite sides (one inside,
+	 * one outside). Returns null if no valid intersection is found.
 	 */
 	private static Point segmentBoundaryIntersection(Point p1, Point p2, Rectangle rect)
 	{

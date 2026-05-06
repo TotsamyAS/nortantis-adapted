@@ -83,7 +83,7 @@ public class OverlayTool extends EditorTool
 		{
 			String text = Translation.get("overlayTool.toolIcon");
 			p.setColor(Color.black);
-			p.setFont(createToolIconFont((int)(19 * getBaseFontScale()), text));
+			p.setFont(createToolIconFont((int) (19 * getBaseFontScale()), text));
 			p.drawString(text, 4 + getXOffSetBasedOnLanguage(), 48);
 		}
 		return icon;
@@ -113,7 +113,7 @@ public class OverlayTool extends EditorTool
 	{
 		return switch (Translation.getEffectiveLocale().getLanguage())
 		{
-			case "en" -> OSHelper.isMac() ? -1: 0;
+			case "en" -> OSHelper.isMac() ? -1 : 0;
 			case "es" -> OSHelper.isMac() ? -2 : -2;
 			case "fr" -> OSHelper.isMac() ? -2 : 0;
 			case "pt" -> OSHelper.isMac() ? 3 : 5;

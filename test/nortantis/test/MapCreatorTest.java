@@ -42,8 +42,14 @@ public class MapCreatorTest
 
 		String[] mapSettingsFileNames = new File(Paths.get("unit test files", "map settings").toString()).list();
 
+		// Settings files whose tests apply a pre-processing modification before rendering; their expected maps must
+		// be created by the first run of generateAndCompare (with the modification applied), not here without it.
+		Set<String> settingsFilesWithModifications = new HashSet<>(Arrays.asList("iconReplacements.nort", "iconReplacementsWithMissingIconTypes.nort"));
+
 		for (String settingsFileName : mapSettingsFileNames)
 		{
+			if (settingsFilesWithModifications.contains(settingsFileName))
+				continue;
 			String expectedMapFilePath = MapTestUtil.getExpectedMapFilePath(settingsFileName, expectedMapsFolderName);
 			String filePath = Paths.get("unit test files", "map settings", settingsFileName).toString();
 			if (!new File(filePath).isDirectory() && !new File(expectedMapFilePath).exists())

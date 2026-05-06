@@ -116,9 +116,8 @@ public class MainWindow extends JFrame implements ILoggerTarget
 		{
 			try
 			{
-				JOptionPane.showMessageDialog(null,
-						"Unable to create GUI because of error: " + ex.getMessage() + "\nVersion: " + MapSettings.currentVersion + "\nOS Name: " + System.getProperty("os.name") + "\nStack trace: "
-								+ ExceptionUtils.getStackTrace(ex), "Error", JOptionPane.ERROR_MESSAGE);
+				JOptionPane.showMessageDialog(null, "Unable to create GUI because of error: " + ex.getMessage() + "\nVersion: " + MapSettings.currentVersion + "\nOS Name: "
+						+ System.getProperty("os.name") + "\nStack trace: " + ExceptionUtils.getStackTrace(ex), "Error", JOptionPane.ERROR_MESSAGE);
 			}
 			catch (Exception inner)
 			{
@@ -719,7 +718,7 @@ public class MainWindow extends JFrame implements ILoggerTarget
 		});
 
 		createSubMapMenuItem = new JMenuItem(Translation.get("menu.file.createSubMap"));
-		//fileMenu.add(createSubMapMenuItem); Disabled for version 3.18
+		fileMenu.add(createSubMapMenuItem);
 		createSubMapMenuItem.addActionListener(new ActionListener()
 		{
 			@Override
@@ -1128,8 +1127,8 @@ public class MainWindow extends JFrame implements ILoggerTarget
 		}
 		if (!UserPreferences.getInstance().hideThemeChangedMessage)
 		{
-			UserPreferences.getInstance().hideThemeChangedMessage = SwingHelper.showDismissibleMessage(Translation.get("theme.changed.title"),
-					Translation.get("theme.changed"), new Dimension(400, 100), JOptionPane.INFORMATION_MESSAGE, this);
+			UserPreferences.getInstance().hideThemeChangedMessage = SwingHelper.showDismissibleMessage(Translation.get("theme.changed.title"), Translation.get("theme.changed"),
+					new Dimension(400, 100), JOptionPane.INFORMATION_MESSAGE, this);
 			UserPreferences.getInstance().save();
 		}
 	}
@@ -1671,8 +1670,8 @@ public class MainWindow extends JFrame implements ILoggerTarget
 				nortantis.geom.Dimension size = new nortantis.geom.Dimension(mapEditingScrollPane.getSize().width - additionalWidthToRemoveIDontKnowWhereItsComingFrom,
 						mapEditingScrollPane.getSize().height - additionalWidthToRemoveIDontKnowWhereItsComingFrom);
 
-				nortantis.geom.Dimension fitted = ImageHelper.getInstance()
-						.fitDimensionsWithinBoundingBox(size, mapEditingPanel.mapFromMapCreator.getWidth(), mapEditingPanel.mapFromMapCreator.getHeight());
+				nortantis.geom.Dimension fitted = ImageHelper.getInstance().fitDimensionsWithinBoundingBox(size, mapEditingPanel.mapFromMapCreator.getWidth(),
+						mapEditingPanel.mapFromMapCreator.getHeight());
 				return (fitted.width / mapEditingPanel.mapFromMapCreator.getWidth()) * mapEditingPanel.osScale;
 			}
 			else
@@ -1771,14 +1770,7 @@ public class MainWindow extends JFrame implements ILoggerTarget
 			}
 
 			// Erase rivers
-			for (Edge edge : updater.mapParts.graph.edges)
-			{
-				EdgeEdit eEdit = edits.edgeEdits.get(edge.index);
-				if (eEdit != null)
-				{
-					eEdit.riverLevel = 0;
-				}
-			}
+			edits.rivers.clear();
 
 			// Erase free icons
 			edits.freeIcons.clear();

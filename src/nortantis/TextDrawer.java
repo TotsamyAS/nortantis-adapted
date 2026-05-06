@@ -225,8 +225,8 @@ public class TextDrawer
 					drawNameRotated(map, p, graph, name, locations, 0.0, true, null, TextType.Lake);
 				}
 
-				List<River> rivers = graph.findRivers();
-				for (River river : rivers)
+				List<GraphRiver> rivers = graph.findRivers();
+				for (GraphRiver river : rivers)
 				{
 					if (river.size() >= riverMinLength && river.getWidth() >= riverMinWidth)
 					{
