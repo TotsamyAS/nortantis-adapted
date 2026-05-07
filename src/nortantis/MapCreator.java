@@ -754,11 +754,22 @@ public class MapCreator implements WarningLogger
 				}
 			}
 
+			// Initialize rivers before generating text so river names can be placed.
+			List<River> rivers = Collections.emptyList();
+			if (settings.edits != null)
+			{
+				if (!settings.edits.hasInitializedRivers)
+				{
+					settings.edits.initializeRiversFromGraph(graph, settings.resolution);
+				}
+				rivers = settings.edits.rivers;
+			}
+
 			// Generate text regardless off settings.drawText because
 			// the editor might be generating the map without text
 			// now, but want to show the text later, so in that case we would
 			// want to generate the text but not show it.
-			textDrawer.generateText(graph, map, nameCreator, textBackground, mountainGroups, cities, graph.getGeneratedLakes());
+			textDrawer.generateText(graph, map, nameCreator, textBackground, mountainGroups, cities, graph.getGeneratedLakes(), rivers);
 		}
 
 		if (mapParts == null && textBackground != null)

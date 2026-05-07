@@ -28,15 +28,16 @@ public class RiverDrawer
 		this.resolutionScale = settings.resolution;
 		this.lineStyle = settings.lineStyle;
 		this.riverColor = settings.riverColor;
+		this.rivers = settings.edits != null && settings.edits.rivers != null ? settings.edits.rivers : Collections.emptyList();
+	}
 
-		if (settings.edits != null && settings.edits.rivers != null)
-		{
-			this.rivers = settings.edits.rivers;
-		}
-		else
-		{
-			this.rivers = Collections.emptyList();
-		}
+	public RiverDrawer(List<River> rivers, double resolutionScale, MapSettings.LineStyle lineStyle, WorldGraph graph)
+	{
+		this.graph = graph;
+		this.resolutionScale = resolutionScale;
+		this.lineStyle = lineStyle;
+		this.rivers = rivers != null ? rivers : Collections.emptyList();
+		this.riverColor = Color.black; // not used; callers of this constructor pass a color override to drawRivers(Painter, Color)
 	}
 
 	public void drawRivers(Image map, Rectangle drawBounds)
@@ -46,10 +47,8 @@ public class RiverDrawer
 			return;
 		}
 
-		// Amplitude of midpoint displacement for jagged rivers, in RI coordinates: half the mean Voronoi cell width.
 		double jaggedAmplitudeRI = graph.getMeanCenterWidth() / 2.0 / resolutionScale;
 		double minLengthRI = 2.0 / resolutionScale;
-
 		Rectangle drawBoundsRI = drawBounds == null ? null
 				: new Rectangle(drawBounds.x / resolutionScale, drawBounds.y / resolutionScale, drawBounds.width / resolutionScale, drawBounds.height / resolutionScale);
 
@@ -59,23 +58,40 @@ public class RiverDrawer
 			{
 				p.translate(-drawBounds.x, -drawBounds.y);
 			}
+			drawRiversWithPainter(p, drawBoundsRI, jaggedAmplitudeRI, minLengthRI, riverColor);
+		}
+	}
 
-			p.setColor(riverColor);
+	/**
+	 * Draws rivers onto an existing painter using the given color override. No translation or clipping is applied; the caller is responsible
+	 * for the painter's transform. Pass {@code null} for {@code colorOverride} to use the settings river color.
+	 */
+	public void drawRivers(Painter p, Color colorOverride)
+	{
+		if (rivers.isEmpty())
+		{
+			return;
+		}
 
-			for (River river : rivers)
+		double jaggedAmplitudeRI = graph.getMeanCenterWidth() / 2.0 / resolutionScale;
+		double minLengthRI = 2.0 / resolutionScale;
+		drawRiversWithPainter(p, null, jaggedAmplitudeRI, minLengthRI, colorOverride != null ? colorOverride : riverColor);
+	}
+
+	private void drawRiversWithPainter(Painter p, Rectangle drawBoundsRI, double jaggedAmplitudeRI, double minLengthRI, Color color)
+	{
+		p.setColor(color);
+		for (River river : rivers)
+		{
+			if (river.path.size() < 2)
 			{
-				if (river.path.size() < 2)
-				{
-					continue;
-				}
-
-				if (drawBoundsRI != null && !riverOverlapsRectangle(river, drawBoundsRI, jaggedAmplitudeRI))
-				{
-					continue;
-				}
-
-				drawRiver(p, river, jaggedAmplitudeRI, minLengthRI);
+				continue;
 			}
+			if (drawBoundsRI != null && !riverOverlapsRectangle(river, drawBoundsRI, jaggedAmplitudeRI))
+			{
+				continue;
+			}
+			drawRiver(p, river, jaggedAmplitudeRI, minLengthRI);
 		}
 	}
 
@@ -88,8 +104,8 @@ public class RiverDrawer
 		for (int i = 0; i < numSegments; i++)
 		{
 			float currentWidth = calcRiverStrokeWidth(widthLevels.get(i));
-			float fromWidth = i == 0 ? currentWidth : (calcRiverStrokeWidth(widthLevels.get(i - 1)) + currentWidth) / 2f;
-			float toWidth = i == numSegments - 1 ? currentWidth : (currentWidth + calcRiverStrokeWidth(widthLevels.get(i + 1))) / 2f;
+			float fromWidth = i == 0 ? currentWidth : calcRiverStrokeWidth(widthLevels.get(i - 1));
+			float toWidth = i == numSegments - 1 ? currentWidth : calcRiverStrokeWidth(widthLevels.get(i + 1));
 
 			List<Point> segmentPathPixels = buildSegmentPathPixels(river, i, controlPoints, jaggedAmplitudeRI, minLengthRI);
 			drawPathWithSmoothLineTransitions(p, segmentPathPixels, fromWidth, currentWidth, toWidth);
@@ -171,7 +187,7 @@ public class RiverDrawer
 
 	/**
 	 * Draws a path with stroke width that interpolates smoothly from {@code fromWidth} at the start to {@code currentWidth} at the midpoint
-	 * to {@code toWidth} at the end. Mirrors the behavior of {@code VoronoiGraph.drawPathWithSmoothLineTransitions} for polygon rivers.
+	 * to {@code toWidth} at the end. Mirrors {@code VoronoiGraph.drawPathWithSmoothLineTransitions} exactly.
 	 *
 	 * @param path
 	 *            Points in pixel coordinates.
@@ -210,7 +226,7 @@ public class RiverDrawer
 			pathSoFar.add(path.get(i));
 			if (width != previousWidth)
 			{
-				p.setBasicStroke(width);
+				p.setBasicStroke(previousWidth);
 				drawPolyline(p, pathSoFar);
 				pathSoFar = new ArrayList<>();
 				pathSoFar.add(path.get(i));
@@ -222,7 +238,7 @@ public class RiverDrawer
 
 		if (pathSoFar.size() > 1)
 		{
-			p.setBasicStroke(widthAtEnd);
+			p.setBasicStroke(previousWidth);
 			drawPolyline(p, pathSoFar);
 		}
 	}

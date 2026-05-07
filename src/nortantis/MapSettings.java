@@ -1975,16 +1975,12 @@ public class MapSettings implements Serializable
 	{
 		CopyOnWriteArrayList<River> rivers = new CopyOnWriteArrayList<>();
 
-		// Prefer new "rivers" key; fall back to legacy "freehandRivers" key.
-		String key = editsJson.containsKey("rivers") ? "rivers" : editsJson.containsKey("freehandRivers") ? "freehandRivers" : null;
-		if (key == null)
+		if (!editsJson.containsKey("rivers"))
 		{
 			return rivers;
 		}
 
-		boolean isLegacy = key.equals("freehandRivers");
-
-		JSONArray list = (JSONArray) editsJson.get(key);
+		JSONArray list = (JSONArray) editsJson.get("rivers");
 		for (Object obj : list)
 		{
 			JSONObject riverJson = (JSONObject) obj;
@@ -1999,26 +1995,12 @@ public class MapSettings implements Serializable
 				}
 			}
 
-			List<Integer> widths;
-			if (isLegacy)
+			List<Integer> widths = new ArrayList<>();
+			if (riverJson.containsKey("widths"))
 			{
-				// Old format: single "width" slider value → convert to river-level scale for all segments.
-				int sliderWidth = riverJson.containsKey("width") ? (int) (long) riverJson.get("width") : 1;
-				int base = sliderWidth - 1;
-				int riverLevel = base * base * 2 + GraphRiver.RIVERS_THIS_SIZE_OR_SMALLER_WILL_NOT_BE_DRAWN + 1;
-				int segmentCount = Math.max(0, path.size() - 1);
-				widths = Collections.nCopies(segmentCount, riverLevel);
-			}
-			else
-			{
-				// New format: per-segment "widths" array.
-				widths = new ArrayList<>();
-				if (riverJson.containsKey("widths"))
+				for (Object w : (JSONArray) riverJson.get("widths"))
 				{
-					for (Object w : (JSONArray) riverJson.get("widths"))
-					{
-						widths.add((int) (long) w);
-					}
+					widths.add((int) (long) w);
 				}
 			}
 

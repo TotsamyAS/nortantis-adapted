@@ -1,5 +1,6 @@
 package nortantis;
 
+import nortantis.editor.River;
 import nortantis.geom.Dimension;
 import nortantis.geom.Point;
 import nortantis.geom.Rectangle;
@@ -109,7 +110,7 @@ public class TextDrawer
 	}
 
 	public void generateText(WorldGraph graph, Image map, NameCreator nameCreator, Image landAndOceanBackground, List<Set<Center>> mountainGroups, List<IconDrawTask> cityDrawTasks,
-			List<Set<Center>> lakes)
+			List<Set<Center>> lakes, List<River> rivers)
 	{
 		this.landAndOceanBackground = landAndOceanBackground;
 
@@ -125,12 +126,13 @@ public class TextDrawer
 			mountainGroups = new ArrayList<>(0);
 		}
 
-		generateText(map, graph, nameCreator, mountainGroups, cityDrawTasks, lakes);
+		generateText(map, graph, nameCreator, mountainGroups, cityDrawTasks, lakes, rivers);
 
 		this.landAndOceanBackground = null;
 	}
 
-	private void generateText(Image map, WorldGraph graph, NameCreator nameCreator, List<Set<Center>> mountainGroups, List<IconDrawTask> cityDrawTasks, List<Set<Center>> lakes)
+	private void generateText(Image map, WorldGraph graph, NameCreator nameCreator, List<Set<Center>> mountainGroups, List<IconDrawTask> cityDrawTasks, List<Set<Center>> lakes,
+			List<River> rivers)
 	{
 		// First, generate text without drawing it. I originally drew text as I generated it, but it led to weird conditions where
 		// the generator placed text, and then the editor moves it slightly when it drew again. To fix this, I draw after generating
@@ -225,18 +227,17 @@ public class TextDrawer
 					drawNameRotated(map, p, graph, name, locations, 0.0, true, null, TextType.Lake);
 				}
 
-				List<GraphRiver> rivers = graph.findRivers();
-				for (GraphRiver river : rivers)
+				for (River river : rivers)
 				{
-					if (river.size() >= riverMinLength && river.getWidth() >= riverMinWidth)
+					int numSegments = river.path.size() - 1;
+					int maxWidth = river.segmentWidthLevels.isEmpty() ? 0 : Collections.max(river.segmentWidthLevels);
+					if (numSegments >= riverMinLength && maxWidth >= riverMinWidth)
 					{
-						RiverType riverType = river.getWidth() >= largeRiverWidth ? RiverType.Large : RiverType.Small;
-
-						Set<Point> locations = extractLocationsFromEdges(river.getSegmentForPlacingText());
+						RiverType riverType = maxWidth >= largeRiverWidth ? RiverType.Large : RiverType.Small;
+						Set<Point> locations = extractLocationsFromRiver(river);
 						drawNameRotated(map, p, graph, nameCreator.generateNameOfType(TextType.River, riverType, true), locations, riverNameRiseHeight * settings.resolution, true, null,
 								TextType.River);
 					}
-
 				}
 			}
 		}
@@ -568,19 +569,17 @@ public class TextDrawer
 		return result;
 	}
 
-	private Set<Point> extractLocationsFromEdges(Collection<Edge> edges)
+	private Set<Point> extractLocationsFromRiver(nortantis.editor.River river)
 	{
-		Set<Point> result = new TreeSet<Point>();
-		for (Edge e : edges)
+		final int maxPointsToInclude = 11;
+		List<Point> path = river.path;
+		int from = Math.max(0, (path.size() - maxPointsToInclude) / 2);
+		int to = Math.min(path.size(), from + maxPointsToInclude);
+		Set<Point> result = new TreeSet<>();
+		for (int i = from; i < to; i++)
 		{
-			if (e.v0 != null)
-			{
-				result.add(e.v0.loc);
-			}
-			if (e.v1 != null)
-			{
-				result.add(e.v1.loc);
-			}
+			Point ri = path.get(i);
+			result.add(new Point(ri.x * settings.resolution, ri.y * settings.resolution));
 		}
 		return result;
 	}

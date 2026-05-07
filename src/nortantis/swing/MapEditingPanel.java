@@ -42,6 +42,8 @@ public class MapEditingPanel extends UnscaledImagePanel
 	private Set<Center> highlightedCenters;
 	private Set<Center> selectedCenters;
 	private WorldGraph graph;
+	private List<nortantis.editor.River> rivers;
+	private MapSettings.LineStyle lineStyle;
 	private HighlightMode highlightMode;
 	private Collection<Edge> highlightedEdges;
 	private List<List<Point>> polylinesToHighlight;
@@ -520,6 +522,12 @@ public class MapEditingPanel extends UnscaledImagePanel
 		this.graph = graph;
 	}
 
+	public void setRivers(List<nortantis.editor.River> rivers, MapSettings.LineStyle lineStyle)
+	{
+		this.rivers = rivers;
+		this.lineStyle = lineStyle;
+	}
+
 	public void setCenterHighlightMode(HighlightMode mode)
 	{
 		this.highlightMode = mode;
@@ -924,12 +932,13 @@ public class MapEditingPanel extends UnscaledImagePanel
 	{
 		if (graph == null)
 		{
-			return (int) Math.round(13 * resolution);
+			assert false : "This should not happen because it would mean the roads are trying to draw without the graph.";
+			return (int) Math.round(10 * resolution);
 		}
 		// Scale with mean polygon width so circles stay proportional to polygon size as world size
 		// increases, matching the way icons scale. getMeanCenterWidth() is in graph pixels and already
 		// incorporates resolution, so no separate resolution factor is needed.
-		return (int) Math.round(graph.getMeanCenterWidth() * 0.25);
+		return (int) Math.round(graph.getMeanCenterWidth() * 0.14);
 	}
 
 	private void drawRoadControlPoints(Graphics2D g2)
@@ -1011,7 +1020,11 @@ public class MapEditingPanel extends UnscaledImagePanel
 
 	private void drawRivers(Graphics g)
 	{
-		graph.drawRivers(AwtFactory.wrap((Graphics2D) g), null, null, AwtBridge.fromAwtColor(waterHighlightColor));
+		if (graph == null || rivers == null)
+		{
+			return;
+		}
+		new RiverDrawer(rivers, resolution, lineStyle, graph).drawRivers(AwtFactory.wrap((Graphics2D) g), AwtBridge.fromAwtColor(waterHighlightColor));
 	}
 
 	public void setZoom(double zoom)

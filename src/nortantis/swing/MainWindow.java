@@ -564,6 +564,7 @@ public class MainWindow extends JFrame implements ILoggerTarget
 			{
 				mapEditingPanel.setBorderPadding(borderPaddingAsDrawn);
 				mapEditingPanel.setGraph(mapParts.graph);
+				mapEditingPanel.setRivers(edits == null ? null : edits.rivers, getSettingsFromGUI().lineStyle);
 				mapEditingPanel.setFreeIcons(edits == null ? null : edits.freeIcons);
 				mapEditingPanel.setIconDrawer(mapParts.iconDrawer);
 
