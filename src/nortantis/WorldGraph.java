@@ -1388,6 +1388,27 @@ public class WorldGraph extends VoronoiGraph
 	}
 
 	/**
+	 * Clears the center lookup table so it will be rebuilt on next use. Must be called after isWater or noisy edge state changes that
+	 * occurred before the table was built.
+	 */
+	public void resetCenterLookupTable()
+	{
+		synchronized (centerLookupLock)
+		{
+			if (cachedCenterLookupReader != null)
+			{
+				cachedCenterLookupReader.close();
+				cachedCenterLookupReader = null;
+			}
+			if (centerLookupTable != null)
+			{
+				centerLookupTable.close();
+				centerLookupTable = null;
+			}
+		}
+	}
+
+	/**
 	 * Updates the center lookup table, which is used to lookup which center draws at a given point. This needs to be done when a center
 	 * potentially changed its noisy edges, such as when it switched from inland to coast.
 	 *
