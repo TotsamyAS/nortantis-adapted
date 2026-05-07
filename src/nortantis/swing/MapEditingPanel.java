@@ -938,7 +938,7 @@ public class MapEditingPanel extends UnscaledImagePanel
 		// Scale with mean polygon width so circles stay proportional to polygon size as world size
 		// increases, matching the way icons scale. getMeanCenterWidth() is in graph pixels and already
 		// incorporates resolution, so no separate resolution factor is needed.
-		return (int) Math.round(graph.getMeanCenterWidth() * 0.14);
+		return (int) Math.round(graph.getMeanCenterWidth() * 0.16);
 	}
 
 	private void drawRoadControlPoints(Graphics2D g2)
