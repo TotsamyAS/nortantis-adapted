@@ -450,7 +450,7 @@ public class SwingHelper
 			ex.printStackTrace();
 			String message = Translation.get("common.unexpectedError");
 			Logger.printError(message, ex);
-			JOptionPane.showMessageDialog(parent, message + ex.getMessage(), Translation.get("common.error"), JOptionPane.ERROR_MESSAGE);
+			JOptionPane.showMessageDialog(parent, message + " " + ex.getMessage(), Translation.get("common.error"), JOptionPane.ERROR_MESSAGE);
 		}
 	}
 
