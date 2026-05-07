@@ -490,6 +490,8 @@ public class SubMapDialog
 			customRadio.setSelected(true);
 		}
 
+		matchSourceRadio.setToolTipText(Translation.get("subMapDialog.step2.matchSourceHelp"));
+		customRadio.setToolTipText(Translation.get("subMapDialog.step2.chooseHelp"));
 		controlOrganizer.addLabelAndComponentsHorizontalWithTopInset(Translation.get("subMapDialog.step2.numberOfPolygons.label"), "", Arrays.asList(matchSourceRadio, customRadio), topInset);
 
 		// Explanation shown when the selected area is too small to match the source detail level.
