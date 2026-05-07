@@ -1118,13 +1118,16 @@ public class LandWaterTool extends EditorTool
 		int sliderWidth = riverWidthSlider.getValue();
 		int base = sliderWidth - 1;
 		int riverLevel = base * base * 2 + GraphRiver.RIVERS_THIS_SIZE_OR_SMALLER_WILL_NOT_BE_DRAWN + 1;
-		River newRiver = new River(pathToCommit, riverLevel);
-		mainWindow.edits.rivers.add(newRiver);
+		List<River> newRivers = RiverDrawer.addFreeHandRiverFromPoints(pathToCommit, riverLevel, mainWindow.edits.rivers);
 
-		List<River> changedList = List.of(newRiver);
-		updater.addRiversToRedrawLowPriority(changedList, mainWindow.displayQualityScale);
+		if (newRivers.isEmpty())
+		{
+			return;
+		}
 
-		List<List<Point>> pathsForCenters = changedList.stream().map(r -> (List<Point>) r.path).collect(Collectors.toList());
+		updater.addRiversToRedrawLowPriority(newRivers, mainWindow.displayQualityScale);
+
+		List<List<Point>> pathsForCenters = newRivers.stream().map(r -> (List<Point>) r.path).collect(Collectors.toList());
 		updater.createAndShowMapIncrementalUsingCenters(getCentersTouchingRoadPoints(pathsForCenters));
 
 		updater.doWhenMapIsNotDrawing(() -> updater.createAndShowLowPriorityChanges());
@@ -1391,7 +1394,7 @@ public class LandWaterTool extends EditorTool
 			Set<Edge> river = filterOutOceanAndCoastEdges(updater.mapParts.graph.findPathGreedy(riverStart, end));
 			int base = (riverWidthSlider.getValue() - 1);
 			int riverLevel = base * base * 2 + GraphRiver.RIVERS_THIS_SIZE_OR_SMALLER_WILL_NOT_BE_DRAWN + 1;
-			List<River> newRivers = buildRiversFromEdgeSet(river, riverStart, riverLevel, mainWindow.displayQualityScale);
+			List<River> newRivers = RiverDrawer.addRiversFromEdgesInEditor(river, riverStart, riverLevel, mainWindow.displayQualityScale, mainWindow.edits.rivers);
 
 			if (polygonRiverSnapStart != null || polygonRiverSnapEnd != null)
 			{
@@ -1448,7 +1451,6 @@ public class LandWaterTool extends EditorTool
 				}
 			}
 
-			mainWindow.edits.rivers.addAll(newRivers);
 			riverStart = null;
 			polygonRiverSnapStart = null;
 			mapEditingPanel.clearHighlightedEdges();
@@ -1575,65 +1577,6 @@ public class LandWaterTool extends EditorTool
 	private Set<Edge> filterOutOceanAndCoastEdges(Set<Edge> edges)
 	{
 		return edges.stream().filter(e -> (e.d0 == null || !e.d0.isWater) && (e.d1 == null || !e.d1.isWater)).collect(Collectors.toSet());
-	}
-
-	/**
-	 * Builds one or more {@link River} objects from an unordered set of connected Voronoi edges, starting at {@code start}. If the edges
-	 * form a single connected chain, one River is returned. Gaps (due to edge filtering) produce additional Rivers.
-	 */
-	private List<River> buildRiversFromEdgeSet(Set<Edge> edgeSet, Corner start, int riverLevel, double resolutionScale)
-	{
-		List<River> result = new ArrayList<>();
-		if (edgeSet.isEmpty())
-		{
-			return result;
-		}
-
-		Set<Edge> remaining = new HashSet<>(edgeSet);
-		Corner current = start;
-		List<Point> currentPath = new ArrayList<>();
-		currentPath.add(current.loc.mult(1.0 / resolutionScale));
-
-		while (!remaining.isEmpty())
-		{
-			Edge next = null;
-			for (Edge edge : remaining)
-			{
-				if ((edge.v0 != null && edge.v0 == current) || (edge.v1 != null && edge.v1 == current))
-				{
-					next = edge;
-					break;
-				}
-			}
-
-			if (next == null)
-			{
-				// Gap: save current path and restart from an arbitrary remaining edge.
-				if (currentPath.size() >= 2)
-				{
-					result.add(new River(currentPath, riverLevel));
-				}
-				currentPath = new ArrayList<>();
-				Edge anyEdge = remaining.iterator().next();
-				current = anyEdge.v0 != null ? anyEdge.v0 : anyEdge.v1;
-				currentPath.add(current.loc.mult(1.0 / resolutionScale));
-			}
-			else
-			{
-				remaining.remove(next);
-				current = (next.v0 != null && next.v0 == current) ? next.v1 : next.v0;
-				if (current != null)
-				{
-					currentPath.add(current.loc.mult(1.0 / resolutionScale));
-				}
-			}
-		}
-
-		if (currentPath.size() >= 2)
-		{
-			result.add(new River(currentPath, riverLevel));
-		}
-		return result;
 	}
 
 	@Override

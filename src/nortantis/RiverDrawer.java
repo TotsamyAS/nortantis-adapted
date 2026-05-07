@@ -3,16 +3,21 @@ package nortantis;
 import nortantis.editor.River;
 import nortantis.geom.Point;
 import nortantis.geom.Rectangle;
+import nortantis.graph.voronoi.Corner;
+import nortantis.graph.voronoi.Edge;
 import nortantis.platform.Color;
 import nortantis.platform.DrawQuality;
 import nortantis.platform.Image;
 import nortantis.platform.Painter;
+import nortantis.util.OrderlessPair;
 import nortantis.util.Range;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
+import java.util.Set;
 
 public class RiverDrawer
 {
@@ -104,8 +109,12 @@ public class RiverDrawer
 		for (int i = 0; i < numSegments; i++)
 		{
 			float currentWidth = calcRiverStrokeWidth(widthLevels.get(i));
-			float fromWidth = i == 0 ? currentWidth : calcRiverStrokeWidth(widthLevels.get(i - 1));
-			float toWidth = i == numSegments - 1 ? currentWidth : calcRiverStrokeWidth(widthLevels.get(i + 1));
+			float fromWidth = i == 0
+					? findJunctionWidth(river, controlPoints.get(0), currentWidth)
+					: calcRiverStrokeWidth(widthLevels.get(i - 1));
+			float toWidth = i == numSegments - 1
+					? findJunctionWidth(river, controlPoints.get(numSegments), currentWidth)
+					: calcRiverStrokeWidth(widthLevels.get(i + 1));
 
 			List<Point> segmentPathPixels = buildSegmentPathPixels(river, i, controlPoints, jaggedAmplitudeRI, minLengthRI);
 			drawPathWithSmoothLineTransitions(p, segmentPathPixels, fromWidth, currentWidth, toWidth);
@@ -168,6 +177,31 @@ public class RiverDrawer
 		return (float) (resolutionScale * Math.sqrt(widthLevel * 0.5));
 	}
 
+	/**
+	 * Looks up the stroke width at the junction where {@code currentRiver} meets another river at {@code endpoint}. Returns the width of the
+	 * adjacent segment of the connected river with the largest widthLevel, or {@code defaultWidth} if no other river meets at that point.
+	 */
+	private float findJunctionWidth(River currentRiver, Point endpoint, float defaultWidth)
+	{
+		int maxWidthLevel = Integer.MIN_VALUE;
+		for (River other : rivers)
+		{
+			if (other == currentRiver || other.path.size() < 2 || other.segmentWidthLevels.isEmpty())
+			{
+				continue;
+			}
+			if (other.path.get(0).equals(endpoint))
+			{
+				maxWidthLevel = Math.max(maxWidthLevel, other.segmentWidthLevels.get(0));
+			}
+			else if (other.path.get(other.path.size() - 1).equals(endpoint))
+			{
+				maxWidthLevel = Math.max(maxWidthLevel, other.segmentWidthLevels.get(other.segmentWidthLevels.size() - 1));
+			}
+		}
+		return maxWidthLevel > Integer.MIN_VALUE ? calcRiverStrokeWidth(maxWidthLevel) : defaultWidth;
+	}
+
 	private boolean riverOverlapsRectangle(River river, Rectangle boundsRI, double jaggedAmplitudeRI)
 	{
 		Rectangle expandedBounds = new Rectangle(boundsRI.x - jaggedAmplitudeRI, boundsRI.y - jaggedAmplitudeRI, boundsRI.width + 2 * jaggedAmplitudeRI, boundsRI.height + 2 * jaggedAmplitudeRI);
@@ -226,7 +260,7 @@ public class RiverDrawer
 			pathSoFar.add(path.get(i));
 			if (width != previousWidth)
 			{
-				p.setBasicStroke(previousWidth);
+				p.setBasicStroke(width);
 				drawPolyline(p, pathSoFar);
 				pathSoFar = new ArrayList<>();
 				pathSoFar.add(path.get(i));
@@ -238,7 +272,7 @@ public class RiverDrawer
 
 		if (pathSoFar.size() > 1)
 		{
-			p.setBasicStroke(previousWidth);
+			p.setBasicStroke(widthAtEnd);
 			drawPolyline(p, pathSoFar);
 		}
 	}
@@ -301,5 +335,165 @@ public class RiverDrawer
 		subdivideInterior(a, displaced, subW, minLength, random, result);
 		result.add(displaced);
 		subdivideInterior(displaced, b, subW, minLength, random, result);
+	}
+
+	/**
+	 * Builds non-overlapping {@link River} objects from an unordered set of connected Voronoi edges, adds them to {@code rivers}, and returns
+	 * the added rivers. Edges whose corner-to-corner segment already appears in {@code rivers} are skipped, splitting the result into multiple
+	 * rivers if necessary. Analogous to {@link RoadDrawer#addRoadsFromEdgesInEditor}.
+	 */
+	public static List<River> addRiversFromEdgesInEditor(Set<Edge> edgeSet, Corner start, int riverLevel,
+			double resolutionScale, List<River> rivers)
+	{
+		Set<OrderlessPair<Point>> existingConnections = collectRiverConnections(rivers);
+		List<River> newRivers = buildRiversFromEdgeSet(edgeSet, start, riverLevel, resolutionScale, existingConnections);
+		rivers.addAll(newRivers);
+		return newRivers;
+	}
+
+	/**
+	 * Splits {@code pathRI} at any segments that already exist in {@code rivers}, adds the non-overlapping sub-rivers to {@code rivers}, and
+	 * returns the added rivers. Analogous to {@link RoadDrawer#addFreeHandRoadFromPoints}.
+	 */
+	public static List<River> addFreeHandRiverFromPoints(List<Point> pathRI, int riverLevel, List<River> rivers)
+	{
+		Set<OrderlessPair<Point>> existingConnections = collectRiverConnections(rivers);
+		List<River> newRivers = splitRiverPathAtOverlaps(pathRI, riverLevel, existingConnections);
+		rivers.addAll(newRivers);
+		return newRivers;
+	}
+
+	private static Set<OrderlessPair<Point>> collectRiverConnections(List<River> rivers)
+	{
+		Set<OrderlessPair<Point>> connections = new HashSet<>();
+		for (River river : rivers)
+		{
+			for (int i = 0; i < river.path.size() - 1; i++)
+			{
+				connections.add(new OrderlessPair<>(river.path.get(i), river.path.get(i + 1)));
+			}
+		}
+		return connections;
+	}
+
+	/**
+	 * Traverses {@code edgeSet} starting at {@code start}, building path(s) in RI coordinates. Edges whose corner pair already appears in
+	 * {@code existingConnections} are skipped (committing the current path and restarting from the far corner). New pairs are added to
+	 * {@code existingConnections} as they are consumed.
+	 */
+	private static List<River> buildRiversFromEdgeSet(Set<Edge> edgeSet, Corner start, int riverLevel,
+			double resolutionScale, Set<OrderlessPair<Point>> existingConnections)
+	{
+		List<River> result = new ArrayList<>();
+		if (edgeSet.isEmpty())
+		{
+			return result;
+		}
+
+		Set<Edge> remaining = new HashSet<>(edgeSet);
+		Corner current = start;
+		List<Point> currentPath = new ArrayList<>();
+		currentPath.add(current.loc.mult(1.0 / resolutionScale));
+
+		while (!remaining.isEmpty())
+		{
+			Edge next = null;
+			for (Edge edge : remaining)
+			{
+				if ((edge.v0 != null && edge.v0 == current) || (edge.v1 != null && edge.v1 == current))
+				{
+					next = edge;
+					break;
+				}
+			}
+
+			if (next == null)
+			{
+				// Gap: save current path and restart from an arbitrary remaining edge.
+				if (currentPath.size() >= 2)
+				{
+					result.add(new River(currentPath, riverLevel));
+				}
+				currentPath = new ArrayList<>();
+				Edge anyEdge = remaining.iterator().next();
+				current = anyEdge.v0 != null ? anyEdge.v0 : anyEdge.v1;
+				currentPath.add(current.loc.mult(1.0 / resolutionScale));
+			}
+			else
+			{
+				remaining.remove(next);
+				Corner nextCorner = (next.v0 != null && next.v0 == current) ? next.v1 : next.v0;
+				if (nextCorner != null)
+				{
+					Point currentPointRI = currentPath.get(currentPath.size() - 1);
+					Point nextPointRI = nextCorner.loc.mult(1.0 / resolutionScale);
+					OrderlessPair<Point> pair = new OrderlessPair<>(currentPointRI, nextPointRI);
+					if (existingConnections.contains(pair))
+					{
+						// Overlapping edge: commit current path and start fresh from nextCorner.
+						if (currentPath.size() >= 2)
+						{
+							result.add(new River(currentPath, riverLevel));
+						}
+						currentPath = new ArrayList<>();
+						currentPath.add(nextPointRI);
+					}
+					else
+					{
+						existingConnections.add(pair);
+						currentPath.add(nextPointRI);
+					}
+					current = nextCorner;
+				}
+				else
+				{
+					current = null;
+				}
+			}
+		}
+
+		if (currentPath.size() >= 2)
+		{
+			result.add(new River(currentPath, riverLevel));
+		}
+		return result;
+	}
+
+	private static List<River> splitRiverPathAtOverlaps(List<Point> path, int riverLevel,
+			Set<OrderlessPair<Point>> existingConnections)
+	{
+		List<River> result = new ArrayList<>();
+		if (path.isEmpty())
+		{
+			return result;
+		}
+		List<Point> currentPath = new ArrayList<>();
+		currentPath.add(path.get(0));
+		for (int i = 0; i < path.size() - 1; i++)
+		{
+			Point from = path.get(i);
+			Point to = path.get(i + 1);
+			OrderlessPair<Point> pair = new OrderlessPair<>(from, to);
+			if (existingConnections.contains(pair))
+			{
+				// Overlapping segment: commit current path without this segment and start fresh from 'to'.
+				if (currentPath.size() >= 2)
+				{
+					result.add(new River(currentPath, riverLevel));
+				}
+				currentPath = new ArrayList<>();
+				currentPath.add(to);
+			}
+			else
+			{
+				existingConnections.add(pair);
+				currentPath.add(to);
+			}
+		}
+		if (currentPath.size() >= 2)
+		{
+			result.add(new River(currentPath, riverLevel));
+		}
+		return result;
 	}
 }
