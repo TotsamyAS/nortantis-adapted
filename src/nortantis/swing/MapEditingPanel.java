@@ -181,12 +181,6 @@ public class MapEditingPanel extends UnscaledImagePanel
 		edgeTypeToHighlight = edgeType;
 	}
 
-	public void addHighlightedEdge(Edge edge, EdgeType edgeType)
-	{
-		highlightedEdges.add(edge);
-		edgeTypeToHighlight = edgeType;
-	}
-
 	public void clearHighlightedEdges()
 	{
 		highlightedEdges.clear();

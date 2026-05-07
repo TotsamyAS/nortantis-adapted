@@ -91,18 +91,6 @@ public class MapEdits implements Serializable
 		hasIconEdits = true;
 	}
 
-	public void initializeEdgeEdits(List<Edge> edges)
-	{
-		edgeEdits = new TreeMap<Integer, EdgeEdit>();
-		for (Edge edge : edges)
-		{
-			if (edge.river > 0)
-			{
-				edgeEdits.put(edge.index, new EdgeEdit(edge.index, edge.river));
-			}
-		}
-	}
-
 	/**
 	 * Extracts rivers from the graph and appends them to {@link #rivers}. Any rivers already in the list (e.g. loaded from an old save file)
 	 * are preserved. Sets {@link #hasInitializedRivers} to {@code true}.
