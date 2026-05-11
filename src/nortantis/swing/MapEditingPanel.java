@@ -198,7 +198,7 @@ public class MapEditingPanel extends UnscaledImagePanel
 		polylinesToHighlight.clear();
 	}
 
-	public void setRoadControlPointCircles(List<Point> circles)
+	public void setControlPointCircles(List<Point> circles)
 	{
 		this.roadControlPointCircles = circles;
 	}
@@ -213,7 +213,7 @@ public class MapEditingPanel extends UnscaledImagePanel
 		this.hoveredRoadControlPoint = point;
 	}
 
-	public void clearHoveredRoadControlPoint()
+	public void clearHoveredControlPoint()
 	{
 		this.hoveredRoadControlPoint = null;
 	}
@@ -1612,7 +1612,7 @@ public class MapEditingPanel extends UnscaledImagePanel
 		clearHighlightedEdges();
 		clearHighlightedPolylines();
 		clearRoadControlPointCircles();
-		clearHoveredRoadControlPoint();
+		clearHoveredControlPoint();
 		clearFreeHandRoadPreviewPath();
 		hideBrush();
 		clearHighlightedAreas();

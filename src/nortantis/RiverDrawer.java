@@ -339,28 +339,119 @@ public class RiverDrawer
 
 	/**
 	 * Builds non-overlapping {@link River} objects from an unordered set of connected Voronoi edges, adds them to {@code rivers}, and returns
-	 * the added rivers. Edges whose corner-to-corner segment already appears in {@code rivers} are skipped, splitting the result into multiple
-	 * rivers if necessary. Analogous to {@link RoadDrawer#addRoadsFromEdgesInEditor}.
+	 * the changed rivers (either newly added or existing rivers that were extended by joining). Edges whose corner-to-corner segment already
+	 * appears in {@code rivers} are skipped, splitting the result into multiple rivers if necessary. Each resulting river is merged with any
+	 * existing river whose endpoint it connects to. Analogous to {@link RoadDrawer#addRoadsFromEdgesInEditor}.
 	 */
 	public static List<River> addRiversFromEdgesInEditor(Set<Edge> edgeSet, Corner start, int riverLevel,
 			double resolutionScale, List<River> rivers)
 	{
 		Set<OrderlessPair<Point>> existingConnections = collectRiverConnections(rivers);
 		List<River> newRivers = buildRiversFromEdgeSet(edgeSet, start, riverLevel, resolutionScale, existingConnections);
-		rivers.addAll(newRivers);
-		return newRivers;
+		return connectAndAddRivers(newRivers, rivers);
 	}
 
 	/**
 	 * Splits {@code pathRI} at any segments that already exist in {@code rivers}, adds the non-overlapping sub-rivers to {@code rivers}, and
-	 * returns the added rivers. Analogous to {@link RoadDrawer#addFreeHandRoadFromPoints}.
+	 * returns the changed rivers (either newly added or existing rivers that were extended by joining). Each resulting sub-river is merged with
+	 * any existing river whose endpoint it connects to. Analogous to {@link RoadDrawer#addFreeHandRoadFromPoints}.
 	 */
 	public static List<River> addFreeHandRiverFromPoints(List<Point> pathRI, int riverLevel, List<River> rivers)
 	{
 		Set<OrderlessPair<Point>> existingConnections = collectRiverConnections(rivers);
 		List<River> newRivers = splitRiverPathAtOverlaps(pathRI, riverLevel, existingConnections);
-		rivers.addAll(newRivers);
-		return newRivers;
+		return connectAndAddRivers(newRivers, rivers);
+	}
+
+	/**
+	 * For each river in {@code newRivers}, attempts to join it to an existing river in {@code rivers} whose endpoint matches. If joined, the
+	 * existing river is extended and the new river is discarded (not added to {@code rivers}). If not joined, the new river is added to
+	 * {@code rivers}. A second join attempt is made on the result in case the extended river can connect to yet another existing river.
+	 * Analogous to the joining logic in {@link RoadDrawer#addFreeHandRoadFromPoints}.
+	 *
+	 * @return The changed rivers — either newly added rivers or existing rivers that were extended.
+	 */
+	private static List<River> connectAndAddRivers(List<River> newRivers, List<River> rivers)
+	{
+		List<River> changed = new ArrayList<>();
+		for (River newRiver : newRivers)
+		{
+			River joined = tryConnectingRiverToExistingRiver(newRiver, rivers);
+			if (joined != null)
+			{
+				River joined2 = tryConnectingRiverToExistingRiver(joined, rivers);
+				if (joined2 != null)
+				{
+					rivers.remove(joined);
+					changed.add(joined2);
+				}
+				else
+				{
+					changed.add(joined);
+				}
+			}
+			else
+			{
+				rivers.add(newRiver);
+				changed.add(newRiver);
+			}
+		}
+		return changed;
+	}
+
+	/**
+	 * Attempts to join {@code riverToAdd} to an existing river in {@code rivers} by matching endpoints. If a match is found, {@code riverToAdd}
+	 * is merged into the existing river (the existing river's path and segment widths are extended; {@code riverToAdd} is NOT added to
+	 * {@code rivers}), and the extended existing river is returned. Returns {@code null} if no endpoint match is found. Analogous to
+	 * {@link RoadDrawer#tryConnectingRoadToExistingRoad}.
+	 */
+	public static River tryConnectingRiverToExistingRiver(River riverToAdd, List<River> rivers)
+	{
+		for (River river : rivers)
+		{
+			if (river.path.isEmpty())
+			{
+				continue;
+			}
+			if (river == riverToAdd)
+			{
+				continue;
+			}
+
+			if (river.path.get(0).isCloseEnough(riverToAdd.path.get(0)))
+			{
+				riverToAdd.path.remove(0);
+				Collections.reverse(riverToAdd.path);
+				Collections.reverse(riverToAdd.segmentWidthLevels);
+				river.path.addAll(0, riverToAdd.path);
+				river.segmentWidthLevels.addAll(0, riverToAdd.segmentWidthLevels);
+				return river;
+			}
+			if (river.path.get(0).isCloseEnough(riverToAdd.path.get(riverToAdd.path.size() - 1)))
+			{
+				riverToAdd.path.remove(riverToAdd.path.size() - 1);
+				river.path.addAll(0, riverToAdd.path);
+				river.segmentWidthLevels.addAll(0, riverToAdd.segmentWidthLevels);
+				return river;
+			}
+			if (river.path.get(river.path.size() - 1).isCloseEnough(riverToAdd.path.get(0)))
+			{
+				riverToAdd.path.remove(0);
+				river.path.addAll(riverToAdd.path);
+				river.segmentWidthLevels.addAll(riverToAdd.segmentWidthLevels);
+				return river;
+			}
+			if (river.path.get(river.path.size() - 1).isCloseEnough(riverToAdd.path.get(riverToAdd.path.size() - 1)))
+			{
+				riverToAdd.path.remove(riverToAdd.path.size() - 1);
+				Collections.reverse(riverToAdd.path);
+				Collections.reverse(riverToAdd.segmentWidthLevels);
+				river.path.addAll(riverToAdd.path);
+				river.segmentWidthLevels.addAll(riverToAdd.segmentWidthLevels);
+				return river;
+			}
+		}
+		return null;
 	}
 
 	private static Set<OrderlessPair<Point>> collectRiverConnections(List<River> rivers)
@@ -463,36 +554,9 @@ public class RiverDrawer
 			Set<OrderlessPair<Point>> existingConnections)
 	{
 		List<River> result = new ArrayList<>();
-		if (path.isEmpty())
+		for (List<Point> subPath : RoadDrawer.splitPathAtOverlaps(path, existingConnections))
 		{
-			return result;
-		}
-		List<Point> currentPath = new ArrayList<>();
-		currentPath.add(path.get(0));
-		for (int i = 0; i < path.size() - 1; i++)
-		{
-			Point from = path.get(i);
-			Point to = path.get(i + 1);
-			OrderlessPair<Point> pair = new OrderlessPair<>(from, to);
-			if (existingConnections.contains(pair))
-			{
-				// Overlapping segment: commit current path without this segment and start fresh from 'to'.
-				if (currentPath.size() >= 2)
-				{
-					result.add(new River(currentPath, riverLevel));
-				}
-				currentPath = new ArrayList<>();
-				currentPath.add(to);
-			}
-			else
-			{
-				existingConnections.add(pair);
-				currentPath.add(to);
-			}
-		}
-		if (currentPath.size() >= 2)
-		{
-			result.add(new River(currentPath, riverLevel));
+			result.add(new River(subPath, riverLevel));
 		}
 		return result;
 	}

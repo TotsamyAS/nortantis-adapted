@@ -443,7 +443,7 @@ public class LandWaterTool extends EditorTool
 		{
 			circlesGraphPixels.add(freeHandRoadPathRI.get(0).mult(mainWindow.displayQualityScale));
 		}
-		mapEditingPanel.setRoadControlPointCircles(circlesGraphPixels);
+		mapEditingPanel.setControlPointCircles(circlesGraphPixels);
 
 		if (freeHandRoadSnapPoint != null)
 		{
@@ -451,7 +451,7 @@ public class LandWaterTool extends EditorTool
 		}
 		else
 		{
-			mapEditingPanel.clearHoveredRoadControlPoint();
+			mapEditingPanel.clearHoveredControlPoint();
 		}
 
 		if (mouseLocation != null && isFreeHandDrawMode() && freeHandRoadPathRI != null)
@@ -471,7 +471,7 @@ public class LandWaterTool extends EditorTool
 	{
 		freeHandRoadSnapPoint = null;
 		mapEditingPanel.clearRoadControlPointCircles();
-		mapEditingPanel.clearHoveredRoadControlPoint();
+		mapEditingPanel.clearHoveredControlPoint();
 		mapEditingPanel.clearFreeHandRoadPreviewPath();
 	}
 
@@ -501,14 +501,12 @@ public class LandWaterTool extends EditorTool
 		clearRoadControlPointDisplay();
 		mapEditingPanel.repaint();
 
-		Road changed = RoadDrawer.addFreeHandRoadFromPoints(pathToCommit, mainWindow.edits.roads);
+		List<Road> changedList = RoadDrawer.addFreeHandRoadFromPoints(pathToCommit, mainWindow.edits.roads);
 		RoadDrawer.removeEmptyOrSinglePointRoads(mainWindow.edits.roads);
-
-		List<Road> changedList = changed != null ? List.of(changed) : Collections.emptyList();
 		updater.addRoadsToRedrawLowPriority(changedList, mainWindow.displayQualityScale);
 
 		List<List<Point>> pathsForCenters = changedList.stream().map(r -> (List<Point>) r.path).collect(Collectors.toList());
-		updater.createAndShowMapIncrementalUsingCenters(getCentersTouchingRoadPoints(pathsForCenters));
+		updater.createAndShowMapIncrementalUsingCenters(getCentersTouchingPoints(pathsForCenters));
 
 		updater.doWhenMapIsNotDrawing(() -> updater.createAndShowLowPriorityChanges());
 		undoer.setUndoPoint(UpdateType.Incremental, this);
@@ -783,7 +781,7 @@ public class LandWaterTool extends EditorTool
 
 				if (!riverSegmentsToRemove.isEmpty())
 				{
-					Set<Center> centersToRedraw = getCentersTouchingRoadPoints(riverSegmentsToRemove);
+					Set<Center> centersToRedraw = getCentersTouchingPoints(riverSegmentsToRemove);
 					if (!centersToRedraw.isEmpty())
 					{
 						updater.createAndShowMapIncrementalUsingCenters(centersToRedraw);
@@ -801,13 +799,13 @@ public class LandWaterTool extends EditorTool
 				List<Road> changed = removeSegmentsAndSplitRoads(mainWindow.edits.roads, roadSegmentsToRemove);
 				RoadDrawer.removeEmptyOrSinglePointRoads(mainWindow.edits.roads);
 				mapEditingPanel.clearHighlightedPolylines();
-				updater.createAndShowMapIncrementalUsingCenters(getCentersTouchingRoadPoints(roadSegmentsToRemove));
+				updater.createAndShowMapIncrementalUsingCenters(getCentersTouchingPoints(roadSegmentsToRemove));
 				updater.addRoadsToRedrawLowPriority(changed, mainWindow.displayQualityScale);
 			}
 		}
 	}
 
-	private Set<Center> getCentersTouchingRoadPoints(List<List<Point>> pointLists)
+	private Set<Center> getCentersTouchingPoints(List<List<Point>> pointLists)
 	{
 		if (updater.mapParts == null || updater.mapParts.graph == null)
 		{
@@ -1068,7 +1066,7 @@ public class LandWaterTool extends EditorTool
 		{
 			circlesGraphPixels.add(freeHandRiverPathRI.get(0).mult(mainWindow.displayQualityScale));
 		}
-		mapEditingPanel.setRoadControlPointCircles(circlesGraphPixels);
+		mapEditingPanel.setControlPointCircles(circlesGraphPixels);
 
 		if (freeHandRiverSnapPoint != null)
 		{
@@ -1076,7 +1074,7 @@ public class LandWaterTool extends EditorTool
 		}
 		else
 		{
-			mapEditingPanel.clearHoveredRoadControlPoint();
+			mapEditingPanel.clearHoveredControlPoint();
 		}
 
 		if (mouseLocation != null && freeHandRiverPathRI != null)
@@ -1128,7 +1126,7 @@ public class LandWaterTool extends EditorTool
 		updater.addRiversToRedrawLowPriority(newRivers, mainWindow.displayQualityScale);
 
 		List<List<Point>> pathsForCenters = newRivers.stream().map(r -> (List<Point>) r.path).collect(Collectors.toList());
-		updater.createAndShowMapIncrementalUsingCenters(getCentersTouchingRoadPoints(pathsForCenters));
+		updater.createAndShowMapIncrementalUsingCenters(getCentersTouchingPoints(pathsForCenters));
 
 		updater.doWhenMapIsNotDrawing(() -> updater.createAndShowLowPriorityChanges());
 		undoer.setUndoPoint(UpdateType.Incremental, this);
@@ -1451,6 +1449,29 @@ public class LandWaterTool extends EditorTool
 				}
 			}
 
+			// After snap points are prepended/appended, try to merge each changed river with any
+			// existing river whose endpoint now matches the snap point. This handles continuing a
+			// freehand river using polygon mode: the snap prepend puts the freehand river's endpoint
+			// at the start of the new river, but addRiversFromEdgesInEditor ran before that prepend
+			// and could not see the connection.
+			if (polygonRiverSnapStart != null || polygonRiverSnapEnd != null)
+			{
+				for (int i = 0; i < newRivers.size(); i++)
+				{
+					River r = newRivers.get(i);
+					if (r == null || r.path.isEmpty())
+					{
+						continue;
+					}
+					River joined = RiverDrawer.tryConnectingRiverToExistingRiver(r, mainWindow.edits.rivers);
+					if (joined != null)
+					{
+						mainWindow.edits.rivers.remove(r);
+						newRivers.set(i, joined);
+					}
+				}
+			}
+
 			riverStart = null;
 			polygonRiverSnapStart = null;
 			mapEditingPanel.clearHighlightedEdges();
@@ -1460,7 +1481,7 @@ public class LandWaterTool extends EditorTool
 			{
 				List<List<Point>> pathsForCenters = newRivers.stream().map(r -> (List<Point>) r.path).collect(Collectors.toList());
 				updater.addRiversToRedrawLowPriority(newRivers, mainWindow.displayQualityScale);
-				updater.createAndShowMapIncrementalUsingCenters(getCentersTouchingRoadPoints(pathsForCenters));
+				updater.createAndShowMapIncrementalUsingCenters(getCentersTouchingPoints(pathsForCenters));
 			}
 		}
 		else if (roadsButton.isSelected() && modeWidget.isDrawMode() && !isFreeHandDrawMode() && roadStart != null)
@@ -1777,13 +1798,13 @@ public class LandWaterTool extends EditorTool
 		if (roadsButton.isSelected() && modeWidget.isDrawMode())
 		{
 			freeHandRoadSnapPoint = null;
-			mapEditingPanel.clearHoveredRoadControlPoint();
+			mapEditingPanel.clearHoveredControlPoint();
 			// Keep circles and preview path visible so the user can see them even when the mouse exits.
 		}
 		if (riversButton.isSelected() && modeWidget.isDrawMode() && isFreeHandRiverDrawMode())
 		{
 			freeHandRiverSnapPoint = null;
-			mapEditingPanel.clearHoveredRoadControlPoint();
+			mapEditingPanel.clearHoveredControlPoint();
 		}
 		mapEditingPanel.hideBrush();
 		mapEditingPanel.repaint();

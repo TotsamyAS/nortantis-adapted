@@ -379,7 +379,7 @@ public class RoadDrawer
 	/**
 	 * Either adds the given edges as a new road, or adds them to an existing road if the points from those edges connect to an existing
 	 * road.
-	 * 
+	 *
 	 * @return Either the new road, or the one the new road was added to.
 	 */
 	private static Road addEdgesToRoads(List<Edge> edges, WorldGraph graph, List<Road> roads, double resolutionScale)
@@ -396,25 +396,87 @@ public class RoadDrawer
 			return null;
 		}
 
-		List<Point> pathResolutionInvariant = new ArrayList<>(path.stream().map(point -> point.mult(1.0 / resolutionScale)).toList());
-		Road newRoad = new Road(pathResolutionInvariant);
+		List<Point> pathRI = new ArrayList<>(path.stream().map(point -> point.mult(1.0 / resolutionScale)).toList());
+		List<Road> changed = connectAndAddRoads(Collections.singletonList(pathRI), roads);
+		return changed.isEmpty() ? null : changed.get(0);
+	}
 
-		// If another road starts or ends with the start or end of this road, then join this road to that one.
-		Road joined = tryConnectingRoadToExistingRoad(newRoad, roads);
-		if (joined != null)
+	/**
+	 * For each sub-path in {@code subPaths}, either merges it into an existing road whose endpoint matches, or adds it as a new road.
+	 * A second merge attempt is made on the result to handle a new segment bridging two existing roads. Analogous to
+	 * {@link RiverDrawer#connectAndAddRivers}.
+	 *
+	 * @return The changed roads — either newly added roads or existing roads that were extended.
+	 */
+	private static List<Road> connectAndAddRoads(List<List<Point>> subPaths, List<Road> roads)
+	{
+		List<Road> changed = new ArrayList<>();
+		for (List<Point> subPath : subPaths)
 		{
-			Road joined2 = tryConnectingRoadToExistingRoad(joined, roads);
-			if (joined2 != null)
+			Road newRoad = new Road(subPath);
+			Road joined = tryConnectingRoadToExistingRoad(newRoad, roads);
+			if (joined != null)
 			{
-				roads.remove(joined);
-				return joined2;
+				Road joined2 = tryConnectingRoadToExistingRoad(joined, roads);
+				if (joined2 != null)
+				{
+					roads.remove(joined);
+					changed.add(joined2);
+				}
+				else
+				{
+					changed.add(joined);
+				}
 			}
-			return joined;
+			else
+			{
+				roads.add(newRoad);
+				changed.add(newRoad);
+			}
 		}
+		return changed;
+	}
 
-		// Add this road as a new road.
-		roads.add(newRoad);
-		return newRoad;
+	/**
+	 * Splits {@code path} at any segments that already exist in {@code existingConnections}, returning the non-overlapping sub-paths.
+	 * Newly seen segments are added to {@code existingConnections} as they are consumed. Analogous to
+	 * {@link RiverDrawer#splitRiverPathAtOverlaps}.
+	 */
+	static List<List<Point>> splitPathAtOverlaps(List<Point> path, Set<OrderlessPair<Point>> existingConnections)
+	{
+		List<List<Point>> result = new ArrayList<>();
+		if (path.isEmpty())
+		{
+			return result;
+		}
+		List<Point> currentPath = new ArrayList<>();
+		currentPath.add(path.get(0));
+		for (int i = 0; i < path.size() - 1; i++)
+		{
+			Point from = path.get(i);
+			Point to = path.get(i + 1);
+			OrderlessPair<Point> pair = new OrderlessPair<>(from, to);
+			if (existingConnections.contains(pair))
+			{
+				// Overlapping segment: commit current path without this segment and start fresh from 'to'.
+				if (currentPath.size() >= 2)
+				{
+					result.add(currentPath);
+				}
+				currentPath = new ArrayList<>();
+				currentPath.add(to);
+			}
+			else
+			{
+				existingConnections.add(pair);
+				currentPath.add(to);
+			}
+		}
+		if (currentPath.size() >= 2)
+		{
+			result.add(currentPath);
+		}
+		return result;
 	}
 
 	public static Road tryConnectingRoadToExistingRoad(Road roadToAdd, List<Road> roads)
@@ -464,34 +526,22 @@ public class RoadDrawer
 	}
 
 	/**
-	 * Creates a Road from a list of RI-coordinate points and adds it to roads, merging with any existing road whose endpoint is close to
-	 * the new road's endpoint.
+	 * Splits {@code pathRI} at any segments that already exist in {@code roads}, adds the non-overlapping sub-roads to {@code roads}, and
+	 * returns the changed roads (either newly added or existing roads that were extended by joining). Analogous to
+	 * {@link RiverDrawer#addFreeHandRiverFromPoints}.
 	 *
-	 * @return The new or modified road (for incremental redraw), or null if the path is too short.
+	 * @return The changed roads — newly added roads or existing roads extended by joining. Empty if the path is too short.
 	 */
-	public static Road addFreeHandRoadFromPoints(List<Point> pathRI, List<Road> roads)
+	public static List<Road> addFreeHandRoadFromPoints(List<Point> pathRI, List<Road> roads)
 	{
 		if (pathRI == null || pathRI.size() < 2)
 		{
-			return null;
+			return Collections.emptyList();
 		}
 
-		Road newRoad = new Road(pathRI);
-
-		Road joined = tryConnectingRoadToExistingRoad(newRoad, roads);
-		if (joined != null)
-		{
-			Road joined2 = tryConnectingRoadToExistingRoad(joined, roads);
-			if (joined2 != null)
-			{
-				roads.remove(joined);
-				return joined2;
-			}
-			return joined;
-		}
-
-		roads.add(newRoad);
-		return newRoad;
+		Set<OrderlessPair<Point>> existingConnections = combineRoadConnections(roads);
+		List<List<Point>> subPaths = splitPathAtOverlaps(pathRI, existingConnections);
+		return connectAndAddRoads(subPaths, roads);
 	}
 
 	public static void removeEmptyOrSinglePointRoads(List<Road> roadList)

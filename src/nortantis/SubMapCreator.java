@@ -110,6 +110,8 @@ public class SubMapCreator
 		newSettings.riverFont = scaleFontSize(newSettings.riverFont, fontScale);
 		// Initialize fresh empty edits so createGraphForUnitTests will create elevation (isInitialized=false).
 		newSettings.edits = new MapEdits();
+		// The graph must use originalResolution so buildRiverFromEdgePath's division by originalResolution gives correct sub-map RI.
+		newSettings.resolution = originalResolution;
 
 		// Build the WorldGraph for the sub-map (to get center positions and count).
 		// We call this with createElevationBiomesLakesAndRegions=false because land/water and icon placement will be determined by the
