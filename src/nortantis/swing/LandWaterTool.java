@@ -939,10 +939,16 @@ public class LandWaterTool extends EditorTool
 
 	private List<Point> findClosestRoadSegmentWithinRadius(Point targetPoint, double radius)
 	{
+		return findClosestSegmentWithinRadius(targetPoint, radius,
+				mainWindow.edits.roads.stream().map(r -> (List<Point>) r.path).toList());
+	}
+
+	private List<Point> findClosestSegmentWithinRadius(Point targetPoint, double radius, List<List<Point>> paths)
+	{
 		int mi = 0;
 		List<Point> segmentFoundIn = null;
 		double closestDistance = Double.POSITIVE_INFINITY;
-		List<List<Point>> withinRadius = findRoadSegmentsWithinRadius(targetPoint, radius);
+		List<List<Point>> withinRadius = findSegmentsWithinRadius(paths, targetPoint, radius);
 		for (List<Point> segment : withinRadius)
 		{
 			if (segment.size() < 2)
@@ -1173,8 +1179,23 @@ public class LandWaterTool extends EditorTool
 	{
 		Point targetPoint = getPointOnGraph(pointFromMouse).mult(1.0 / mainWindow.displayQualityScale);
 		int brushDiameter = brushSizes.get(brushSizeComboBox.getSelectedIndex());
-		double radius = (double) ((brushDiameter / mainWindow.zoom) * mapEditingPanel.osScale) / (2 * mainWindow.displayQualityScale);
-		return findSegmentsWithinRadius(mainWindow.edits.rivers.stream().map(r -> (List<Point>) r.path).toList(), targetPoint, radius);
+		List<List<Point>> riverPaths = mainWindow.edits.rivers.stream().map(r -> (List<Point>) r.path).toList();
+		if (brushDiameter <= 1)
+		{
+			int radius = (int) ((double) ((singlePointRoadSelectionRadiusBeforeZoomAndScale / mainWindow.zoom) * mapEditingPanel.osScale));
+			List<Point> closest = findClosestSegmentWithinRadius(targetPoint, radius, riverPaths);
+			List<List<Point>> result = new ArrayList<>(1);
+			if (closest != null && !closest.isEmpty())
+			{
+				result.add(closest);
+			}
+			return result;
+		}
+		else
+		{
+			double brushRadiusResolutionInvariant = (double) ((brushDiameter / mainWindow.zoom) * mapEditingPanel.osScale) / (2 * mainWindow.displayQualityScale);
+			return findSegmentsWithinRadius(riverPaths, targetPoint, brushRadiusResolutionInvariant);
+		}
 	}
 
 	private List<River> removeSegmentsAndSplitRivers(List<River> riverList, List<List<Point>> segmentsToRemove)
