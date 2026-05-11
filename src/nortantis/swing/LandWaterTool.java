@@ -431,11 +431,16 @@ public class LandWaterTool extends EditorTool
 		freeHandRoadSnapPoint = mouseLocation != null ? computeSnapPoint(mouseLocation) : null;
 
 		List<Point> circlesGraphPixels = new ArrayList<>();
+		Point mouseRI = mouseLocation != null ? getPointOnGraph(mouseLocation).mult(1.0 / mainWindow.displayQualityScale) : null;
+		double highlightThresholdRI = updater.mapParts.graph.getMeanCenterWidth() / mainWindow.displayQualityScale;
 		for (Road road : mainWindow.edits.roads)
 		{
-			for (Point riPoint : road.path)
+			if (mouseRI != null && isPathNearPoint(road.path, mouseRI, highlightThresholdRI))
 			{
-				circlesGraphPixels.add(riPoint.mult(mainWindow.displayQualityScale));
+				for (Point riPoint : road.path)
+				{
+					circlesGraphPixels.add(riPoint.mult(mainWindow.displayQualityScale));
+				}
 			}
 		}
 		// Show the start of the road being drawn so the user can snap to it and close the loop.
@@ -1030,6 +1035,33 @@ public class LandWaterTool extends EditorTool
 		return findNearestPointInPaths(mouseLocation, mainWindow.edits.rivers.stream().map(r -> (List<Point>) r.path).toList(), freeHandRiverPathRI);
 	}
 
+	private double distanceToSegment(Point p, Point a, Point b)
+	{
+		double dx = b.x - a.x;
+		double dy = b.y - a.y;
+		double lengthSquared = dx * dx + dy * dy;
+		if (lengthSquared == 0)
+		{
+			return p.distanceTo(a);
+		}
+		double t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / lengthSquared));
+		double closestX = a.x + t * dx;
+		double closestY = a.y + t * dy;
+		return Math.sqrt((p.x - closestX) * (p.x - closestX) + (p.y - closestY) * (p.y - closestY));
+	}
+
+	private boolean isPathNearPoint(List<Point> path, Point target, double threshold)
+	{
+		for (int i = 0; i < path.size() - 1; i++)
+		{
+			if (distanceToSegment(target, path.get(i), path.get(i + 1)) <= threshold)
+			{
+				return true;
+			}
+		}
+		return path.size() == 1 && path.get(0).distanceTo(target) <= threshold;
+	}
+
 	private Point findNearestPointInPaths(java.awt.Point mouseLocation, List<List<Point>> paths, List<Point> inProgressPath)
 	{
 		Point mouseRI = getPointOnGraph(mouseLocation).mult(1.0 / mainWindow.displayQualityScale);
@@ -1055,11 +1087,16 @@ public class LandWaterTool extends EditorTool
 		freeHandRiverSnapPoint = mouseLocation != null ? computeRiverSnapPoint(mouseLocation) : null;
 
 		List<Point> circlesGraphPixels = new ArrayList<>();
+		Point mouseRI = mouseLocation != null ? getPointOnGraph(mouseLocation).mult(1.0 / mainWindow.displayQualityScale) : null;
+		double highlightThresholdRI = updater.mapParts.graph.getMeanCenterWidth() / mainWindow.displayQualityScale;
 		for (River river : mainWindow.edits.rivers)
 		{
-			for (Point riPoint : river.path)
+			if (mouseRI != null && isPathNearPoint(river.path, mouseRI, highlightThresholdRI))
 			{
-				circlesGraphPixels.add(riPoint.mult(mainWindow.displayQualityScale));
+				for (Point riPoint : river.path)
+				{
+					circlesGraphPixels.add(riPoint.mult(mainWindow.displayQualityScale));
+				}
 			}
 		}
 		if (freeHandRiverPathRI != null && freeHandRiverPathRI.size() >= 2)
