@@ -3475,9 +3475,26 @@ public class WorldGraph extends VoronoiGraph
 			}
 		}
 
+		// Sort corners descending by max adjacent river width so wider rivers are always extracted
+		// before their thinner tributaries. This prevents thin tributaries from absorbing the main trunk.
+		List<Corner> sortedRiverCorners = new ArrayList<>(riverCorners);
+		sortedRiverCorners.sort((c1, c2) ->
+		{
+			int w1 = 0, w2 = 0;
+			for (Edge e : c1.protrudes)
+			{
+				w1 = Math.max(w1, e.river);
+			}
+			for (Edge e : c2.protrudes)
+			{
+				w2 = Math.max(w2, e.river);
+			}
+			return Integer.compare(w2, w1);
+		});
+
 		List<GraphRiver> rivers = new ArrayList<>();
 		Set<Corner> riversAlreadyFound = new HashSet<>();
-		for (Corner corner : riverCorners)
+		for (Corner corner : sortedRiverCorners)
 		{
 			if (!riversAlreadyFound.contains(corner))
 			{
@@ -3546,6 +3563,13 @@ public class WorldGraph extends VoronoiGraph
 		Edge lastToHead = edgeWithCorners(last, head);
 		GraphRiver result = new GraphRiver();
 		result.add(lastToHead);
+
+		// If head is already part of an already-extracted (wider) river, we've just reached the junction.
+		// Stop here so this tributary doesn't include any of the main trunk's segments past the junction.
+		if (riversAlreadyFound.contains(head))
+		{
+			return result;
+		}
 
 		List<Edge> riverEdges = new ArrayList<>();
 		for (Edge e : head.protrudes)
