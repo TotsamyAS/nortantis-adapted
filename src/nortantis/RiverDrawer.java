@@ -9,15 +9,11 @@ import nortantis.platform.Color;
 import nortantis.platform.DrawQuality;
 import nortantis.platform.Image;
 import nortantis.platform.Painter;
+import nortantis.util.GeometryHelper;
 import nortantis.util.OrderlessPair;
 import nortantis.util.Range;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Random;
-import java.util.Set;
+import java.util.*;
 
 public class RiverDrawer
 {
@@ -554,10 +550,15 @@ public class RiverDrawer
 			Set<OrderlessPair<Point>> existingConnections)
 	{
 		List<River> result = new ArrayList<>();
-		for (List<Point> subPath : RoadDrawer.splitPathAtOverlaps(path, existingConnections))
+		for (List<Point> subPath : GeometryHelper.splitPathAtOverlaps(path, existingConnections))
 		{
 			result.add(new River(subPath, riverLevel));
 		}
 		return result;
+	}
+
+	public static void removeEmptyOrShortRivers(List<River> riverList)
+	{
+		riverList.removeIf(river -> river.path.size() < 2);
 	}
 }

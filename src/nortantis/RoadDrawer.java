@@ -10,6 +10,7 @@ import nortantis.platform.Color;
 import nortantis.platform.DrawQuality;
 import nortantis.platform.Image;
 import nortantis.platform.Painter;
+import nortantis.util.GeometryHelper;
 import nortantis.util.OrderlessPair;
 import nortantis.util.Range;
 
@@ -404,7 +405,7 @@ public class RoadDrawer
 	/**
 	 * For each sub-path in {@code subPaths}, either merges it into an existing road whose endpoint matches, or adds it as a new road.
 	 * A second merge attempt is made on the result to handle a new segment bridging two existing roads. Analogous to
-	 * {@link RiverDrawer#connectAndAddRivers}.
+	 * {@code RiverDrawer.connectAndAddRivers}.
 	 *
 	 * @return The changed roads — either newly added roads or existing roads that were extended.
 	 */
@@ -435,48 +436,6 @@ public class RoadDrawer
 			}
 		}
 		return changed;
-	}
-
-	/**
-	 * Splits {@code path} at any segments that already exist in {@code existingConnections}, returning the non-overlapping sub-paths.
-	 * Newly seen segments are added to {@code existingConnections} as they are consumed. Analogous to
-	 * {@link RiverDrawer#splitRiverPathAtOverlaps}.
-	 */
-	static List<List<Point>> splitPathAtOverlaps(List<Point> path, Set<OrderlessPair<Point>> existingConnections)
-	{
-		List<List<Point>> result = new ArrayList<>();
-		if (path.isEmpty())
-		{
-			return result;
-		}
-		List<Point> currentPath = new ArrayList<>();
-		currentPath.add(path.get(0));
-		for (int i = 0; i < path.size() - 1; i++)
-		{
-			Point from = path.get(i);
-			Point to = path.get(i + 1);
-			OrderlessPair<Point> pair = new OrderlessPair<>(from, to);
-			if (existingConnections.contains(pair))
-			{
-				// Overlapping segment: commit current path without this segment and start fresh from 'to'.
-				if (currentPath.size() >= 2)
-				{
-					result.add(currentPath);
-				}
-				currentPath = new ArrayList<>();
-				currentPath.add(to);
-			}
-			else
-			{
-				existingConnections.add(pair);
-				currentPath.add(to);
-			}
-		}
-		if (currentPath.size() >= 2)
-		{
-			result.add(currentPath);
-		}
-		return result;
 	}
 
 	public static Road tryConnectingRoadToExistingRoad(Road roadToAdd, List<Road> roads)
@@ -540,7 +499,7 @@ public class RoadDrawer
 		}
 
 		Set<OrderlessPair<Point>> existingConnections = combineRoadConnections(roads);
-		List<List<Point>> subPaths = splitPathAtOverlaps(pathRI, existingConnections);
+		List<List<Point>> subPaths = GeometryHelper.splitPathAtOverlaps(pathRI, existingConnections);
 		return connectAndAddRoads(subPaths, roads);
 	}
 

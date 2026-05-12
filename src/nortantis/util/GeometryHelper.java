@@ -2,6 +2,10 @@ package nortantis.util;
 
 import nortantis.geom.Point;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
+
 public class GeometryHelper
 {
 	/**
@@ -48,5 +52,45 @@ public class GeometryHelper
 		double distanceToClosestPoint = closestPoint.distanceTo(circleCenter);
 
 		return distanceToClosestPoint <= radius;
+	}
+
+	/**
+	 * Splits {@code path} at any segments that already exist in {@code existingConnections}, returning the non-overlapping sub-paths. Newly
+	 * seen segments are added to {@code existingConnections} as they are consumed.
+	 */
+	public static List<List<Point>> splitPathAtOverlaps(List<Point> path, Set<OrderlessPair<Point>> existingConnections)
+	{
+		List<List<Point>> result = new ArrayList<>();
+		if (path.isEmpty())
+		{
+			return result;
+		}
+		List<Point> currentPath = new ArrayList<>();
+		currentPath.add(path.get(0));
+		for (int i = 0; i < path.size() - 1; i++)
+		{
+			Point from = path.get(i);
+			Point to = path.get(i + 1);
+			OrderlessPair<Point> pair = new OrderlessPair<>(from, to);
+			if (existingConnections.contains(pair))
+			{
+				if (currentPath.size() >= 2)
+				{
+					result.add(currentPath);
+				}
+				currentPath = new ArrayList<>();
+				currentPath.add(to);
+			}
+			else
+			{
+				existingConnections.add(pair);
+				currentPath.add(to);
+			}
+		}
+		if (currentPath.size() >= 2)
+		{
+			result.add(currentPath);
+		}
+		return result;
 	}
 }
