@@ -174,28 +174,70 @@ public class RiverDrawer
 	}
 
 	/**
-	 * Looks up the stroke width at the junction where {@code currentRiver} meets another river at {@code endpoint}. Returns the width of the
-	 * adjacent segment of the connected river with the largest widthLevel, or {@code defaultWidth} if no other river meets at that point.
+	 * At a junction where {@code currentRiver} meets other rivers at {@code endpoint}, returns the stroke width {@code currentRiver} should
+	 * transition to at that endpoint. At multi-way junctions (more than two river segments), only the two rivers with the highest endpoint
+	 * width levels participate in the smooth transition; all others return {@code defaultWidth}. Ties are broken by list insertion order.
 	 */
 	private float findJunctionWidth(River currentRiver, Point endpoint, float defaultWidth)
 	{
-		int maxWidthLevel = Integer.MIN_VALUE;
-		for (River other : rivers)
+		int currentEndWidthLevel = getEndpointWidthLevel(currentRiver, endpoint);
+
+		// Build junction entries using the list index as an ID. We use reference equality (==) rather than
+		// River.equals() so that two rivers with identical content are still treated as distinct.
+		int currentIndex = -1;
+		List<int[]> junctionEntries = new ArrayList<>();
+		for (int i = 0; i < rivers.size(); i++)
 		{
-			if (other == currentRiver || other.path.size() < 2 || other.segmentWidthLevels.isEmpty())
+			River other = rivers.get(i);
+			if (other == currentRiver)
 			{
-				continue;
+				currentIndex = i;
+				junctionEntries.add(new int[]{currentEndWidthLevel, i});
 			}
-			if (other.path.get(0).equals(endpoint))
+			else if (other.path.size() >= 2 && !other.segmentWidthLevels.isEmpty())
 			{
-				maxWidthLevel = Math.max(maxWidthLevel, other.segmentWidthLevels.get(0));
-			}
-			else if (other.path.get(other.path.size() - 1).equals(endpoint))
-			{
-				maxWidthLevel = Math.max(maxWidthLevel, other.segmentWidthLevels.get(other.segmentWidthLevels.size() - 1));
+				if (other.path.get(0).isCloseEnough(endpoint))
+				{
+					junctionEntries.add(new int[]{other.segmentWidthLevels.get(0), i});
+				}
+				else if (other.path.get(other.path.size() - 1).isCloseEnough(endpoint))
+				{
+					junctionEntries.add(new int[]{other.segmentWidthLevels.get(other.segmentWidthLevels.size() - 1), i});
+				}
 			}
 		}
-		return maxWidthLevel > Integer.MIN_VALUE ? calcRiverStrokeWidth(maxWidthLevel) : defaultWidth;
+
+		if (junctionEntries.size() <= 1)
+		{
+			return defaultWidth;
+		}
+
+		// Sort descending by width level; use list index (insertion order) as a deterministic tiebreaker.
+		junctionEntries.sort((a, b) -> a[0] != b[0] ? b[0] - a[0] : Integer.compare(a[1], b[1]));
+
+		// Only the top-2-by-width rivers at this junction get smooth width transitions.
+		boolean currentIsFirst = junctionEntries.get(0)[1] == currentIndex;
+		boolean currentIsSecond = junctionEntries.get(1)[1] == currentIndex;
+		if (!currentIsFirst && !currentIsSecond)
+		{
+			return defaultWidth;
+		}
+
+		int partnerWidthLevel = currentIsFirst ? junctionEntries.get(1)[0] : junctionEntries.get(0)[0];
+		return calcRiverStrokeWidth(partnerWidthLevel);
+	}
+
+	private int getEndpointWidthLevel(River river, Point endpoint)
+	{
+		if (river.segmentWidthLevels.isEmpty())
+		{
+			return 0;
+		}
+		if (river.path.get(0).isCloseEnough(endpoint))
+		{
+			return river.segmentWidthLevels.get(0);
+		}
+		return river.segmentWidthLevels.get(river.segmentWidthLevels.size() - 1);
 	}
 
 	private boolean riverOverlapsRectangle(River river, Rectangle boundsRI, double jaggedAmplitudeRI)

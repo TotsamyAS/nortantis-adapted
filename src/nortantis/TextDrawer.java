@@ -571,10 +571,35 @@ public class TextDrawer
 
 	private Set<Point> extractLocationsFromRiver(nortantis.editor.River river)
 	{
-		final int maxPointsToInclude = 11;
+		final int maxPointsToInclude = 11; // corresponds to 10 edges
+		final int maxDistanceFromMouth = 2;
 		List<Point> path = river.path;
-		int from = Math.max(0, (path.size() - maxPointsToInclude) / 2);
-		int to = Math.min(path.size(), from + maxPointsToInclude);
+		int numSegments = path.size() - 1;
+
+		int from, to;
+		if (path.size() <= maxPointsToInclude)
+		{
+			from = 0;
+			to = path.size();
+		}
+		else
+		{
+			// Place the label slightly inland from the mouth (wider end of the river).
+			int distanceFromMouth = Math.min(numSegments - (maxPointsToInclude - 1), maxDistanceFromMouth);
+			boolean mouthIsFirst = !river.segmentWidthLevels.isEmpty()
+					&& river.segmentWidthLevels.get(0) > river.segmentWidthLevels.get(river.segmentWidthLevels.size() - 1);
+			if (mouthIsFirst)
+			{
+				from = distanceFromMouth;
+				to = from + maxPointsToInclude;
+			}
+			else
+			{
+				to = path.size() - distanceFromMouth;
+				from = to - maxPointsToInclude;
+			}
+		}
+
 		Set<Point> result = new TreeSet<>();
 		for (int i = from; i < to; i++)
 		{
