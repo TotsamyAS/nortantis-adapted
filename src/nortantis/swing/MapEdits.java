@@ -215,6 +215,14 @@ public class MapEdits implements Serializable
 			copy.regionEdits.put(entry.getKey(), entry.getValue().deepCopy());
 		}
 
+		// edgeEdits must be deep-copied so that undoing past every change on a pre-3.19 file
+		// restores the source data for the EdgeEdit→River migration. Without this, the migration
+		// reruns but finds nothing to convert and silently produces zero rivers.
+		for (Map.Entry<Integer, EdgeEdit> entry : edgeEdits.entrySet())
+		{
+			copy.edgeEdits.put(entry.getKey(), entry.getValue().deepCopy());
+		}
+
 		copy.hasIconEdits = hasIconEdits;
 
 		copy.freeIcons = new FreeIconCollection(freeIcons);

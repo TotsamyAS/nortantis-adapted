@@ -405,8 +405,9 @@ public class LandWaterTool extends EditorTool
 
 	private double getSnapRadiusRI()
 	{
-		// Match the drawn highlight radius so the snap area equals what the user sees.
-		return mapEditingPanel.getRoadControlPointRadiusInGraphPixels() / mainWindow.displayQualityScale;
+		// Match the outer edge of the drawn circle (including the stroke outline) so a click on the
+		// visible circle line is considered "on" the control point, not just clicks inside it.
+		return mapEditingPanel.getRoadControlPointHitRadiusInGraphPixels() / mainWindow.displayQualityScale;
 	}
 
 	private Point computeSnapPointForType(java.awt.Point mouseLocation, LineType type)
@@ -1006,43 +1007,36 @@ public class LandWaterTool extends EditorTool
 
 	private List<Point> findClosestSegmentWithinRadius(Point targetPoint, double radius, List<List<Point>> paths)
 	{
-		int mi = 0;
-		List<Point> segmentFoundIn = null;
+		Point closestStart = null;
+		Point closestEnd = null;
 		double closestDistance = Double.POSITIVE_INFINITY;
+		// Each list in withinRadius is a concatenation of consecutive overlapping segment pairs:
+		// e.g. for path A-B-C-D with all three segments overlapping, the list is [A,B,B,C,C,D].
+		// Iterate by pairs (i += 2) to get each underlying segment and use line distance, so a
+		// click near a shared corner returns a real segment (not a degenerate point-to-itself).
 		List<List<Point>> withinRadius = findSegmentsWithinRadius(paths, targetPoint, radius);
 		for (List<Point> segment : withinRadius)
 		{
-			if (segment.size() < 2)
+			for (int i = 0; i + 1 < segment.size(); i += 2)
 			{
-				continue;
-			}
-			for (int i = 0; i < segment.size(); i++)
-			{
-				double d = segment.get(i).distanceTo(targetPoint);
+				Point p1 = segment.get(i);
+				Point p2 = segment.get(i + 1);
+				double d = distanceToSegment(targetPoint, p1, p2);
 				if (d < closestDistance)
 				{
 					closestDistance = d;
-					segmentFoundIn = segment;
-					if (i == segment.size() - 1)
-					{
-						// Store the second to last index so that at the end of this method we can return the mi'th point and the one after
-						// it.
-						mi = i - 1;
-					}
-					else
-					{
-						mi = i;
-					}
+					closestStart = p1;
+					closestEnd = p2;
 				}
 			}
 		}
 
-		if (closestDistance == Double.POSITIVE_INFINITY || segmentFoundIn == null)
+		if (closestStart == null)
 		{
 			return Collections.emptyList();
 		}
 
-		return Arrays.asList(segmentFoundIn.get(mi), segmentFoundIn.get(mi + 1));
+		return Arrays.asList(closestStart, closestEnd);
 	}
 
 	private List<List<Point>> findRoadSegmentsWithinRadius(Point targetPoint, double radius)
@@ -1173,32 +1167,36 @@ public class LandWaterTool extends EditorTool
 			List<Point> currentPath = new ArrayList<>();
 			List<Integer> currentWidths = new ArrayList<>();
 			boolean riverChanged = false;
-			int pathIndex = 0;
 
-			for (Point point : path)
+			for (int i = 0; i < path.size(); i++)
 			{
+				Point point = path.get(i);
+				if (!currentPath.isEmpty() && i > 0 && i - 1 < widthLevels.size())
+				{
+					currentWidths.add(widthLevels.get(i - 1));
+				}
+				currentPath.add(point);
+
 				if (pointsToRemove.contains(point))
 				{
 					riverChanged = true;
-					if (!currentPath.isEmpty())
+					if (currentPath.size() > 1)
 					{
-						splitPaths.add(currentPath);
-						splitWidthLevels.add(currentWidths);
-						currentPath = new ArrayList<>();
-						currentWidths = new ArrayList<>();
+						splitPaths.add(new ArrayList<>(currentPath));
+						splitWidthLevels.add(new ArrayList<>(currentWidths));
+					}
+					currentPath.clear();
+					currentWidths.clear();
+
+					// Start the next split at this point so the segments adjacent to it are preserved;
+					// only the segment between two consecutive removed points is actually severed.
+					if (i + 1 < path.size() && !pointsToRemove.contains(path.get(i + 1)))
+					{
+						currentPath.add(point);
 					}
 				}
-				else
-				{
-					if (!currentPath.isEmpty() && pathIndex > 0 && pathIndex - 1 < widthLevels.size())
-					{
-						currentWidths.add(widthLevels.get(pathIndex - 1));
-					}
-					currentPath.add(point);
-				}
-				pathIndex++;
 			}
-			if (!currentPath.isEmpty())
+			if (currentPath.size() > 1)
 			{
 				splitPaths.add(currentPath);
 				splitWidthLevels.add(currentWidths);
@@ -1686,6 +1684,7 @@ public class LandWaterTool extends EditorTool
 				Corner end = updater.mapParts.graph.findClosestCorner(getPointOnGraph(e.getPoint()));
 				Set<Edge> river = filterOutOceanAndCoastEdges(updater.mapParts.graph.findPathGreedy(riverStart, end));
 				mapEditingPanel.addHighlightedEdges(river, EdgeType.Voronoi);
+				updateControlPointDisplay(e.getPoint(), LineType.RIVER);
 				mapEditingPanel.repaint();
 			}
 		}

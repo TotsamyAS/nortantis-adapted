@@ -941,6 +941,21 @@ public class MapEditingPanel extends UnscaledImagePanel
 		return (int) Math.round(graph.getMeanCenterWidth() * 0.16);
 	}
 
+	/**
+	 * Returns the road control-point hit radius in graph pixels — the centerline radius extended by half the
+	 * stroke width so the visible circle outline is part of the clickable area.
+	 */
+	int getRoadControlPointHitRadiusInGraphPixels()
+	{
+		if (graph == null)
+		{
+			return getRoadControlPointRadiusInGraphPixels();
+		}
+		double r = graph.getMeanCenterWidth() * 0.16;
+		double halfStrokeWidth = graph.getMeanCenterWidth() * 0.065 / 2.0;
+		return (int) Math.round(r + halfStrokeWidth);
+	}
+
 	private void drawRoadControlPoints(Graphics2D g2)
 	{
 		if ((roadControlPointCircles == null || roadControlPointCircles.isEmpty()) && hoveredRoadControlPoint == null && freeHandPreviewPath == null)

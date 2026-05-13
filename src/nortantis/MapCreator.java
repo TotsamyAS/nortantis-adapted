@@ -187,6 +187,13 @@ public class MapCreator implements WarningLogger
 
 		applyRegionEdits(mapParts.graph, settings.edits);
 		// Apply river edits before center edits because applying center edits smoothes region boundaries, which depends on rivers.
+		// Undoing past the original load on a pre-3.19 file restores a snapshot with hasInitializedRivers=false,
+		// and the incremental path needs to re-run the legacy migration here (the full-draw path already does this in createMap).
+		if (settings.edits != null && !settings.edits.hasInitializedRivers)
+		{
+			applyEdgeEdits(mapParts.graph, settings.edits, null);
+			settings.edits.initializeRiversFromGraph(mapParts.graph, settings.resolution);
+		}
 		applyRiverEdits(mapParts.graph, settings.edits, settings.resolution);
 		Set<Center> centersChangedThatAffectedLandOrRegionBoundaries = applyCenterEdits(mapParts.graph, settings.edits, getCenterEditsForCenters(settings.edits, centersChanged),
 				settings.drawRegionBoundaries || settings.drawRegionColors);
