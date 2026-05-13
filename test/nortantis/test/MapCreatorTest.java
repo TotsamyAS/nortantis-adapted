@@ -321,6 +321,12 @@ public class MapCreatorTest
 	}
 
 	@Test
+	public void riverConversionTest()
+	{
+		generateAndCompare("riverConversionTest.nort");
+	}
+
+	@Test
 	public void rotatedAndFlippedTwiceWithEditsAndTransparencyTest()
 	{
 		generateAndCompare("rotatedAndFlippedTwiceWithEditsAndTransparency.nort");
