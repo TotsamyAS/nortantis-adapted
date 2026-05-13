@@ -53,6 +53,7 @@ public class MapCreator implements WarningLogger
 
 	public IntRectangle incrementalUpdateText(final MapSettings settings, MapParts mapParts, Image fullSizeMap, List<MapText> textChanged)
 	{
+		migrateLegacyRiversIfNeeded(settings, mapParts.graph);
 		TextDrawer textDrawer = new TextDrawer(settings);
 		textDrawer.setMapTexts(settings.edits.text);
 
@@ -72,6 +73,7 @@ public class MapCreator implements WarningLogger
 
 	public IntRectangle incrementalUpdateIcons(final MapSettings settings, MapParts mapParts, Image fullSizeMap, List<FreeIcon> iconsChanged)
 	{
+		migrateLegacyRiversIfNeeded(settings, mapParts.graph);
 		Rectangle changeBounds = null;
 		for (FreeIcon icon : iconsChanged)
 		{
@@ -187,13 +189,7 @@ public class MapCreator implements WarningLogger
 
 		applyRegionEdits(mapParts.graph, settings.edits);
 		// Apply river edits before center edits because applying center edits smoothes region boundaries, which depends on rivers.
-		// Undoing past the original load on a pre-3.19 file restores a snapshot with hasInitializedRivers=false,
-		// and the incremental path needs to re-run the legacy migration here (the full-draw path already does this in createMap).
-		if (settings.edits != null && !settings.edits.hasInitializedRivers)
-		{
-			applyEdgeEdits(mapParts.graph, settings.edits, null);
-			settings.edits.initializeRiversFromGraph(mapParts.graph, settings.resolution);
-		}
+		migrateLegacyRiversIfNeeded(settings, mapParts.graph);
 		applyRiverEdits(mapParts.graph, settings.edits, settings.resolution);
 		Set<Center> centersChangedThatAffectedLandOrRegionBoundaries = applyCenterEdits(mapParts.graph, settings.edits, getCenterEditsForCenters(settings.edits, centersChanged),
 				settings.drawRegionBoundaries || settings.drawRegionColors);
@@ -1883,6 +1879,21 @@ public class MapCreator implements WarningLogger
 	 * For new files, {@link #applyRiverEdits} is used instead.
 	 * </p>
 	 */
+	/**
+	 * Runs the legacy {@link EdgeEdit}-to-{@link River} migration when {@code hasInitializedRivers} is false. The full-draw path already does
+	 * this during {@code createGraphAndApplyEdits} + {@code createMap}, but every incremental update entry point must also call this so that
+	 * undoing past the initial load (on a pre-3.19 file) re-runs the migration on the next draw — without it, the rivers stay empty.
+	 */
+	private static void migrateLegacyRiversIfNeeded(MapSettings settings, WorldGraph graph)
+	{
+		if (settings.edits == null || settings.edits.hasInitializedRivers)
+		{
+			return;
+		}
+		applyEdgeEdits(graph, settings.edits, null);
+		settings.edits.initializeRiversFromGraph(graph, settings.resolution);
+	}
+
 	private static void applyEdgeEdits(WorldGraph graph, MapEdits edits, Collection<EdgeEdit> edgeChanges)
 	{
 		if (edits == null || edits.edgeEdits.isEmpty())
