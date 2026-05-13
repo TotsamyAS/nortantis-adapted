@@ -100,7 +100,7 @@ public class MapEditingPanel extends UnscaledImagePanel
 	private nortantis.geom.Point selectionBoxDragOffset;
 	private nortantis.geom.Rectangle selectionBoxRIAtDragStart;
 	/**
-	 * Optional bounding rectangle (RI coords) that constrains the selection box. Null means no constraint.
+	 * Optional bounding rectangle (RI coordinates) that constrains the selection box. Null means no constraint.
 	 */
 	private nortantis.geom.Rectangle selectionBoxConstraintsRI;
 	/**
@@ -938,12 +938,14 @@ public class MapEditingPanel extends UnscaledImagePanel
 		// Scale with mean polygon width so circles stay proportional to polygon size as world size
 		// increases, matching the way icons scale. getMeanCenterWidth() is in graph pixels and already
 		// incorporates resolution, so no separate resolution factor is needed.
-		return (int) Math.round(graph.getMeanCenterWidth() * 0.16);
+		return (int) Math.round(getRoadControlPointRadiusExact());
 	}
 
 	/**
 	 * Returns the road control-point hit radius in graph pixels — the centerline radius extended by half the
-	 * stroke width so the visible circle outline is part of the clickable area.
+	 * stroke width so the visible circle outline is part of the clickable area. The stroke is drawn centered
+	 * on the circle of radius {@link #getRoadControlPointRadiusExact()}, so it extends outward by half its
+	 * width; adding that here keeps the hit area exactly aligned with the outer visible edge.
 	 */
 	int getRoadControlPointHitRadiusInGraphPixels()
 	{
@@ -951,9 +953,22 @@ public class MapEditingPanel extends UnscaledImagePanel
 		{
 			return getRoadControlPointRadiusInGraphPixels();
 		}
-		double r = graph.getMeanCenterWidth() * 0.16;
-		double halfStrokeWidth = graph.getMeanCenterWidth() * 0.065 / 2.0;
-		return (int) Math.round(r + halfStrokeWidth);
+		return (int) Math.round(getRoadControlPointRadiusExact() + getRoadControlPointStrokeWidth() / 2.0);
+	}
+
+	private double getRoadControlPointRadiusExact()
+	{
+		return graph.getMeanCenterWidth() * 0.16;
+	}
+
+	/**
+	 * Stroke width used to draw the road/river control-point circles, in graph pixels. Scales with mean polygon
+	 * width so it thins at larger world sizes; the 0.065 factor is calibrated so the stroke is half of its
+	 * original fixed value ({@code 3 * resolution}) at maximum world size.
+	 */
+	private float getRoadControlPointStrokeWidth()
+	{
+		return (float) (graph.getMeanCenterWidth() * 0.065);
 	}
 
 	private void drawRoadControlPoints(Graphics2D g2)
@@ -967,11 +982,7 @@ public class MapEditingPanel extends UnscaledImagePanel
 		Stroke prevStroke = g2.getStroke();
 		g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 		int r = getRoadControlPointRadiusInGraphPixels();
-		// Scale stroke width with mean polygon width like the radius, so it thins out at higher world
-		// sizes. The constant 0.065 is calibrated so the stroke is half of its original fixed value
-		// (3 * resolution) at maximum world size.
-		float strokeWidth = (float) (graph.getMeanCenterWidth() * 0.065);
-		g2.setStroke(new BasicStroke(strokeWidth));
+		g2.setStroke(new BasicStroke(getRoadControlPointStrokeWidth()));
 
 		if (roadControlPointCircles != null)
 		{
@@ -1528,7 +1539,7 @@ public class MapEditingPanel extends UnscaledImagePanel
 		{
 			return BoxSelectHandle.NONE;
 		}
-		// Convert screen/component coords to map-pixel coords (RI * resolution),
+		// Convert screen/component coordinates to map-pixel coordinates (RI * resolution),
 		// which is what getSelectionBoxHandleLocation returns.
 		nortantis.geom.Point riPoint = screenToRI(screenPosition);
 		double res = resolution > 0 ? resolution : 1.0;

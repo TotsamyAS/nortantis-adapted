@@ -390,59 +390,6 @@ public abstract class VoronoiGraph
 		});
 	}
 
-	public void drawRivers(Painter p, Collection<Edge> edgesToDraw, Rectangle drawBounds, Color riverColor)
-	{
-		if (edgesToDraw == null)
-		{
-			edgesToDraw = edges;
-		}
-
-		Transform orig = null;
-		if (drawBounds != null)
-		{
-			orig = p.getTransform();
-			p.translate(-drawBounds.x, -drawBounds.y);
-		}
-
-		for (Edge e : edgesToDraw)
-		{
-			if (e.isRiver() && !e.isOceanOrLakeOrShore())
-			{
-				p.setColor(riverColor);
-
-				float currentWidth = calcRiverStrokeWidth(e);
-
-				Edge fromEdge = null;
-				if (e.v0 != null)
-				{
-					fromEdge = noisyEdges.findEdgeToFollow(e.v0, e);
-				}
-				float fromWidth = (fromEdge == null || !fromEdge.isRiver() || noisyEdges.hasLargerProtrodudingRiverEdge(e.v0, e, fromEdge)) ? currentWidth : calcRiverStrokeWidth(fromEdge);
-
-				Edge toEdge = null;
-				if (e.v1 != null)
-				{
-					toEdge = noisyEdges.findEdgeToFollow(e.v1, e);
-				}
-				float toWidth = (toEdge == null || !toEdge.isRiver() || noisyEdges.hasLargerProtrodudingRiverEdge(e.v1, e, toEdge)) ? currentWidth : calcRiverStrokeWidth(toEdge);
-
-				drawPathWithSmoothLineTransitions(p, noisyEdges.getNoisyEdge(e.index), fromWidth, currentWidth, toWidth);
-
-			}
-		}
-
-		if (drawBounds != null)
-
-		{
-			p.setTransform(orig);
-		}
-	}
-
-	private float calcRiverStrokeWidth(Edge e)
-	{
-		return (float) (resolutionScale * Math.sqrt(e.river * 0.5));
-	}
-
 	protected void drawUsingTriangles(Painter g, Center c, boolean drawElevation)
 	{
 		// Only used if Center c is on the edge of the graph. allows for
@@ -596,76 +543,6 @@ public abstract class VoronoiGraph
 
 	}
 
-	private void drawPathWithSmoothLineTransitions(Painter p, List<Point> path, float previousEdgeWidth, float currentEdgeWidth, float nextEdgeWidth)
-	{
-		if (path == null)
-		{
-			return;
-		}
-
-		if (path.size() < 2)
-		{
-			return;
-		}
-
-		float widthAtStart = (previousEdgeWidth + currentEdgeWidth) / 2f;
-		float widthAtEnd = (nextEdgeWidth + currentEdgeWidth) / 2f;
-		float previousWidth = widthAtStart;
-		List<Point> pathSoFar = new ArrayList<Point>();
-		pathSoFar.add(path.get(0));
-
-		float pathLength = getPathLength(path);
-		float lengthSoFar = 0;
-
-		for (int i = 1; i < path.size(); i++)
-		{
-			float width;
-			float distanceRatio = lengthSoFar / pathLength;
-			if (distanceRatio < 0.5f)
-			{
-				float ratio = distanceRatio * 2f;
-				width = (1f - ratio) * widthAtStart + ratio * currentEdgeWidth;
-			}
-			else
-			{
-				float ratio = distanceRatio - 0.5f;
-				width = (1f - ratio) * currentEdgeWidth + ratio * widthAtEnd;
-			}
-
-			pathSoFar.add(path.get(i));
-			if (width != previousWidth)
-			{
-				p.setBasicStroke(width);
-				drawPolyline(p, pathSoFar);
-				pathSoFar.add(path.get(i));
-			}
-
-			lengthSoFar += (float) path.get(i - 1).distanceTo(path.get(i));
-		}
-
-		if (pathSoFar.size() > 1)
-		{
-			p.setBasicStroke(widthAtEnd);
-			drawPolyline(p, pathSoFar);
-		}
-	}
-
-	private float getPathLength(List<Point> path)
-	{
-		if (path.size() < 2)
-		{
-			return 0;
-		}
-
-		float length = 0;
-		for (int i = 1; i < path.size(); i++)
-		{
-			length += (float) path.get(i - 1).distanceTo(path.get(i));
-		}
-
-		return length;
-	}
-
 	public Set<Center> getCentersFromEdges(Collection<Edge> edges)
 	{
 		Set<Center> centers = new HashSet<Center>();
@@ -703,16 +580,6 @@ public abstract class VoronoiGraph
 		}
 
 		return centers;
-	}
-
-	public Set<Edge> getEdgesFromCenters(Collection<Center> centers)
-	{
-		Set<Edge> edges = new HashSet<>();
-		for (Center center : centers)
-		{
-			edges.addAll(center.borders);
-		}
-		return edges;
 	}
 
 	protected void drawSpecifiedEdges(Painter g, double strokeWidth, Collection<Center> centersToDraw, Rectangle drawBounds, Predicate<Edge> shouldDraw)

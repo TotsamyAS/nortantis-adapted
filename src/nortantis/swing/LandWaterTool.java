@@ -526,6 +526,7 @@ public class LandWaterTool extends EditorTool
 			}
 			freeHandRoadPathRI = null;
 			polygonRoadSnapStart = null;
+			freeHandRoadSnapPoint = null;
 		}
 		else
 		{
@@ -533,7 +534,9 @@ public class LandWaterTool extends EditorTool
 			freeHandRiverSnapPoint = null;
 			polygonRiverSnapStart = null;
 		}
-		clearRoadControlPointDisplay();
+		// Clear only the in-progress preview path. Leave the nearby control point circles and the snap
+		// indicator in place so the highlight persists after escape until the user moves the mouse again.
+		mapEditingPanel.clearFreeHandRoadPreviewPath();
 		mapEditingPanel.repaint();
 	}
 
@@ -558,7 +561,8 @@ public class LandWaterTool extends EditorTool
 			int sliderWidth = riverWidthSlider.getValue();
 			int base = sliderWidth - 1;
 			int riverLevel = base * base * 2 + GraphRiver.RIVERS_THIS_SIZE_OR_SMALLER_WILL_NOT_BE_DRAWN + 1;
-			List<River> newRivers = RiverDrawer.addFreeHandRiverFromPoints(pathToCommit, riverLevel, mainWindow.edits.rivers);
+			List<River> newRivers = RiverDrawer.addFreeHandRiverFromPoints(pathToCommit, riverLevel, mainWindow.edits.rivers,
+					updater.mapParts.graph, mainWindow.displayQualityScale);
 			if (newRivers.isEmpty())
 			{
 				return;

@@ -390,15 +390,79 @@ public class RiverDrawer
 	}
 
 	/**
-	 * Splits {@code pathRI} at any segments that already exist in {@code rivers}, adds the non-overlapping sub-rivers to {@code rivers}, and
-	 * returns the changed rivers (either newly added or existing rivers that were extended by joining). Each resulting sub-river is merged with
-	 * any existing river whose endpoint it connects to. Analogous to {@link RoadDrawer#addFreeHandRoadFromPoints}.
+	 * Clips {@code pathRI} at ocean and lake centers (dropping water sub-paths so the river ends at the coastline),
+	 * splits the remaining land sub-paths at any segments that already exist in {@code rivers}, adds the resulting
+	 * sub-rivers to {@code rivers}, and returns the changed rivers. A river that passes through one or more bodies
+	 * of water becomes multiple sub-rivers. Analogous to {@link RoadDrawer#addFreeHandRoadFromPoints}.
 	 */
-	public static List<River> addFreeHandRiverFromPoints(List<Point> pathRI, int riverLevel, List<River> rivers)
+	public static List<River> addFreeHandRiverFromPoints(List<Point> pathRI, int riverLevel, List<River> rivers,
+			nortantis.WorldGraph graph, double resolutionScale)
 	{
+		List<List<Point>> landPaths = clipPathAtWater(pathRI, graph, resolutionScale);
+		if (landPaths.isEmpty())
+		{
+			return Collections.emptyList();
+		}
 		Set<OrderlessPair<Point>> existingConnections = collectRiverConnections(rivers);
-		List<River> newRivers = splitRiverPathAtOverlaps(pathRI, riverLevel, existingConnections);
+		List<River> newRivers = new ArrayList<>();
+		for (List<Point> landPath : landPaths)
+		{
+			newRivers.addAll(splitRiverPathAtOverlaps(landPath, riverLevel, existingConnections));
+		}
 		return connectAndAddRivers(newRivers, rivers);
+	}
+
+	/**
+	 * Splits {@code pathRI} at segments whose both endpoints fall on ocean or lake centers, dropping those
+	 * fully-submerged segments. Segments with at least one endpoint on land are kept as-is, so a river that
+	 * crosses water briefly without a user-placed point on water is preserved. Each returned sub-path has at
+	 * least 2 points.
+	 */
+	private static List<List<Point>> clipPathAtWater(List<Point> pathRI, nortantis.WorldGraph graph, double resolutionScale)
+	{
+		if (pathRI.size() < 2)
+		{
+			return Collections.emptyList();
+		}
+
+		boolean[] isWater = new boolean[pathRI.size()];
+		for (int i = 0; i < pathRI.size(); i++)
+		{
+			isWater[i] = isPointOnWater(pathRI.get(i), graph, resolutionScale);
+		}
+
+		List<List<Point>> result = new ArrayList<>();
+		List<Point> current = new ArrayList<>();
+		for (int i = 0; i < pathRI.size() - 1; i++)
+		{
+			if (isWater[i] && isWater[i + 1])
+			{
+				if (current.size() >= 2)
+				{
+					result.add(current);
+				}
+				current = new ArrayList<>();
+			}
+			else
+			{
+				if (current.isEmpty())
+				{
+					current.add(pathRI.get(i));
+				}
+				current.add(pathRI.get(i + 1));
+			}
+		}
+		if (current.size() >= 2)
+		{
+			result.add(current);
+		}
+		return result;
+	}
+
+	private static boolean isPointOnWater(Point pathPointRI, nortantis.WorldGraph graph, double resolutionScale)
+	{
+		nortantis.graph.voronoi.Center c = graph.findClosestCenter(pathPointRI.mult(resolutionScale));
+		return c != null && c.isWater;
 	}
 
 	/**

@@ -129,6 +129,7 @@ Whenever possible, use the Read, Edit, and Write tools to read and modify files.
 - **Tuple Classes:** `Tuple2`, `Tuple3`, `Tuple4`, `Pair`, `OrderlessPair`
 - **Helper class for timing:** nortantis.util.Stopwatch
 - **Rectangle and dimension classes:** Use `nortantis.geom.Rectangle`, `IntRectangle`, `RotatedRectangle`, `Dimension`, and `IntDimension` for anything bounding-box or size related. These classes have methods for intersection, union, containment checks, `fromCorners`, etc. Prefer these over recreating bounding-box logic inline.
+- **Shared constants and formulas:** When a numeric constant or formula is referenced in more than one place — especially one that's calibrated (a magic factor, a tuned threshold, a stroke/radius pair, etc.) — extract it into a named constant or a helper method on the first re-use, and have all references go through that name. Do not copy-paste the value or formula into multiple call sites. If the value is derived (e.g. a hit radius is centerline + half the stroke width), derive it from the same helper the original draw code uses, so future tweaks stay in sync automatically.
 - **Translations:** Whenever you add or modify a string key accessed via `Translation.get(...)`, update the English file (`messages.properties`) and all language files (`messages_de.properties`, `messages_es.properties`, `messages_fr.properties`, `messages_pt.properties`, `messages_ru.properties`, `messages_zh.properties`) in `src/nortantis/swing/translation/`.
 
 ## Map Generation Pipeline

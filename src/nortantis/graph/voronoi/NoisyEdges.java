@@ -234,18 +234,15 @@ public class NoisyEdges
 
 	/**
 	 * Determines which edge curves we should follow since there are always multiple directions curves can go.
-	 * 
+	 *
 	 * @param corner
 	 *            Corner to search from
 	 * @param edge
 	 *            Edge to follow from
+	 * @param prev
+	 *            Previous edge in the curve (used to avoid taking a path that immediately turns back on itself), or null
 	 * @return Edge to follow, or null if there is none.
 	 */
-	public Edge findEdgeToFollow(Corner corner, Edge edge)
-	{
-		return findEdgeToFollow(corner, edge, null);
-	}
-
 	public Edge findEdgeToFollow(Corner corner, Edge edge, Edge prev)
 	{
 		EdgeDrawType type = getEdgeDrawType(edge);
@@ -303,24 +300,6 @@ public class NoisyEdges
 
 		assert false;
 		return null;
-	}
-
-	public boolean hasLargerProtrodudingRiverEdge(Corner corner, Edge source, Edge follow)
-	{
-		assert source.isRiver();
-		assert follow.isRiver();
-
-		// The river continues to nextRiverEdge, but the curve should only follow that edge if the river doesn't have a larger
-		// branch another direction. That way small branches off a river don't widen or cause the main river to curve that
-		// direction.
-		Optional<Edge> optionalLargerRiver = corner.protrudes.stream()
-				.filter((other) -> other != source && other != follow && getEdgeDrawType(other) == EdgeDrawType.River && other.river > source.river && other.river >= follow.river).findFirst();
-		if (optionalLargerRiver.isPresent())
-		{
-			return true;
-		}
-
-		return false;
 	}
 
 	/**
