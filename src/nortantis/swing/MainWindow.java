@@ -837,7 +837,9 @@ public class MainWindow extends JFrame implements ILoggerTarget
 			public void actionPerformed(ActionEvent e)
 			{
 				handleImagesRefresh();
-				updater.createAndShowMapFull(() -> mapEditingPanel.clearAllSelectionsAndHighlights());
+				// Clear only tool-specific highlights (selected centers, edges, hover state, etc.) — not the
+				// View-menu river/lake highlights, which should persist across a refresh like any normal full draw.
+				updater.createAndShowMapFull(() -> mapEditingPanel.clearAllToolSpecificSelectionsAndHighlights());
 			}
 		});
 
