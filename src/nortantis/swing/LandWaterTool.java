@@ -1339,6 +1339,7 @@ public class LandWaterTool extends EditorTool
 			riverStart = null;
 			polygonRiverSnapStart = null;
 			mapEditingPanel.clearHighlightedEdges();
+			mapEditingPanel.clearHighlightedPolylines();
 			mapEditingPanel.repaint();
 
 			if (!newRivers.isEmpty())
@@ -1533,9 +1534,24 @@ public class LandWaterTool extends EditorTool
 			if (riverStart != null)
 			{
 				mapEditingPanel.clearHighlightedEdges();
+				mapEditingPanel.clearHighlightedPolylines();
 				Corner end = updater.mapParts.graph.findClosestCorner(getPointOnGraph(e.getPoint()));
 				Set<Edge> river = filterOutOceanAndCoastEdges(updater.mapParts.graph.findPathGreedy(riverStart, end));
 				mapEditingPanel.addHighlightedEdges(river, EdgeType.Voronoi);
+				// Preview the snap-back connection that will be added when the mouse is released, so the
+				// user isn't surprised by the gap between the polygon path and the freehand control point
+				// they clicked on (or the one they're hovering near at the other end).
+				Point currentEndSnapPoint = computeSnapPointForType(e.getPoint(), LineType.RIVER);
+				Point riverStartRI = riverStart.loc.mult(1.0 / mainWindow.displayQualityScale);
+				Point endRI = end == null ? null : end.loc.mult(1.0 / mainWindow.displayQualityScale);
+				if (polygonRiverSnapStart != null && !polygonRiverSnapStart.isCloseEnough(riverStartRI))
+				{
+					mapEditingPanel.addPolylinesToHighlight(List.of(polygonRiverSnapStart.mult(mainWindow.displayQualityScale), riverStart.loc));
+				}
+				if (currentEndSnapPoint != null && endRI != null && !currentEndSnapPoint.isCloseEnough(endRI))
+				{
+					mapEditingPanel.addPolylinesToHighlight(List.of(end.loc, currentEndSnapPoint.mult(mainWindow.displayQualityScale)));
+				}
 				updateControlPointDisplay(e.getPoint(), LineType.RIVER);
 				mapEditingPanel.repaint();
 			}

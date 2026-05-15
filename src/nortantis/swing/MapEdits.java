@@ -114,7 +114,9 @@ public class MapEdits implements Serializable
 				continue;
 			}
 
-			// Build nodes carrying the per-segment width and a noise seed derived from the edge.
+			// Build nodes carrying the per-segment width, a noise seed derived from the edge, and
+			// the edge index so later draw/lookup code can match this segment back to its Voronoi
+			// edge without re-doing corner-distance matching.
 			// We need (corners.size() - 1) segments, matching edges.size().
 			List<RiverPathNode> nodes = new ArrayList<>(corners.size());
 			for (int i = 0; i < corners.size(); i++)
@@ -123,11 +125,11 @@ public class MapEdits implements Serializable
 				if (i < edges.size())
 				{
 					Edge segmentEdge = edges.get(i);
-					nodes.add(new RiverPathNode(loc, segmentEdge.river, segmentEdge.noisyEdgesSeed));
+					nodes.add(new RiverPathNode(loc, segmentEdge.river, segmentEdge.noisyEdgesSeed, segmentEdge.index));
 				}
 				else
 				{
-					nodes.add(new RiverPathNode(loc, 0, 0L));
+					nodes.add(new RiverPathNode(loc, 0, 0L, RiverPathNode.EDGE_INDEX_NONE));
 				}
 			}
 

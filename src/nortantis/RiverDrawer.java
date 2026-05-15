@@ -26,28 +26,23 @@ import java.util.function.Predicate;
 public class RiverDrawer
 {
 	/**
-	 * Per-segment metadata strategy used by {@link PathOperations} when reversing or stitching river paths.
+	 * Per-segment metadata strategy used by {@link PathOperations} when reversing or stitching river paths. Carries width, seed, and the
+	 * optional Voronoi edge index along with the segment.
 	 */
 	public static final PathOperations.NodeMetadataOps<RiverPathNode> RIVER_OPS = new PathOperations.NodeMetadataOps<>()
 	{
 		@Override
 		public RiverPathNode withClearedMetadata(RiverPathNode original)
 		{
-			return new RiverPathNode(original.getLoc(), 0, 0L);
+			return new RiverPathNode(original.getLoc(), 0, 0L, RiverPathNode.EDGE_INDEX_NONE);
 		}
 
 		@Override
 		public RiverPathNode withMetadataFrom(RiverPathNode target, RiverPathNode donor)
 		{
-			return new RiverPathNode(target.getLoc(), donor.getWidthLevelToNext(), donor.getSeedToNext());
+			return new RiverPathNode(target.getLoc(), donor.getWidthLevelToNext(), donor.getSeedToNext(), donor.getEdgeIndexToNext());
 		}
 	};
-
-	/**
-	 * Tolerance (in graph pixel space) for matching a river control point to a {@link Corner}'s location, used to detect polygon-style
-	 * river segments lying exactly on a Voronoi edge. Mirrors the constant used by {@code MapCreator.applyRiverEdits}.
-	 */
-	private static final double cornerMatchTolerancePixels = 0.5;
 
 	private final List<River> rivers;
 	private final double resolutionScale;
@@ -146,15 +141,30 @@ public class RiverDrawer
 
 	private List<Point> buildSegmentPathPixels(List<RiverPathNode> nodes, int segmentIndex, double jaggedAmplitudeRI, double minLengthRI)
 	{
-		Point riStart = nodes.get(segmentIndex).getLoc();
+		RiverPathNode startNode = nodes.get(segmentIndex);
+		Point riStart = startNode.getLoc();
 		Point riEnd = nodes.get(segmentIndex + 1).getLoc();
+
+		// Polygon-mode segments carry the Voronoi edge they follow. Drawing them along the graph's
+		// precomputed noisy-edge path makes the river exactly cover the region-color fill boundary —
+		// the fill polygons are built from the same noisy edge — and matches how the old code drew
+		// rivers before they were promoted to River objects.
+		int edgeIndex = startNode.getEdgeIndexToNext();
+		if (edgeIndex != RiverPathNode.EDGE_INDEX_NONE && graph != null && edgeIndex >= 0 && edgeIndex < graph.edges.size())
+		{
+			List<Point> noisyEdgePixels = getOrientedNoisyEdgePixels(edgeIndex, riStart, riEnd);
+			if (noisyEdgePixels != null)
+			{
+				return noisyEdgePixels;
+			}
+		}
 
 		List<Point> pathRI;
 		if (lineStyle == MapSettings.LineStyle.Jagged && jaggedAmplitudeRI > 0)
 		{
 			// Per-segment seed lives on the node, so adding/removing a control point doesn't shift
 			// the randomness of unrelated segments.
-			Random random = new Random(nodes.get(segmentIndex).getSeedToNext());
+			Random random = new Random(startNode.getSeedToNext());
 			pathRI = new ArrayList<>();
 			pathRI.add(riStart);
 			subdivideInterior(riStart, riEnd, jaggedAmplitudeRI, minLengthRI, random, pathRI);
@@ -180,6 +190,35 @@ public class RiverDrawer
 		}
 
 		return scaleToPixels(pathRI);
+	}
+
+	/**
+	 * Returns the graph's noisy/spline path for {@code edgeIndex} in pixel coordinates, reversed if necessary so that the path starts near
+	 * {@code riStart} and ends near {@code riEnd} (both in RI coordinates). Returns {@code null} if the edge has no built noisy path, which
+	 * happens for edges at the map border with no v0/v1.
+	 */
+	private List<Point> getOrientedNoisyEdgePixels(int edgeIndex, Point riStart, Point riEnd)
+	{
+		List<Point> noisyPath = graph.noisyEdges == null ? null : graph.noisyEdges.getNoisyEdge(edgeIndex);
+		if (noisyPath == null || noisyPath.size() < 2)
+		{
+			return null;
+		}
+		Point startPixel = new Point(riStart.x * resolutionScale, riStart.y * resolutionScale);
+		Point endPixel = new Point(riEnd.x * resolutionScale, riEnd.y * resolutionScale);
+		Point first = noisyPath.get(0);
+		Point last = noisyPath.get(noisyPath.size() - 1);
+		boolean forward = first.distanceTo(startPixel) + last.distanceTo(endPixel) <= first.distanceTo(endPixel) + last.distanceTo(startPixel);
+		if (forward)
+		{
+			return new ArrayList<>(noisyPath);
+		}
+		List<Point> reversed = new ArrayList<>(noisyPath.size());
+		for (int i = noisyPath.size() - 1; i >= 0; i--)
+		{
+			reversed.add(noisyPath.get(i));
+		}
+		return reversed;
 	}
 
 	private List<Point> scaleToPixels(List<Point> pathRI)
@@ -382,21 +421,98 @@ public class RiverDrawer
 
 	/**
 	 * Builds non-overlapping {@link River} objects from an unordered set of connected Voronoi edges, adds them to {@code rivers}, and
-	 * returns the changed rivers (either newly added or existing rivers that were extended by joining). Edges whose corner-to-corner
-	 * segment already appears in {@code rivers} are skipped, splitting the result into multiple rivers if necessary. Each resulting river
-	 * is merged with any existing river whose endpoint it connects to. Analogous to {@link RoadDrawer#addRoadsFromEdgesInEditor}.
+	 * returns the changed rivers. The result contains both newly added/connected rivers and any existing rivers whose segment widths were
+	 * updated because the user drew over them at a different width. Edges whose Voronoi edge index already appears in {@code rivers} are
+	 * skipped from the new path (splitting the result into multiple rivers if necessary), but their existing segment's
+	 * {@code widthLevelToNext} is updated to {@code riverLevel} so redrawing a wider/thinner river over an existing one takes effect.
+	 * Analogous to {@link RoadDrawer#addRoadsFromEdgesInEditor}.
 	 */
 	public static List<River> addRiversFromEdgesInEditor(Set<Edge> edgeSet, Corner start, int riverLevel, double resolutionScale, List<River> rivers)
 	{
-		Set<OrderlessPair<Point>> existingConnections = PathOperations.collectAllConnections(riverNodesList(rivers));
-		List<River> newRivers = buildRiversFromEdgeSet(edgeSet, start, riverLevel, resolutionScale, existingConnections);
-		return connectAndAddRivers(newRivers, rivers);
+		List<River> widthUpdated = updateExistingRiverWidthsForEdges(rivers, edgeSet, riverLevel);
+		List<River> newRivers = buildRiversFromEdgeSet(edgeSet, start, riverLevel, resolutionScale, rivers);
+		List<River> connected = connectAndAddRivers(newRivers, rivers);
+		// Combine the width-updated existing rivers with the newly added/joined rivers, keeping
+		// each river at most once.
+		Set<River> seen = new HashSet<>();
+		List<River> changed = new ArrayList<>(widthUpdated.size() + connected.size());
+		for (River r : widthUpdated)
+		{
+			if (seen.add(r))
+			{
+				changed.add(r);
+			}
+		}
+		for (River r : connected)
+		{
+			if (seen.add(r))
+			{
+				changed.add(r);
+			}
+		}
+		return changed;
+	}
+
+	/**
+	 * For each segment in {@code rivers} whose {@code edgeIndexToNext} is in {@code edges}, updates its width level to {@code newWidthLevel}
+	 * if different. Returns the rivers whose width was actually changed. Used so that drawing a polygon-mode river over an existing river at
+	 * a different width retunes the existing segments instead of leaving them at the old width.
+	 */
+	public static List<River> updateExistingRiverWidthsForEdges(List<River> rivers, Set<Edge> edges, int newWidthLevel)
+	{
+		if (rivers == null || rivers.isEmpty() || edges == null || edges.isEmpty())
+		{
+			return Collections.emptyList();
+		}
+		Set<Integer> edgeIndices = new HashSet<>(edges.size() * 2);
+		for (Edge e : edges)
+		{
+			edgeIndices.add(e.index);
+		}
+
+		List<River> changed = new ArrayList<>();
+		for (River river : rivers)
+		{
+			List<RiverPathNode> nodes = river.nodes;
+			List<RiverPathNode> updated = null;
+			for (int i = 0; i < nodes.size() - 1; i++)
+			{
+				RiverPathNode node = nodes.get(i);
+				int edgeIndex = node.getEdgeIndexToNext();
+				if (edgeIndex == RiverPathNode.EDGE_INDEX_NONE)
+				{
+					continue;
+				}
+				if (!edgeIndices.contains(edgeIndex))
+				{
+					continue;
+				}
+				if (node.getWidthLevelToNext() == newWidthLevel)
+				{
+					continue;
+				}
+				if (updated == null)
+				{
+					updated = new ArrayList<>(nodes);
+				}
+				updated.set(i, new RiverPathNode(node.getLoc(), newWidthLevel, node.getSeedToNext(), edgeIndex));
+			}
+			if (updated != null)
+			{
+				// Atomic swap so concurrent readers see a fully consistent path.
+				river.nodes = new CopyOnWriteArrayList<>(updated);
+				changed.add(river);
+			}
+		}
+		return changed;
 	}
 
 	/**
 	 * Clips {@code pathRI} at ocean and lake centers (dropping water sub-paths so the river ends at the coastline), splits the remaining
 	 * land sub-paths at any segments that already exist in {@code rivers}, adds the resulting sub-rivers to {@code rivers}, and returns the
-	 * changed rivers. A river that passes through one or more bodies of water becomes multiple sub-rivers. Analogous to
+	 * changed rivers. A river that passes through one or more bodies of water becomes multiple sub-rivers. If the new freehand path
+	 * exactly retraces a segment of an existing river at a different width (possible via the snap-to-control-point feature), the existing
+	 * segment's {@code widthLevelToNext} is updated to {@code riverLevel} so re-drawing at a different width takes effect. Analogous to
 	 * {@link RoadDrawer#addFreeHandRoadFromPoints}.
 	 */
 	public static List<River> addFreeHandRiverFromPoints(List<Point> pathRI, int riverLevel, List<River> rivers, nortantis.WorldGraph graph, double resolutionScale)
@@ -406,6 +522,19 @@ public class RiverDrawer
 		{
 			return Collections.emptyList();
 		}
+
+		// Collect segments of the new path, then update widths on any existing river segments that
+		// exactly match (e.g. when the user snapped to existing control points).
+		Set<OrderlessPair<Point>> newSegments = new HashSet<>();
+		for (List<Point> landPath : landPaths)
+		{
+			for (int i = 0; i < landPath.size() - 1; i++)
+			{
+				newSegments.add(new OrderlessPair<>(landPath.get(i), landPath.get(i + 1)));
+			}
+		}
+		List<River> widthUpdated = updateExistingRiverWidthsForPointPairs(rivers, newSegments, riverLevel);
+
 		Set<OrderlessPair<Point>> existingConnections = PathOperations.collectAllConnections(riverNodesList(rivers));
 		Random random = new Random();
 		List<River> newRivers = new ArrayList<>();
@@ -416,7 +545,69 @@ public class RiverDrawer
 				newRivers.add(River.withUniformWidth(subPath, riverLevel, random));
 			}
 		}
-		return connectAndAddRivers(newRivers, rivers);
+		List<River> connected = connectAndAddRivers(newRivers, rivers);
+
+		Set<River> seen = new HashSet<>();
+		List<River> changed = new ArrayList<>(widthUpdated.size() + connected.size());
+		for (River r : widthUpdated)
+		{
+			if (seen.add(r))
+			{
+				changed.add(r);
+			}
+		}
+		for (River r : connected)
+		{
+			if (seen.add(r))
+			{
+				changed.add(r);
+			}
+		}
+		return changed;
+	}
+
+	/**
+	 * For each segment in {@code rivers} whose endpoint location pair appears in {@code segmentsToMatch}, updates its width level to
+	 * {@code newWidthLevel} if different. Returns the rivers whose width was actually changed. Used so that a freehand river drawn exactly
+	 * over an existing river's segments (via snap-to-control-point) retunes the existing widths. Polygon-mode width updates go through
+	 * {@link #updateExistingRiverWidthsForEdges} instead, which uses the deterministic edge-index match.
+	 */
+	public static List<River> updateExistingRiverWidthsForPointPairs(List<River> rivers, Set<OrderlessPair<Point>> segmentsToMatch, int newWidthLevel)
+	{
+		if (rivers == null || rivers.isEmpty() || segmentsToMatch == null || segmentsToMatch.isEmpty())
+		{
+			return Collections.emptyList();
+		}
+		List<River> changed = new ArrayList<>();
+		for (River river : rivers)
+		{
+			List<RiverPathNode> nodes = river.nodes;
+			List<RiverPathNode> updated = null;
+			for (int i = 0; i < nodes.size() - 1; i++)
+			{
+				OrderlessPair<Point> pair = new OrderlessPair<>(nodes.get(i).getLoc(), nodes.get(i + 1).getLoc());
+				if (!segmentsToMatch.contains(pair))
+				{
+					continue;
+				}
+				if (nodes.get(i).getWidthLevelToNext() == newWidthLevel)
+				{
+					continue;
+				}
+				if (updated == null)
+				{
+					updated = new ArrayList<>(nodes);
+				}
+				RiverPathNode old = updated.get(i);
+				updated.set(i, new RiverPathNode(old.getLoc(), newWidthLevel, old.getSeedToNext(), old.getEdgeIndexToNext()));
+			}
+			if (updated != null)
+			{
+				river.nodes = new CopyOnWriteArrayList<>(updated);
+				changed.add(river);
+			}
+		}
+		return changed;
 	}
 
 	/**
@@ -521,7 +712,8 @@ public class RiverDrawer
 
 			for (int i = 0; i < nodes.size() - 1; i++)
 			{
-				Point pA = nodes.get(i).getLoc();
+				RiverPathNode nodeA = nodes.get(i);
+				Point pA = nodeA.getLoc();
 				Point pB = nodes.get(i + 1).getLoc();
 
 				if (isPointOnWater(pA, graph, resolutionScale, isWaterCenter) && isPointOnWater(pB, graph, resolutionScale, isWaterCenter))
@@ -530,8 +722,7 @@ public class RiverDrawer
 					continue;
 				}
 
-				Edge coastEdge = findCoastEdgeMatchingSegment(pA, pB, graph, resolutionScale, isWaterCenter);
-				if (coastEdge != null)
+				if (isSegmentOnCoastEdge(nodeA.getEdgeIndexToNext(), graph, isWaterCenter))
 				{
 					result.add(List.of(pA, pB));
 				}
@@ -565,32 +756,95 @@ public class RiverDrawer
 		return bounds;
 	}
 
-	private static Edge findCoastEdgeMatchingSegment(Point pA, Point pB, nortantis.WorldGraph graph, double resolutionScale, Predicate<Center> isWaterCenter)
+	/**
+	 * For every river node that carries a Voronoi edge index in {@code edgeIndexToNext}, snaps both endpoints of that segment back to the
+	 * current {@link Corner#loc} of the edge's corners (in RI coordinates). This is needed after region-boundary smoothing moves corners:
+	 * the river itself is drawn from the noisy-edge path (which uses the new corner positions), but the river's stored control points were
+	 * captured at the old positions, so the editor would draw control points off the visible river. Freehand nodes
+	 * ({@link RiverPathNode#EDGE_INDEX_NONE}) are left alone — they aren't tied to a specific corner.
+	 *
+	 * @return the rivers whose node list was actually modified.
+	 */
+	public static List<River> resyncRiverNodeLocationsToGraph(List<River> rivers, nortantis.WorldGraph graph, double resolutionScale)
 	{
-		Point pAPixel = pA.mult(resolutionScale);
-		Point pBPixel = pB.mult(resolutionScale);
-		Corner cornerA = graph.findClosestCorner(pAPixel);
-		Corner cornerB = graph.findClosestCorner(pBPixel);
-		if (cornerA == null || cornerB == null || cornerA == cornerB)
+		if (rivers == null || rivers.isEmpty() || graph == null)
 		{
-			return null;
+			return Collections.emptyList();
 		}
-		if (cornerA.loc.distanceTo(pAPixel) > cornerMatchTolerancePixels || cornerB.loc.distanceTo(pBPixel) > cornerMatchTolerancePixels)
+		List<River> changed = new ArrayList<>();
+		for (River river : rivers)
 		{
-			return null;
-		}
-		for (Edge edge : cornerA.protrudes)
-		{
-			if (edge.v0 == cornerB || edge.v1 == cornerB)
+			List<RiverPathNode> nodes = river.nodes;
+			if (nodes.size() < 2)
 			{
-				if (edge.d0 != null && edge.d1 != null && isWaterCenter.test(edge.d0) != isWaterCenter.test(edge.d1))
+				continue;
+			}
+			List<RiverPathNode> updated = null;
+			for (int i = 0; i < nodes.size() - 1; i++)
+			{
+				int edgeIndex = nodes.get(i).getEdgeIndexToNext();
+				if (edgeIndex == RiverPathNode.EDGE_INDEX_NONE || edgeIndex < 0 || edgeIndex >= graph.edges.size())
 				{
-					return edge;
+					continue;
 				}
-				return null;
+				Edge edge = graph.edges.get(edgeIndex);
+				if (edge.v0 == null || edge.v1 == null)
+				{
+					continue;
+				}
+				Point v0RI = edge.v0.loc.mult(1.0 / resolutionScale);
+				Point v1RI = edge.v1.loc.mult(1.0 / resolutionScale);
+
+				RiverPathNode startNode = updated != null ? updated.get(i) : nodes.get(i);
+				RiverPathNode endNode = updated != null ? updated.get(i + 1) : nodes.get(i + 1);
+
+				// Orient: pick the assignment of {v0RI, v1RI} → {start, end} that's closer to where
+				// the nodes already sit, so we keep the river's direction intact across re-syncs.
+				double forward = startNode.getLoc().distanceTo(v0RI) + endNode.getLoc().distanceTo(v1RI);
+				double backward = startNode.getLoc().distanceTo(v1RI) + endNode.getLoc().distanceTo(v0RI);
+				Point newStart = forward <= backward ? v0RI : v1RI;
+				Point newEnd = forward <= backward ? v1RI : v0RI;
+
+				if (!startNode.getLoc().equals(newStart))
+				{
+					if (updated == null)
+					{
+						updated = new ArrayList<>(nodes);
+					}
+					updated.set(i, new RiverPathNode(newStart, startNode.getWidthLevelToNext(), startNode.getSeedToNext(), startNode.getEdgeIndexToNext()));
+				}
+				if (!endNode.getLoc().equals(newEnd))
+				{
+					if (updated == null)
+					{
+						updated = new ArrayList<>(nodes);
+					}
+					updated.set(i + 1, new RiverPathNode(newEnd, endNode.getWidthLevelToNext(), endNode.getSeedToNext(), endNode.getEdgeIndexToNext()));
+				}
+			}
+			if (updated != null)
+			{
+				// Atomic swap so concurrent readers see a fully consistent path.
+				river.nodes = new CopyOnWriteArrayList<>(updated);
+				changed.add(river);
 			}
 		}
-		return null;
+		return changed;
+	}
+
+	/**
+	 * Returns true if the segment described by {@code edgeIndex} is a coast/lakeshore (one adjacent {@link Center} water, one land per
+	 * {@code isWaterCenter}). Returns false for {@link RiverPathNode#EDGE_INDEX_NONE} or any out-of-range index. Rivers do not follow
+	 * coastlines in real life, so the caller drops segments for which this returns true once the user has painted water.
+	 */
+	private static boolean isSegmentOnCoastEdge(int edgeIndex, nortantis.WorldGraph graph, Predicate<Center> isWaterCenter)
+	{
+		if (edgeIndex == RiverPathNode.EDGE_INDEX_NONE || edgeIndex < 0 || edgeIndex >= graph.edges.size())
+		{
+			return false;
+		}
+		Edge edge = graph.edges.get(edgeIndex);
+		return edge.d0 != null && edge.d1 != null && isWaterCenter.test(edge.d0) != isWaterCenter.test(edge.d1);
 	}
 
 	/**
@@ -751,11 +1005,13 @@ public class RiverDrawer
 	}
 
 	/**
-	 * Traverses {@code edgeSet} starting at {@code start}, building river(s) whose nodes lie on Voronoi corners in RI coordinates. Edges
-	 * whose corner pair already appears in {@code existingConnections} are skipped (committing the current path and restarting from the far
-	 * corner). New pairs are added to {@code existingConnections} as they are consumed.
+	 * Traverses {@code edgeSet} starting at {@code start}, building river(s) as {@link RiverPathNode} lists. Each node's
+	 * {@link RiverPathNode#getEdgeIndexToNext()} is set to the {@link Edge#index} of the segment it begins, so later draw and lookup code
+	 * can identify the Voronoi edge a polygon-mode segment lies on without re-deriving it from corner positions. Edges whose Voronoi index
+	 * already appears in any existing river are skipped (committing the current path and restarting from the far corner). New edge indices
+	 * encountered during this walk are also tracked so the same edge isn't added twice within a single drag.
 	 */
-	private static List<River> buildRiversFromEdgeSet(Set<Edge> edgeSet, Corner start, int riverLevel, double resolutionScale, Set<OrderlessPair<Point>> existingConnections)
+	private static List<River> buildRiversFromEdgeSet(Set<Edge> edgeSet, Corner start, int riverLevel, double resolutionScale, List<River> existingRivers)
 	{
 		List<River> result = new ArrayList<>();
 		if (edgeSet.isEmpty())
@@ -763,11 +1019,13 @@ public class RiverDrawer
 			return result;
 		}
 
+		Set<Integer> consumedEdgeIndices = collectEdgeIndicesUsedByExistingRivers(existingRivers);
+
 		Random random = new Random();
 		Set<Edge> remaining = new HashSet<>(edgeSet);
 		Corner current = start;
-		List<Point> currentPath = new ArrayList<>();
-		currentPath.add(current.loc.mult(1.0 / resolutionScale));
+		List<RiverPathNode> currentNodes = new ArrayList<>();
+		currentNodes.add(makeTerminalNode(current, resolutionScale));
 
 		while (!remaining.isEmpty())
 		{
@@ -783,14 +1041,14 @@ public class RiverDrawer
 
 			if (next == null)
 			{
-				if (currentPath.size() >= 2)
+				if (currentNodes.size() >= 2)
 				{
-					result.add(River.withUniformWidth(currentPath, riverLevel, random));
+					result.add(new River(currentNodes));
 				}
-				currentPath = new ArrayList<>();
+				currentNodes = new ArrayList<>();
 				Edge anyEdge = remaining.iterator().next();
 				current = anyEdge.v0 != null ? anyEdge.v0 : anyEdge.v1;
-				currentPath.add(current.loc.mult(1.0 / resolutionScale));
+				currentNodes.add(makeTerminalNode(current, resolutionScale));
 			}
 			else
 			{
@@ -798,22 +1056,23 @@ public class RiverDrawer
 				Corner nextCorner = (next.v0 != null && next.v0 == current) ? next.v1 : next.v0;
 				if (nextCorner != null)
 				{
-					Point currentPointRI = currentPath.get(currentPath.size() - 1);
-					Point nextPointRI = nextCorner.loc.mult(1.0 / resolutionScale);
-					OrderlessPair<Point> pair = new OrderlessPair<>(currentPointRI, nextPointRI);
-					if (existingConnections.contains(pair))
+					if (consumedEdgeIndices.contains(next.index))
 					{
-						if (currentPath.size() >= 2)
+						if (currentNodes.size() >= 2)
 						{
-							result.add(River.withUniformWidth(currentPath, riverLevel, random));
+							result.add(new River(currentNodes));
 						}
-						currentPath = new ArrayList<>();
-						currentPath.add(nextPointRI);
+						currentNodes = new ArrayList<>();
+						currentNodes.add(makeTerminalNode(nextCorner, resolutionScale));
 					}
 					else
 					{
-						existingConnections.add(pair);
-						currentPath.add(nextPointRI);
+						consumedEdgeIndices.add(next.index);
+						// Replace the last (terminal) node with one that carries this segment's
+						// per-segment metadata, then append a fresh terminal for the far corner.
+						RiverPathNode prev = currentNodes.get(currentNodes.size() - 1);
+						currentNodes.set(currentNodes.size() - 1, new RiverPathNode(prev.getLoc(), riverLevel, random.nextLong(), next.index));
+						currentNodes.add(makeTerminalNode(nextCorner, resolutionScale));
 					}
 					current = nextCorner;
 				}
@@ -824,9 +1083,36 @@ public class RiverDrawer
 			}
 		}
 
-		if (currentPath.size() >= 2)
+		if (currentNodes.size() >= 2)
 		{
-			result.add(River.withUniformWidth(currentPath, riverLevel, random));
+			result.add(new River(currentNodes));
+		}
+		return result;
+	}
+
+	private static RiverPathNode makeTerminalNode(Corner corner, double resolutionScale)
+	{
+		return new RiverPathNode(corner.loc.mult(1.0 / resolutionScale), 0, 0L, RiverPathNode.EDGE_INDEX_NONE);
+	}
+
+	private static Set<Integer> collectEdgeIndicesUsedByExistingRivers(List<River> rivers)
+	{
+		Set<Integer> result = new HashSet<>();
+		if (rivers == null)
+		{
+			return result;
+		}
+		for (River river : rivers)
+		{
+			List<RiverPathNode> nodes = river.nodes;
+			for (int i = 0; i < nodes.size() - 1; i++)
+			{
+				int edgeIndex = nodes.get(i).getEdgeIndexToNext();
+				if (edgeIndex != RiverPathNode.EDGE_INDEX_NONE)
+				{
+					result.add(edgeIndex);
+				}
+			}
 		}
 		return result;
 	}

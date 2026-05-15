@@ -997,6 +997,12 @@ public class SubMapCreator
 	 * Clips a river's RI-coordinate path to the selection rectangle, inserting intersection points at the boundary where segments cross it.
 	 * Returns a list of {@link River} sub-paths (each with ≥ 2 points) in new-map RI coordinates, with width levels scaled by
 	 * {@code riverLevelScale} and capped at {@link GraphRiver#MAX_RIVER_LEVEL}.
+	 * <p>
+	 * Edge indices on the original river's {@link RiverPathNode}s are intentionally <em>not</em> propagated to the result: this path runs
+	 * when the sub-map preserves the original control points exactly (preserve-detail mode), but the sub-map has its own independent
+	 * {@link WorldGraph} so original edge indices would point at the wrong edges (or out of range). {@link River#fromLocationsAndWidths}
+	 * creates nodes with {@link RiverPathNode#EDGE_INDEX_NONE}, which is the correct value here.
+	 * </p>
 	 */
 	private static List<River> clipRiverPath(River river, Rectangle selectionBounds, int newWidth, int newHeight, double riverLevelScale)
 	{
@@ -1069,22 +1075,27 @@ public class SubMapCreator
 	}
 
 	/**
-	 * Walks the edge chain in {@code edgeLevels} from {@code start} to {@code end} and builds a {@link River} with RI-space path points and
-	 * per-segment width levels. Returns {@code null} if the path has fewer than 2 points. After {@link #simplifyToPath} the edge map is a
-	 * simple chain, so the visited-set walk will always reach {@code end} without backtracking.
+	 * Walks the edge chain in {@code edgeLevels} from {@code start} to {@code end} and builds a {@link River} with RI-space path points,
+	 * per-segment width levels, and per-segment new-graph edge indices. Returns {@code null} if the path has fewer than 2 points. After
+	 * {@link #simplifyToPath} the edge map is a simple chain, so the visited-set walk will always reach {@code end} without backtracking.
+	 * <p>
+	 * The edge indices recorded here are for the <em>new</em> graph (which owns the edges in {@code edgeLevels}), so future polygon-mode
+	 * edits in the sub-map can identify these segments by edge index.
+	 * </p>
 	 */
 	private static River buildRiverFromEdgePath(Map<Edge, Integer> edgeLevels, Corner start, Corner end, double resolution)
 	{
 		if (start == null || end == null || edgeLevels.isEmpty())
 			return null;
 
-		List<Point> path = new ArrayList<>();
-		List<Integer> widths = new ArrayList<>();
-		path.add(start.loc.mult(1.0 / resolution));
-
+		List<RiverPathNode> nodes = new ArrayList<>();
+		Random random = new Random();
 		Corner current = start;
 		Set<Corner> visited = new HashSet<>();
 		visited.add(current);
+		Point firstLoc = current.loc.mult(1.0 / resolution);
+		// First node's "to-next" metadata is filled in the next iteration once we know the segment.
+		RiverPathNode pendingNode = new RiverPathNode(firstLoc, 0, 0L, RiverPathNode.EDGE_INDEX_NONE);
 
 		while (!current.equals(end))
 		{
@@ -1102,16 +1113,21 @@ public class SubMapCreator
 			}
 			if (next == null)
 				break;
-			path.add(next.loc.mult(1.0 / resolution));
-			widths.add(edgeLevels.get(nextEdge));
+			// Finalize the pending node with the segment we just chose.
+			int segmentWidth = edgeLevels.get(nextEdge);
+			nodes.add(new RiverPathNode(pendingNode.getLoc(), segmentWidth, random.nextLong(), nextEdge.index));
+			pendingNode = new RiverPathNode(next.loc.mult(1.0 / resolution), 0, 0L, RiverPathNode.EDGE_INDEX_NONE);
 			visited.add(next);
 			current = next;
 		}
 
-		if (path.size() < 2)
+		// Append the terminal node (no outgoing segment).
+		nodes.add(pendingNode);
+
+		if (nodes.size() < 2)
 			return null;
 
-		return River.fromLocationsAndWidths(path, widths);
+		return new River(nodes);
 	}
 
 	/**

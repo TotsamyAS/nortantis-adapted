@@ -93,11 +93,6 @@ public abstract class MapUpdater
 		createAndShowMap(UpdateType.Terrain, null, null, null, null, null, null);
 	}
 
-	public void createAndShowMapTerrainChange(Runnable preRun)
-	{
-		createAndShowMap(UpdateType.Terrain, null, null, null, null, preRun, null);
-	}
-
 	public void createAndShowMapGrungeOrFrayedEdgeChange()
 	{
 		createAndShowMap(UpdateType.GrungeAndFray, null, null, null, null, null, null);
@@ -116,11 +111,6 @@ public abstract class MapUpdater
 	public void createAndShowMapIncrementalUsingCenters(Set<Center> centersChanged)
 	{
 		createAndShowMap(UpdateType.Incremental, centersChanged, null, null, null, null, null);
-	}
-
-	public void createAndShowMapIncrementalUsingCenters(Set<Center> centersChanged, Runnable postRun)
-	{
-		createAndShowMap(UpdateType.Incremental, centersChanged, null, null, null, null, postRun);
 	}
 
 	public void createAndShowMapIncrementalUsingEdges(Set<Edge> edgesChanged)
@@ -256,11 +246,21 @@ public abstract class MapUpdater
 
 	private Collection<Integer> getCentersIdsOfRiversChanged(MapEdits edits, double resolutionScale)
 	{
-		Set<List<Point>> changePaths = edits.rivers.stream().map(river -> PathOperations.toLocationList(river.nodes)).collect(Collectors.toSet());
-		Set<List<Point>> currentPaths = getEdits().rivers.stream().map(river -> PathOperations.toLocationList(river.nodes)).collect(Collectors.toSet());
-		Set<List<Point>> diff = Helper.getElementsNotInIntersection(changePaths, currentPaths);
-		Set<Integer> diffCenterIds = getIdsOfCentersPointsAreOn(pointListsToPointSet(diff), resolutionScale);
-		return diffCenterIds;
+		// Use the full RiverPathNode lists (not just locations) so that width-only or seed-only
+		// changes — e.g. drawing a different-width river over an existing one — are still detected
+		// as differences and the affected centers get redrawn.
+		Set<List<RiverPathNode>> changeNodes = edits.rivers.stream().map(river -> (List<RiverPathNode>) new ArrayList<>(river.nodes)).collect(Collectors.toSet());
+		Set<List<RiverPathNode>> currentNodes = getEdits().rivers.stream().map(river -> (List<RiverPathNode>) new ArrayList<>(river.nodes)).collect(Collectors.toSet());
+		Set<List<RiverPathNode>> diff = Helper.getElementsNotInIntersection(changeNodes, currentNodes);
+		Set<Point> diffPoints = new HashSet<>();
+		for (List<RiverPathNode> nodes : diff)
+		{
+			for (RiverPathNode node : nodes)
+			{
+				diffPoints.add(node.getLoc());
+			}
+		}
+		return getIdsOfCentersPointsAreOn(diffPoints, resolutionScale);
 	}
 
 	public static Set<Point> pointListsToPointSet(Set<List<Point>> listSet)

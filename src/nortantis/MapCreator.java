@@ -190,9 +190,9 @@ public class MapCreator implements WarningLogger
 		applyRegionEdits(mapParts.graph, settings.edits);
 		// Apply river edits before center edits because applying center edits smoothes region boundaries, which depends on rivers.
 		migrateLegacyRiversIfNeeded(settings, mapParts.graph);
-		applyRiverEdits(mapParts.graph, settings.edits, settings.resolution);
+		applyRiverEdits(mapParts.graph, settings.edits);
 		Set<Center> centersChangedThatAffectedLandOrRegionBoundaries = applyCenterEdits(mapParts.graph, settings.edits, getCenterEditsForCenters(settings.edits, centersChanged),
-				settings.drawRegionBoundaries || settings.drawRegionColors);
+				settings.drawRegionBoundaries || settings.drawRegionColors, settings.resolution);
 
 		Rectangle centersChangedBounds = WorldGraph.getBoundingBox(centersChanged);
 
@@ -1724,13 +1724,13 @@ public class MapCreator implements WarningLogger
 		// values.
 		if (settings.edits != null && settings.edits.hasInitializedRivers)
 		{
-			applyRiverEdits(graph, settings.edits, resolutionScale);
+			applyRiverEdits(graph, settings.edits);
 		}
 		else
 		{
 			applyEdgeEdits(graph, settings.edits, null);
 		}
-		applyCenterEdits(graph, settings.edits, null, settings.drawRegionBoundaries || settings.drawRegionColors);
+		applyCenterEdits(graph, settings.edits, null, settings.drawRegionBoundaries || settings.drawRegionColors, resolutionScale);
 		// applyRiverEdits may trigger a premature center lookup table build (before isWater is restored by applyCenterEdits).
 		// Reset it so it rebuilds with correct state on first use.
 		graph.resetCenterLookupTable();
@@ -1794,7 +1794,7 @@ public class MapCreator implements WarningLogger
 	 * @return A set of centers whose noisy edges have been recalculated, meaning something about their terrain or region boundaries
 	 *         changed.
 	 */
-	private static Set<Center> applyCenterEdits(WorldGraph graph, MapEdits edits, Collection<CenterEdit> centerEditChanges, boolean areRegionBoundariesVisible)
+	private static Set<Center> applyCenterEdits(WorldGraph graph, MapEdits edits, Collection<CenterEdit> centerEditChanges, boolean areRegionBoundariesVisible, double resolutionScale)
 	{
 		if (edits == null || edits.centerEdits.isEmpty())
 		{
@@ -1868,6 +1868,14 @@ public class MapCreator implements WarningLogger
 			graph.rebuildNoisyEdgesForCenter(center, needsRebuildNoisyEdges);
 		}
 
+		// Smoothing may have moved corners (a river edge no longer counts as a region boundary for
+		// smoothing, so adjacent corners can shift). The river itself draws from the new corner
+		// positions via the noisy-edge path, but stored river.nodes locations still point at the old
+		// positions, which would cause the editor's control points to appear off the visible river.
+		// Re-sync any polygon-mode nodes (those with an edgeIndexToNext) to their edge's current
+		// corner locations.
+		nortantis.RiverDrawer.resyncRiverNodeLocationsToGraph(edits.rivers, graph, resolutionScale);
+
 		return needsRebuildNoisyEdges;
 	}
 
@@ -1930,13 +1938,11 @@ public class MapCreator implements WarningLogger
 
 	/**
 	 * Restores {@link Edge#river} levels on the graph from the {@link River} objects in {@link MapEdits#rivers}. Clears all edge river
-	 * levels first, then re-applies them from the stored River paths. River path points are matched to graph corners within a tolerance;
-	 * freehand river segments that do not land on a graph corner are silently skipped.
-	 *
-	 * @param resolutionScale
-	 *            Used to convert RI corner coordinates in the River path back to graph pixel space for corner matching.
+	 * levels first, then re-applies them from the stored River paths. Segments whose
+	 * {@link nortantis.editor.RiverPathNode#getEdgeIndexToNext()} is set (polygon-mode rivers) are written back to that edge; freehand
+	 * segments without an edge index are skipped because they do not lie on a single Voronoi edge.
 	 */
-	private static void applyRiverEdits(WorldGraph graph, MapEdits edits, double resolutionScale)
+	private static void applyRiverEdits(WorldGraph graph, MapEdits edits)
 	{
 		int[] oldRivers = new int[graph.edges.size()];
 		for (Edge edge : graph.edges)
@@ -1945,7 +1951,6 @@ public class MapCreator implements WarningLogger
 			edge.river = 0;
 		}
 
-		final double cornerMatchTolerancePixels = 0.5;
 		if (edits != null)
 		{
 			for (River river : edits.rivers)
@@ -1953,23 +1958,13 @@ public class MapCreator implements WarningLogger
 				List<RiverPathNode> nodes = river.nodes;
 				for (int i = 0; i < nodes.size() - 1; i++)
 				{
-					Point p1 = nodes.get(i).getLoc().mult(resolutionScale);
-					Point p2 = nodes.get(i + 1).getLoc().mult(resolutionScale);
-					Corner c1 = graph.findClosestCorner(p1);
-					Corner c2 = graph.findClosestCorner(p2);
-					if (c1 == null || c2 == null)
+					int edgeIndex = nodes.get(i).getEdgeIndexToNext();
+					if (edgeIndex == RiverPathNode.EDGE_INDEX_NONE || edgeIndex < 0 || edgeIndex >= graph.edges.size())
 					{
 						continue;
 					}
-					if (c1.loc.distanceTo(p1) > cornerMatchTolerancePixels || c2.loc.distanceTo(p2) > cornerMatchTolerancePixels)
-					{
-						continue;
-					}
-					Edge edge = findEdgeBetweenCorners(c1, c2);
-					if (edge != null)
-					{
-						edge.river = Math.max(edge.river, nodes.get(i).getWidthLevelToNext());
-					}
+					Edge edge = graph.edges.get(edgeIndex);
+					edge.river = Math.max(edge.river, nodes.get(i).getWidthLevelToNext());
 				}
 			}
 		}
@@ -1981,18 +1976,6 @@ public class MapCreator implements WarningLogger
 				graph.rebuildNoisyEdgesForCenter(edge.d0);
 			}
 		}
-	}
-
-	private static Edge findEdgeBetweenCorners(Corner c1, Corner c2)
-	{
-		for (Edge edge : c1.protrudes)
-		{
-			if (edge.v0 == c2 || edge.v1 == c2)
-			{
-				return edge;
-			}
-		}
-		return null;
 	}
 
 	public Image createHeightMap(MapSettings settings)
