@@ -1718,8 +1718,10 @@ public class MapCreator implements WarningLogger
 
 		applyRegionEdits(graph, settings.edits);
 		// Apply river edits before center edits because applying center edits smoothes region boundaries, which depends on rivers.
-		// For old files that have not yet been converted (hasInitializedRivers == false), fall back to applyEdgeEdits which reads the legacy
-		// edgeEdits data. initializeRiversFromGraph will run on the first full draw to seed River objects from the restored edge.river values.
+		// For old files that have not yet been converted (hasInitializedRivers == false), fall back to applyEdgeEdits which reads the
+		// legacy
+		// edgeEdits data. initializeRiversFromGraph will run on the first full draw to seed River objects from the restored edge.river
+		// values.
 		if (settings.edits != null && settings.edits.hasInitializedRivers)
 		{
 			applyRiverEdits(graph, settings.edits, resolutionScale);
@@ -1874,15 +1876,16 @@ public class MapCreator implements WarningLogger
 	 * <p>
 	 * This is a migration path for old save files. {@code EdgeEdit} originally stored river width levels, which have since moved to
 	 * {@link nortantis.editor.River} inside {@link MapEdits#rivers}. On the first draw of an old file,
-	 * {@link MapEdits#hasInitializedRivers} is {@code false}, so this method restores {@code edge.river} from the stored
-	 * {@code edgeEdits}; then {@link MapEdits#initializeRiversFromGraph} will seed the new {@code River} objects from those values.
-	 * For new files, {@link #applyRiverEdits} is used instead.
+	 * {@link MapEdits#hasInitializedRivers} is {@code false}, so this method restores {@code edge.river} from the stored {@code edgeEdits};
+	 * then {@link MapEdits#initializeRiversFromGraph} will seed the new {@code River} objects from those values. For new files,
+	 * {@link #applyRiverEdits} is used instead.
 	 * </p>
 	 */
 	/**
-	 * Runs the legacy {@link EdgeEdit}-to-{@link River} migration when {@code hasInitializedRivers} is false. The full-draw path already does
-	 * this during {@code createGraphAndApplyEdits} + {@code createMap}, but every incremental update entry point must also call this so that
-	 * undoing past the initial load (on a pre-3.19 file) re-runs the migration on the next draw — without it, the rivers stay empty.
+	 * Runs the legacy {@link EdgeEdit}-to-{@link River} migration when {@code hasInitializedRivers} is false. The full-draw path already
+	 * does this during {@code createGraphAndApplyEdits} + {@code createMap}, but every incremental update entry point must also call this
+	 * so that undoing past the initial load (on a pre-3.19 file) re-runs the migration on the next draw — without it, the rivers stay
+	 * empty.
 	 */
 	private static void migrateLegacyRiversIfNeeded(MapSettings settings, WorldGraph graph)
 	{
@@ -1947,10 +1950,11 @@ public class MapCreator implements WarningLogger
 		{
 			for (River river : edits.rivers)
 			{
-				for (int i = 0; i < river.path.size() - 1; i++)
+				List<RiverPathNode> nodes = river.nodes;
+				for (int i = 0; i < nodes.size() - 1; i++)
 				{
-					Point p1 = river.path.get(i).mult(resolutionScale);
-					Point p2 = river.path.get(i + 1).mult(resolutionScale);
+					Point p1 = nodes.get(i).getLoc().mult(resolutionScale);
+					Point p2 = nodes.get(i + 1).getLoc().mult(resolutionScale);
 					Corner c1 = graph.findClosestCorner(p1);
 					Corner c2 = graph.findClosestCorner(p2);
 					if (c1 == null || c2 == null)
@@ -1964,7 +1968,7 @@ public class MapCreator implements WarningLogger
 					Edge edge = findEdgeBetweenCorners(c1, c2);
 					if (edge != null)
 					{
-						edge.river = Math.max(edge.river, river.segmentWidthLevels.get(i));
+						edge.river = Math.max(edge.river, nodes.get(i).getWidthLevelToNext());
 					}
 				}
 			}

@@ -1,6 +1,7 @@
 package nortantis;
 
 import nortantis.editor.Road;
+import nortantis.editor.RoadPathNode;
 import nortantis.geom.IntPoint;
 import nortantis.geom.Point;
 import nortantis.geom.Rectangle;
@@ -10,16 +11,42 @@ import nortantis.platform.Color;
 import nortantis.platform.DrawQuality;
 import nortantis.platform.Image;
 import nortantis.platform.Painter;
-import nortantis.util.GeometryHelper;
 import nortantis.util.OrderlessPair;
 import nortantis.util.Range;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Optional;
+import java.util.Random;
+import java.util.Set;
+import java.util.Stack;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
 
 public class RoadDrawer
 {
+	/**
+	 * Road nodes carry no per-segment metadata, so the strategy is a no-op pass-through. Used by {@link PathOperations} to keep the
+	 * connect/reverse helpers generic across roads and rivers.
+	 */
+	public static final PathOperations.NodeMetadataOps<RoadPathNode> ROAD_OPS = new PathOperations.NodeMetadataOps<>()
+	{
+		@Override
+		public RoadPathNode withClearedMetadata(RoadPathNode original)
+		{
+			return original;
+		}
+
+		@Override
+		public RoadPathNode withMetadataFrom(RoadPathNode target, RoadPathNode donor)
+		{
+			return target;
+		}
+	};
+
 	/**
 	 * Discourages roads from going through mountains.
 	 */
@@ -112,7 +139,6 @@ public class RoadDrawer
 
 	private void addRandomRoadsToNearbyNeighbors(Set<Center> connectedCities, Set<OrderlessPair<Center>> roadsAdded, Set<Edge> edgesAddedRoadsFor)
 	{
-		// Determine which cities will have roads between them
 		for (Center city : connectedCities)
 		{
 			int roadsToAddCount = Math.abs(rand.nextInt() % numberOfRandomRoadsToPerCity) + 1;
@@ -131,7 +157,6 @@ public class RoadDrawer
 					potentialNeighbors.remove(closestCity);
 					if (!roadsAdded.contains(pair))
 					{
-						// Store which roads I have already added so that I don't re-add them later
 						addRoadBetweenCenters(city, closestCity, roadsAdded, edgesAddedRoadsFor);
 					}
 				}
@@ -144,16 +169,6 @@ public class RoadDrawer
 		}
 	}
 
-	/**
-	 * Adds roads between cities to ensure all cities are reachable from all other cities through some path.
-	 * 
-	 * @param connectedCities
-	 *            Cities that will all be reachable from each other after this method finishes.
-	 * @param roadsAdded
-	 *            Stores what roads have been added so far to avoid re-adding the same road twice.
-	 * @param edgesAddedRoadsFor
-	 *            Stores which edges we've added roads for so that roads going the same direction don't overlap each other.
-	 */
 	private void makeAllCitiesReachable(Set<Center> connectedCities, Set<OrderlessPair<Center>> roadsAdded, Set<Edge> edgesAddedRoadsFor)
 	{
 		while (true)
@@ -162,13 +177,11 @@ public class RoadDrawer
 
 			if (disconnectedComponents.size() == 1)
 			{
-				// We're done because all cities are reachable from all other cities.
 				return;
 			}
 
 			if (disconnectedComponents.size() == 0)
 			{
-				// This should not happen because it means the there are no cities.
 				assert false;
 				return;
 			}
@@ -180,7 +193,6 @@ public class RoadDrawer
 					Set<Center> component1 = disconnectedComponents.get(i);
 					Set<Center> component2 = disconnectedComponents.get(j);
 
-					// Find closest cities between the two components.
 					double minDistance = Double.MAX_VALUE;
 					Center closestCity1 = null;
 					Center closestCity2 = null;
@@ -198,7 +210,6 @@ public class RoadDrawer
 						}
 					}
 
-					// Add a road between the closest cities.
 					if (closestCity1 != null && closestCity2 != null)
 					{
 						addRoadBetweenCenters(closestCity1, closestCity2, roadsAdded, edgesAddedRoadsFor);
@@ -211,7 +222,6 @@ public class RoadDrawer
 
 	private void addRoadBetweenCenters(Center start, Center end, Set<OrderlessPair<Center>> roadsAdded, Set<Edge> edgesAddedRoadsFor)
 	{
-		// Mark the edges that will be roads between cities
 		List<Edge> edges = graph.findShortestPath(start, end, (edge, center, distanceToEnd) ->
 		{
 			if (center.isWater)
@@ -219,7 +229,6 @@ public class RoadDrawer
 				return Double.POSITIVE_INFINITY;
 			}
 
-			// If there's already a road here, favor it so we don't make redundant roads that almost follow the same course.
 			boolean alreadyHasRoad = edgesAddedRoadsFor.contains(edge);
 
 			double terrainPenalty;
@@ -250,8 +259,6 @@ public class RoadDrawer
 			return;
 		}
 
-		// Add the edges as roads, making sure to not add roads for edges already added, since overlapping dotted/dashed
-		// lines don't look good.
 		List<Edge> soFar = new ArrayList<Edge>();
 		for (Edge edge : edges)
 		{
@@ -270,16 +277,14 @@ public class RoadDrawer
 		addEdgesToRoads(soFar, graph, roads, resolutionScale);
 		edgesAddedRoadsFor.addAll(soFar);
 
-		// Add this road so that the next call to findDisconnectedComponents detects this road.
 		roadsAdded.add(new OrderlessPair<>(start, end));
 	}
 
 	public static List<Road> addRoadsFromEdgesInEditor(List<Edge> edges, WorldGraph graph, List<Road> roads, double resolutionScale)
 	{
-		Set<OrderlessPair<Point>> existingRoadConnections = combineRoadConnections(roads);
+		Set<OrderlessPair<Point>> existingRoadConnections = PathOperations.collectAllConnections(roadNodesList(roads));
 
 		List<Road> changed = new ArrayList<>();
-		// Make sure we don't add two of the same points so that we don't get roads that exactly overlap.
 		List<Edge> soFar = new ArrayList<Edge>();
 		for (Edge edge : edges)
 		{
@@ -292,7 +297,11 @@ public class RoadDrawer
 
 			if (existingRoadConnections.contains(pair))
 			{
-				changed.add(addEdgesToRoads(soFar, graph, roads, resolutionScale));
+				Road r = addEdgesToRoads(soFar, graph, roads, resolutionScale);
+				if (r != null)
+				{
+					changed.add(r);
+				}
 				soFar.clear();
 			}
 			else
@@ -302,33 +311,14 @@ public class RoadDrawer
 			}
 		}
 
-		changed.add(addEdgesToRoads(soFar, graph, roads, resolutionScale));
+		Road r = addEdgesToRoads(soFar, graph, roads, resolutionScale);
+		if (r != null)
+		{
+			changed.add(r);
+		}
 		return changed;
 	}
 
-	private static Set<OrderlessPair<Point>> combineRoadConnections(List<Road> roads)
-	{
-		Set<OrderlessPair<Point>> existingRoadConnections = new HashSet<>();
-		for (Road road : roads)
-		{
-			for (int i = 0; i < road.path.size() - 1; i++)
-			{
-				existingRoadConnections.add(new OrderlessPair<Point>(road.path.get(i), road.path.get(i + 1)));
-			}
-		}
-
-		return existingRoadConnections;
-	}
-
-	/**
-	 * Finds the sets of disconnected components in the graph of connectedCities, where a node is a Center in connectedCities and an edge is
-	 * an OrderlessPair stored in roadsAdded.
-	 * 
-	 * @param connectedCities
-	 * @param roadsAdded
-	 * @return A list of disconnected components from connectedCities. If all centers in connectedCities are connected through some path of
-	 *         roads in roadsAdded, then the result will be a list of size 1, and that first element will be a set equal to connectedCities.
-	 */
 	private List<Set<Center>> findDisconnectedComponents(Set<Center> connectedCities, Set<OrderlessPair<Center>> roadsAdded)
 	{
 		List<Set<Center>> disconnectedComponents = new ArrayList<>();
@@ -350,7 +340,6 @@ public class RoadDrawer
 						visited.add(current);
 						component.add(current);
 
-						// Find neighbors connected by roads
 						for (OrderlessPair<Center> road : roadsAdded)
 						{
 							if (road.getFirst().equals(current))
@@ -381,7 +370,7 @@ public class RoadDrawer
 	 * Either adds the given edges as a new road, or adds them to an existing road if the points from those edges connect to an existing
 	 * road.
 	 *
-	 * @return Either the new road, or the one the new road was added to.
+	 * @return Either the new road, or the one the new road was added to. {@code null} if there were no edges.
 	 */
 	private static Road addEdgesToRoads(List<Edge> edges, WorldGraph graph, List<Road> roads, double resolutionScale)
 	{
@@ -403,9 +392,8 @@ public class RoadDrawer
 	}
 
 	/**
-	 * For each sub-path in {@code subPaths}, either merges it into an existing road whose endpoint matches, or adds it as a new road.
-	 * A second merge attempt is made on the result to handle a new segment bridging two existing roads. Analogous to
-	 * {@code RiverDrawer.connectAndAddRivers}.
+	 * For each location-only sub-path, builds a {@link Road} and either merges it into an existing road whose endpoint matches or adds it
+	 * as a new road. A second merge attempt handles a new road bridging two existing roads.
 	 *
 	 * @return The changed roads — either newly added roads or existing roads that were extended.
 	 */
@@ -414,7 +402,7 @@ public class RoadDrawer
 		List<Road> changed = new ArrayList<>();
 		for (List<Point> subPath : subPaths)
 		{
-			Road newRoad = new Road(subPath);
+			Road newRoad = Road.fromLocations(subPath);
 			Road joined = tryConnectingRoadToExistingRoad(newRoad, roads);
 			if (joined != null)
 			{
@@ -438,58 +426,68 @@ public class RoadDrawer
 		return changed;
 	}
 
+	/**
+	 * Attempts to join {@code roadToAdd} to an existing road in {@code roads} by matching endpoints. If a match is found, the existing
+	 * road's nodes are replaced with the merged node list (a single atomic volatile-field swap so concurrent readers don't see partial
+	 * state), {@code roadToAdd} is NOT added to {@code roads}, and the extended existing road is returned. Returns {@code null} if no
+	 * endpoint match is found.
+	 */
 	public static Road tryConnectingRoadToExistingRoad(Road roadToAdd, List<Road> roads)
 	{
+		if (roadToAdd == null || roadToAdd.nodes.size() < 2)
+		{
+			return null;
+		}
+		List<RoadPathNode> toAdd = roadToAdd.nodes;
 		for (Road road : roads)
 		{
-			if (road.path.isEmpty())
-			{
-				continue;
-			}
-
 			if (road == roadToAdd)
 			{
-				// Ignore same object.
 				continue;
 			}
-
-			if (road.path.get(0).isCloseEnough(roadToAdd.path.get(0)))
+			List<RoadPathNode> existing = road.nodes;
+			if (existing.size() < 2)
 			{
-				roadToAdd.path.remove(0);
-				Collections.reverse(roadToAdd.path);
-				road.path.addAll(0, roadToAdd.path);
-				return road;
+				continue;
 			}
-			if (road.path.get(0).isCloseEnough(roadToAdd.path.get(roadToAdd.path.size() - 1)))
+			List<RoadPathNode> merged = tryMergeEndpoints(existing, toAdd);
+			if (merged != null)
 			{
-				roadToAdd.path.remove(roadToAdd.path.size() - 1);
-				road.path.addAll(0, roadToAdd.path);
-				return road;
-			}
-			if (road.path.get(road.path.size() - 1).isCloseEnough(roadToAdd.path.get(0)))
-			{
-				roadToAdd.path.remove(0);
-				road.path.addAll(roadToAdd.path);
-				return road;
-			}
-			if (road.path.get(road.path.size() - 1).isCloseEnough(roadToAdd.path.get(roadToAdd.path.size() - 1)))
-			{
-				roadToAdd.path.remove(roadToAdd.path.size() - 1);
-				Collections.reverse(roadToAdd.path);
-				road.path.addAll(roadToAdd.path);
+				road.nodes = new CopyOnWriteArrayList<>(merged);
 				return road;
 			}
 		}
-
 		return null;
+	}
+
+	private static List<RoadPathNode> tryMergeEndpoints(List<RoadPathNode> existing, List<RoadPathNode> toAdd)
+	{
+		PathOperations.ExistingPathAccessor<RoadPathNode> single = new PathOperations.ExistingPathAccessor<>()
+		{
+			@Override
+			public int count()
+			{
+				return 1;
+			}
+
+			@Override
+			public List<RoadPathNode> get(int index)
+			{
+				return existing;
+			}
+
+			@Override
+			public void replace(int index, List<RoadPathNode> newNodes)
+			{
+			}
+		};
+		PathOperations.Match<RoadPathNode> match = PathOperations.tryConnectToExistingPath(toAdd, single, ROAD_OPS);
+		return match == null ? null : match.mergedNodes;
 	}
 
 	/**
 	 * Splits {@code pathRI} at any segments that already exist in {@code roads}, adds the non-overlapping sub-roads to {@code roads}, and
-	 * returns the changed roads (either newly added or existing roads that were extended by joining). Analogous to
-	 * {@link RiverDrawer#addFreeHandRiverFromPoints}.
-	 *
-	 * @return The changed roads — newly added roads or existing roads extended by joining. Empty if the path is too short.
+	 * returns the changed roads.
 	 */
 	public static List<Road> addFreeHandRoadFromPoints(List<Point> pathRI, List<Road> roads)
 	{
@@ -498,9 +496,55 @@ public class RoadDrawer
 			return Collections.emptyList();
 		}
 
-		Set<OrderlessPair<Point>> existingConnections = combineRoadConnections(roads);
-		List<List<Point>> subPaths = GeometryHelper.splitPathAtOverlaps(pathRI, existingConnections);
+		Set<OrderlessPair<Point>> existingConnections = PathOperations.collectAllConnections(roadNodesList(roads));
+		List<List<Point>> subPaths = nortantis.util.GeometryHelper.splitPathAtOverlaps(pathRI, existingConnections);
 		return connectAndAddRoads(subPaths, roads);
+	}
+
+	/**
+	 * Splits each road in {@code roads} at any node whose location appears as an endpoint of one of {@code segmentsToRemove}. A road that
+	 * becomes multiple pieces stays in the list as its first piece, with the additional pieces appended as new {@link Road} objects.
+	 *
+	 * @return The roads that changed (existing roads whose nodes were replaced, plus any newly created pieces from splits).
+	 */
+	public static List<Road> removeSegmentsAndSplitRoads(List<Road> roads, List<List<Point>> segmentsToRemove)
+	{
+		Set<Point> splitLocs = new HashSet<>();
+		for (List<Point> seg : segmentsToRemove)
+		{
+			splitLocs.addAll(seg);
+		}
+
+		List<Road> changed = new ArrayList<>();
+		List<Road> newRoads = new ArrayList<>();
+		for (Road road : roads)
+		{
+			List<RoadPathNode> nodes = road.nodes;
+			List<List<RoadPathNode>> splits = PathOperations.splitAtLocations(nodes, splitLocs);
+			boolean unchanged = splits.size() == 1 && splits.get(0).size() == nodes.size();
+			if (unchanged)
+			{
+				continue;
+			}
+
+			changed.add(road);
+			if (splits.isEmpty())
+			{
+				road.nodes = new CopyOnWriteArrayList<>();
+			}
+			else
+			{
+				road.nodes = new CopyOnWriteArrayList<>(splits.get(0));
+				for (int i = 1; i < splits.size(); i++)
+				{
+					newRoads.add(new Road(splits.get(i)));
+				}
+			}
+		}
+
+		roads.addAll(newRoads);
+		changed.addAll(newRoads);
+		return changed;
 	}
 
 	public static void removeEmptyOrSinglePointRoads(List<Road> roadList)
@@ -509,16 +553,26 @@ public class RoadDrawer
 		while (iterator.hasNext())
 		{
 			Road road = iterator.next();
-			if (road.path.size() < 2)
+			if (road.nodes.size() < 2)
 			{
 				iterator.remove();
 			}
 		}
 	}
 
+	private static Iterable<List<RoadPathNode>> roadNodesList(List<Road> roads)
+	{
+		List<List<RoadPathNode>> result = new ArrayList<>(roads.size());
+		for (Road road : roads)
+		{
+			result.add(road.nodes);
+		}
+		return result;
+	}
+
 	/**
 	 * Draws the roads the were either loaded from settings or created by createRoads().
-	 * 
+	 *
 	 * @param map
 	 *            The image to draw on.
 	 */
@@ -536,30 +590,30 @@ public class RoadDrawer
 							drawBounds.height * (1.0 / resolutionScale));
 			for (Road road : roads)
 			{
-				if (drawBounds == null || roadOverlapsRectangle(road, drawBoundsResolutionInvariant))
+				List<RoadPathNode> nodes = road.nodes;
+				if (nodes.size() < 2)
+				{
+					continue;
+				}
+				if (drawBoundsResolutionInvariant == null || roadOverlapsRectangle(nodes, drawBoundsResolutionInvariant))
 				{
 					p.setColor(roadColor);
 					p.setStroke(roadStyle, resolutionScale);
-					// Copy the road's path as an extra precaution to be thread safe because CurveCreator.createCurve accesses the path
-					// using
-					// list indexes, so if the list changed size in that method, it could cause an error.
-					List<Point> roadPathCopy = Arrays.asList(road.path.toArray(new Point[] {}));
-					List<Point> path = CurveCreator.createCurve(roadPathCopy);
+					List<Point> locations = PathOperations.toLocationList(nodes);
+					List<Point> path = CurveCreator.createCurve(locations);
 					List<IntPoint> pathScaled = path.stream().map(point -> point.mult(resolutionScale).toIntPoint()).toList();
 					p.drawPolyline(pathScaled);
 				}
-
 			}
 		}
 	}
 
-	private boolean roadOverlapsRectangle(Road road, Rectangle bounds)
+	private boolean roadOverlapsRectangle(List<RoadPathNode> nodes, Rectangle bounds)
 	{
 		// Sample the actual curve at a coarser resolution than drawing uses so that curves which bulge into the
-		// bounds are detected even when no control point lies inside it. Check segment bounding boxes between
-		// consecutive sampled points rather than point containment, so that roads passing through the bounds
-		// between samples are not missed (this also correctly handles 2-point straight-line roads).
-		List<Point> curve = CurveCreator.createCurve(road.path, boundsCheckDistanceBetweenPoints);
+		// bounds are detected even when no control point lies inside it.
+		List<Point> locations = PathOperations.toLocationList(nodes);
+		List<Point> curve = CurveCreator.createCurve(locations, boundsCheckDistanceBetweenPoints);
 		for (int i = 0; i < curve.size() - 1; i++)
 		{
 			Point p1 = curve.get(i);
@@ -580,18 +634,19 @@ public class RoadDrawer
 			p.setColor(Color.create(0, 150, 0));
 			for (Road road : roads)
 			{
-				if (road.path.size() == 0)
+				List<RoadPathNode> nodes = road.nodes;
+				if (nodes.size() == 0)
 				{
 					throw new IllegalArgumentException();
 				}
-				if (road.path.size() == 1)
+				if (nodes.size() == 1)
 				{
 					throw new IllegalArgumentException();
 				}
 
-				for (int i = 0; i < road.path.size(); i++)
+				for (int i = 0; i < nodes.size(); i++)
 				{
-					Point point = road.path.get(i).mult(resolutionScale);
+					Point point = nodes.get(i).getLoc().mult(resolutionScale);
 					int diameter = (int) Math.max(1, 3 * resolutionScale);
 					p.drawOval((int) point.x, (int) point.y, diameter, diameter);
 

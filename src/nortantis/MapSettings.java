@@ -698,11 +698,11 @@ public class MapSettings implements Serializable
 			JSONObject roadObj = new JSONObject();
 
 			JSONArray pathJson = new JSONArray();
-			if (road.path != null)
+			if (road.nodes != null)
 			{
-				for (Point point : road.path)
+				for (RoadPathNode node : road.nodes)
 				{
-					pathJson.add(point.toJson());
+					pathJson.add(node.getLoc().toJson());
 				}
 			}
 			roadObj.put("path", pathJson);
@@ -724,25 +724,19 @@ public class MapSettings implements Serializable
 		for (River river : edits.rivers)
 		{
 			JSONObject riverObj = new JSONObject();
-			riverObj.put("seed", river.noisyEdgesSeed);
-
-			JSONArray pathJson = new JSONArray();
-			if (river.path != null)
+			JSONArray nodesJson = new JSONArray();
+			if (river.nodes != null)
 			{
-				for (Point point : river.path)
+				for (RiverPathNode node : river.nodes)
 				{
-					pathJson.add(point.toJson());
+					JSONObject nodeJson = new JSONObject();
+					nodeJson.put("loc", node.getLoc().toJson());
+					nodeJson.put("widthToNext", (long) node.getWidthLevelToNext());
+					nodeJson.put("seedToNext", node.getSeedToNext());
+					nodesJson.add(nodeJson);
 				}
 			}
-			riverObj.put("path", pathJson);
-
-			JSONArray widthsJson = new JSONArray();
-			for (int widthLevel : river.segmentWidthLevels)
-			{
-				widthsJson.add((long) widthLevel);
-			}
-			riverObj.put("widths", widthsJson);
-
+			riverObj.put("nodes", nodesJson);
 			riversJson.add(riverObj);
 		}
 
@@ -1965,8 +1959,7 @@ public class MapSettings implements Serializable
 					path.add(Point.fromJSonValue(pointString));
 				}
 			}
-			Road road = new Road(path);
-			roads.add(road);
+			roads.add(Road.fromLocations(path));
 		}
 		return roads;
 	}
@@ -1984,27 +1977,19 @@ public class MapSettings implements Serializable
 		for (Object obj : list)
 		{
 			JSONObject riverJson = (JSONObject) obj;
-			long seed = riverJson.containsKey("seed") ? (long) riverJson.get("seed") : 0L;
-
-			List<Point> path = new ArrayList<>();
-			if (riverJson.containsKey("path"))
+			List<RiverPathNode> nodes = new ArrayList<>();
+			if (riverJson.containsKey("nodes"))
 			{
-				for (Object obj2 : (JSONArray) riverJson.get("path"))
+				for (Object obj2 : (JSONArray) riverJson.get("nodes"))
 				{
-					path.add(Point.fromJSonValue((String) obj2));
+					JSONObject nodeJson = (JSONObject) obj2;
+					Point loc = Point.fromJSonValue((String) nodeJson.get("loc"));
+					int widthToNext = nodeJson.containsKey("widthToNext") ? (int) (long) nodeJson.get("widthToNext") : 0;
+					long seedToNext = nodeJson.containsKey("seedToNext") ? (long) nodeJson.get("seedToNext") : 0L;
+					nodes.add(new RiverPathNode(loc, widthToNext, seedToNext));
 				}
 			}
-
-			List<Integer> widths = new ArrayList<>();
-			if (riverJson.containsKey("widths"))
-			{
-				for (Object w : (JSONArray) riverJson.get("widths"))
-				{
-					widths.add((int) (long) w);
-				}
-			}
-
-			rivers.add(new River(path, widths, seed));
+			rivers.add(new River(nodes));
 		}
 		return rivers;
 	}

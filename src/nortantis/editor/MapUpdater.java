@@ -169,9 +169,9 @@ public abstract class MapUpdater
 					continue;
 				}
 
-				for (Point point : road.path)
+				for (RoadPathNode node : road.nodes)
 				{
-					Center center = mapParts.graph.findClosestCenter(point.mult(resolutionScale), true);
+					Center center = mapParts.graph.findClosestCenter(node.getLoc().mult(resolutionScale), true);
 					if (center != null)
 					{
 						centersToRedrawLowPriority.put(center.index, center);
@@ -196,9 +196,9 @@ public abstract class MapUpdater
 					continue;
 				}
 
-				for (Point point : river.path)
+				for (RiverPathNode node : river.nodes)
 				{
-					Center center = mapParts.graph.findClosestCenter(point.mult(resolutionScale), true);
+					Center center = mapParts.graph.findClosestCenter(node.getLoc().mult(resolutionScale), true);
 					if (center != null)
 					{
 						centersToRedrawLowPriority.put(center.index, center);
@@ -247,8 +247,8 @@ public abstract class MapUpdater
 
 	private Collection<Integer> getCentersIdsOfRoadsChanged(MapEdits edits, double resolutionScale)
 	{
-		Set<List<Point>> changePaths = edits.roads.stream().map(road -> road.path).collect(Collectors.toSet());
-		Set<List<Point>> currentPaths = getEdits().roads.stream().map(road -> road.path).collect(Collectors.toSet());
+		Set<List<Point>> changePaths = edits.roads.stream().map(road -> PathOperations.toLocationList(road.nodes)).collect(Collectors.toSet());
+		Set<List<Point>> currentPaths = getEdits().roads.stream().map(road -> PathOperations.toLocationList(road.nodes)).collect(Collectors.toSet());
 		Set<List<Point>> diff = Helper.getElementsNotInIntersection(changePaths, currentPaths);
 		Set<Integer> diffCenterIds = getIdsOfCentersPointsAreOn(pointListsToPointSet(diff), resolutionScale);
 		return diffCenterIds;
@@ -256,8 +256,8 @@ public abstract class MapUpdater
 
 	private Collection<Integer> getCentersIdsOfRiversChanged(MapEdits edits, double resolutionScale)
 	{
-		Set<List<Point>> changePaths = edits.rivers.stream().map(river -> river.path).collect(Collectors.toSet());
-		Set<List<Point>> currentPaths = getEdits().rivers.stream().map(river -> river.path).collect(Collectors.toSet());
+		Set<List<Point>> changePaths = edits.rivers.stream().map(river -> PathOperations.toLocationList(river.nodes)).collect(Collectors.toSet());
+		Set<List<Point>> currentPaths = getEdits().rivers.stream().map(river -> PathOperations.toLocationList(river.nodes)).collect(Collectors.toSet());
 		Set<List<Point>> diff = Helper.getElementsNotInIntersection(changePaths, currentPaths);
 		Set<Integer> diffCenterIds = getIdsOfCentersPointsAreOn(pointListsToPointSet(diff), resolutionScale);
 		return diffCenterIds;

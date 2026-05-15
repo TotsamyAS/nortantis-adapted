@@ -421,9 +421,8 @@ public class LandWaterTool extends EditorTool
 
 	private List<List<Point>> getAllLinePaths(LineType type)
 	{
-		return type == LineType.RIVER
-				? mainWindow.edits.rivers.stream().map(r -> (List<Point>) r.path).toList()
-				: mainWindow.edits.roads.stream().map(r -> (List<Point>) r.path).toList();
+		return type == LineType.RIVER ? mainWindow.edits.rivers.stream().map(r -> PathOperations.toLocationList(r.nodes)).toList()
+				: mainWindow.edits.roads.stream().map(r -> PathOperations.toLocationList(r.nodes)).toList();
 	}
 
 	private List<Point> getFreeHandPath(LineType type)
@@ -561,21 +560,20 @@ public class LandWaterTool extends EditorTool
 			int sliderWidth = riverWidthSlider.getValue();
 			int base = sliderWidth - 1;
 			int riverLevel = base * base * 2 + GraphRiver.RIVERS_THIS_SIZE_OR_SMALLER_WILL_NOT_BE_DRAWN + 1;
-			List<River> newRivers = RiverDrawer.addFreeHandRiverFromPoints(pathToCommit, riverLevel, mainWindow.edits.rivers,
-					updater.mapParts.graph, mainWindow.displayQualityScale);
+			List<River> newRivers = RiverDrawer.addFreeHandRiverFromPoints(pathToCommit, riverLevel, mainWindow.edits.rivers, updater.mapParts.graph, mainWindow.displayQualityScale);
 			if (newRivers.isEmpty())
 			{
 				return;
 			}
 			updater.addRiversToRedrawLowPriority(newRivers, mainWindow.displayQualityScale);
-			pathsForCenters = newRivers.stream().map(r -> (List<Point>) r.path).collect(Collectors.toList());
+			pathsForCenters = newRivers.stream().map(r -> PathOperations.toLocationList(r.nodes)).collect(Collectors.toList());
 		}
 		else
 		{
 			List<Road> changedList = RoadDrawer.addFreeHandRoadFromPoints(pathToCommit, mainWindow.edits.roads);
 			RoadDrawer.removeEmptyOrSinglePointRoads(mainWindow.edits.roads);
 			updater.addRoadsToRedrawLowPriority(changedList, mainWindow.displayQualityScale);
-			pathsForCenters = changedList.stream().map(r -> (List<Point>) r.path).collect(Collectors.toList());
+			pathsForCenters = changedList.stream().map(r -> PathOperations.toLocationList(r.nodes)).collect(Collectors.toList());
 		}
 
 		updater.createAndShowMapIncrementalUsingCenters(getCentersTouchingPoints(pathsForCenters));
@@ -704,6 +702,7 @@ public class LandWaterTool extends EditorTool
 			}
 			if (hasChange)
 			{
+				removeRiversCoveredByPaintedWater(selected);
 				handleMapChange(selected);
 			}
 		}
@@ -845,7 +844,7 @@ public class LandWaterTool extends EditorTool
 			if (modeWidget.isEraseMode())
 			{
 				List<List<Point>> riverSegmentsToRemove = getSelectedRiverSegments(e.getPoint());
-				List<River> riversChanged = removeSegmentsAndSplitRivers(mainWindow.edits.rivers, riverSegmentsToRemove);
+				List<River> riversChanged = RiverDrawer.removeSegmentsAndSplitRivers(mainWindow.edits.rivers, riverSegmentsToRemove);
 				RiverDrawer.removeEmptyOrShortRivers(mainWindow.edits.rivers);
 				mapEditingPanel.clearHighlightedEdges();
 				updater.addRiversToRedrawLowPriority(riversChanged, mainWindow.displayQualityScale);
@@ -867,7 +866,7 @@ public class LandWaterTool extends EditorTool
 			if (modeWidget.isEraseMode())
 			{
 				List<List<Point>> roadSegmentsToRemove = getSelectedRoadSegments(e.getPoint());
-				List<Road> changed = removeSegmentsAndSplitRoads(mainWindow.edits.roads, roadSegmentsToRemove);
+				List<Road> changed = RoadDrawer.removeSegmentsAndSplitRoads(mainWindow.edits.roads, roadSegmentsToRemove);
 				RoadDrawer.removeEmptyOrSinglePointRoads(mainWindow.edits.roads);
 				mapEditingPanel.clearHighlightedPolylines();
 				updater.createAndShowMapIncrementalUsingCenters(getCentersTouchingPoints(roadSegmentsToRemove));
@@ -894,84 +893,6 @@ public class LandWaterTool extends EditorTool
 				{
 					result.add(c);
 				}
-			}
-		}
-		return result;
-	}
-
-	/**
-	 * Removes the given set of roadPointsToRemove from the roads in roadList.
-	 *
-	 * @return Roads that have changed.
-	 */
-	public static List<Road> removeSegmentsAndSplitRoads(List<Road> roadList, List<List<Point>> segmentsToRemove)
-	{
-		List<Road> changed = new ArrayList<>();
-		List<Road> newRoads = new ArrayList<>();
-		Set<Point> pointsFromSegmentsToRemove = roadsToPoints(segmentsToRemove);
-
-		for (Road road : roadList)
-		{
-			List<Point> path = road.path;
-			List<List<Point>> splitPaths = new ArrayList<>();
-			List<Point> currentPath = new ArrayList<>();
-			boolean roadChanged = false;
-
-			for (int i = 0; i < path.size(); i++)
-			{
-				Point point = path.get(i);
-				currentPath.add(point);
-				if (pointsFromSegmentsToRemove.contains(point))
-				{
-					roadChanged = true;
-					if (!currentPath.isEmpty())
-					{
-						if (currentPath.size() > 1)
-						{
-							splitPaths.add(new ArrayList<>(currentPath));
-						}
-						currentPath.clear();
-
-						if (i + 1 < path.size() && !pointsFromSegmentsToRemove.contains(path.get(i + 1)))
-						{
-							currentPath.add(point);
-						}
-					}
-				}
-			}
-			if (currentPath.size() > 1)
-			{
-				splitPaths.add(currentPath);
-			}
-
-			for (List<Point> splitPath : splitPaths)
-			{
-				if (splitPath.size() > 1)
-				{
-					newRoads.add(new Road(splitPath));
-				}
-			}
-
-			if (roadChanged)
-			{
-				changed.add(road);
-			}
-		}
-
-		roadList.clear();
-		roadList.addAll(newRoads);
-
-		return changed;
-	}
-
-	private static Set<Point> roadsToPoints(List<List<Point>> roads)
-	{
-		Set<Point> result = new HashSet<>();
-		for (List<Point> road : roads)
-		{
-			for (Point p : road)
-			{
-				result.add(p);
 			}
 		}
 		return result;
@@ -1005,8 +926,7 @@ public class LandWaterTool extends EditorTool
 
 	private List<Point> findClosestRoadSegmentWithinRadius(Point targetPoint, double radius)
 	{
-		return findClosestSegmentWithinRadius(targetPoint, radius,
-				mainWindow.edits.roads.stream().map(r -> (List<Point>) r.path).toList());
+		return findClosestSegmentWithinRadius(targetPoint, radius, mainWindow.edits.roads.stream().map(r -> PathOperations.toLocationList(r.nodes)).toList());
 	}
 
 	private List<Point> findClosestSegmentWithinRadius(Point targetPoint, double radius, List<List<Point>> paths)
@@ -1045,7 +965,7 @@ public class LandWaterTool extends EditorTool
 
 	private List<List<Point>> findRoadSegmentsWithinRadius(Point targetPoint, double radius)
 	{
-		return findSegmentsWithinRadius(mainWindow.edits.roads.stream().map(r -> (List<Point>) r.path).toList(), targetPoint, radius);
+		return findSegmentsWithinRadius(mainWindow.edits.roads.stream().map(r -> PathOperations.toLocationList(r.nodes)).toList(), targetPoint, radius);
 	}
 
 	private List<List<Point>> findSegmentsWithinRadius(List<List<Point>> paths, Point targetPoint, double radius)
@@ -1133,7 +1053,7 @@ public class LandWaterTool extends EditorTool
 	{
 		Point targetPoint = getPointOnGraph(pointFromMouse).mult(1.0 / mainWindow.displayQualityScale);
 		int brushDiameter = brushSizes.get(brushSizeComboBox.getSelectedIndex());
-		List<List<Point>> riverPaths = mainWindow.edits.rivers.stream().map(r -> (List<Point>) r.path).toList();
+		List<List<Point>> riverPaths = mainWindow.edits.rivers.stream().map(r -> PathOperations.toLocationList(r.nodes)).toList();
 		if (brushDiameter <= 1)
 		{
 			int radius = (int) ((double) ((singlePointRoadSelectionRadiusBeforeZoomAndScale / mainWindow.zoom) * mapEditingPanel.osScale));
@@ -1152,131 +1072,59 @@ public class LandWaterTool extends EditorTool
 		}
 	}
 
-	private List<River> removeSegmentsAndSplitRivers(List<River> riverList, List<List<Point>> segmentsToRemove)
+	/**
+	 * After the user has painted ocean or lake on {@code paintedCenters} (centerEdits already updated), removes river segments that are
+	 * entirely in water or that follow exactly along a Voronoi edge which has just become a coast or lakeshore. The actual water test
+	 * consults {@code centerEdits} because {@link Center#isWater} is not updated until the next redraw runs. Triggers an incremental redraw
+	 * of the centers along any removed segments so stale river pixels on the land side of a new coast get cleaned up.
+	 */
+	private void removeRiversCoveredByPaintedWater(Set<Center> paintedCenters)
 	{
-		List<River> changed = new ArrayList<>();
-		List<River> newRivers = new ArrayList<>();
-		Set<Point> pointsToRemove = new HashSet<>();
-		for (List<Point> segment : segmentsToRemove)
+		if (updater.mapParts == null || updater.mapParts.graph == null || mainWindow.edits.rivers.isEmpty())
 		{
-			pointsToRemove.addAll(segment);
+			return;
 		}
 
-		for (River river : riverList)
+		java.util.function.Predicate<Center> isWaterAfterEdit = center ->
 		{
-			List<Point> path = river.path;
-			List<Integer> widthLevels = river.segmentWidthLevels;
-			List<List<Point>> splitPaths = new ArrayList<>();
-			List<List<Integer>> splitWidthLevels = new ArrayList<>();
-			List<Point> currentPath = new ArrayList<>();
-			List<Integer> currentWidths = new ArrayList<>();
-			boolean riverChanged = false;
+			CenterEdit edit = mainWindow.edits.centerEdits.get(center.index);
+			return edit != null ? edit.isWater : center.isWater;
+		};
 
-			for (int i = 0; i < path.size(); i++)
-			{
-				Point point = path.get(i);
-				if (!currentPath.isEmpty() && i > 0 && i - 1 < widthLevels.size())
-				{
-					currentWidths.add(widthLevels.get(i - 1));
-				}
-				currentPath.add(point);
-
-				if (pointsToRemove.contains(point))
-				{
-					riverChanged = true;
-					if (currentPath.size() > 1)
-					{
-						splitPaths.add(new ArrayList<>(currentPath));
-						splitWidthLevels.add(new ArrayList<>(currentWidths));
-					}
-					currentPath.clear();
-					currentWidths.clear();
-
-					// Start the next split at this point so the segments adjacent to it are preserved;
-					// only the segment between two consecutive removed points is actually severed.
-					if (i + 1 < path.size() && !pointsToRemove.contains(path.get(i + 1)))
-					{
-						currentPath.add(point);
-					}
-				}
-			}
-			if (currentPath.size() > 1)
-			{
-				splitPaths.add(currentPath);
-				splitWidthLevels.add(currentWidths);
-			}
-
-			if (riverChanged)
-			{
-				changed.add(river);
-				if (splitPaths.isEmpty())
-				{
-					river.path.clear();
-					river.segmentWidthLevels.clear();
-				}
-				else
-				{
-					river.path.clear();
-					river.path.addAll(splitPaths.get(0));
-					river.segmentWidthLevels.clear();
-					river.segmentWidthLevels.addAll(splitWidthLevels.get(0));
-					for (int i = 1; i < splitPaths.size(); i++)
-					{
-						newRivers.add(new River(splitPaths.get(i), splitWidthLevels.get(i), river.noisyEdgesSeed));
-					}
-				}
-			}
+		List<List<Point>> segmentsToRemove = RiverDrawer.findRiverSegmentsToRemoveForWaterPaint(mainWindow.edits.rivers, updater.mapParts.graph, mainWindow.displayQualityScale, paintedCenters,
+				isWaterAfterEdit);
+		if (segmentsToRemove.isEmpty())
+		{
+			return;
 		}
 
-		riverList.addAll(newRivers);
-		changed.addAll(newRivers);
-		return changed;
+		List<River> riversChanged = RiverDrawer.removeSegmentsAndSplitRivers(mainWindow.edits.rivers, segmentsToRemove);
+		RiverDrawer.removeEmptyOrShortRivers(mainWindow.edits.rivers);
+		updater.addRiversToRedrawLowPriority(riversChanged, mainWindow.displayQualityScale);
+
+		// Redraw centers on the land side of removed segments too, so the river pixels there get cleared.
+		Set<Center> centersToRedraw = getCentersTouchingPoints(segmentsToRemove);
+		if (!centersToRedraw.isEmpty())
+		{
+			updater.createAndShowMapIncrementalUsingCenters(centersToRedraw);
+		}
+		updater.doWhenMapIsNotDrawing(() -> updater.createAndShowLowPriorityChanges());
 	}
 
-	private static void applyPolygonSnapPoints(List<Point> path, Point snapStart, Point naturalStartRI, Point snapEnd, Point naturalEndRI)
+	private static void applyRiverSnapPoints(River river, Point snapStart, Point naturalStartRI, Point snapEnd, Point naturalEndRI)
 	{
-		if (snapStart != null && !snapStart.isCloseEnough(naturalStartRI))
-		{
-			Point first = path.get(0);
-			Point last = path.get(path.size() - 1);
-			if (first.isCloseEnough(naturalStartRI))
-			{
-				path.add(0, snapStart);
-				if (path.size() > 2)
-				{
-					path.remove(1);
-				}
-			}
-			else if (last.isCloseEnough(naturalStartRI))
-			{
-				if (path.size() > 2)
-				{
-					path.remove(path.size() - 1);
-				}
-				path.add(snapStart);
-			}
-		}
-		if (snapEnd != null && !snapEnd.isCloseEnough(naturalEndRI))
-		{
-			Point first = path.get(0);
-			Point last = path.get(path.size() - 1);
-			if (last.isCloseEnough(naturalEndRI))
-			{
-				if (path.size() > 2)
-				{
-					path.remove(path.size() - 1);
-				}
-				path.add(snapEnd);
-			}
-			else if (first.isCloseEnough(naturalEndRI))
-			{
-				if (path.size() > 2)
-				{
-					path.remove(0);
-				}
-				path.add(0, snapEnd);
-			}
-		}
+		java.util.function.BiFunction<RiverPathNode, Point, RiverPathNode> withLoc = (node, loc) -> new RiverPathNode(loc, node.getWidthLevelToNext(), node.getSeedToNext());
+		java.util.function.Function<Point, RiverPathNode> newPlain = loc -> new RiverPathNode(loc, 0, 0L);
+		List<RiverPathNode> updated = PathOperations.applyPolygonSnapPoints(river.nodes, snapStart, naturalStartRI, snapEnd, naturalEndRI, withLoc, newPlain);
+		river.nodes = new java.util.concurrent.CopyOnWriteArrayList<>(updated);
+	}
+
+	private static void applyRoadSnapPoints(Road road, Point snapStart, Point naturalStartRI, Point snapEnd, Point naturalEndRI)
+	{
+		java.util.function.BiFunction<RoadPathNode, Point, RoadPathNode> withLoc = (node, loc) -> new RoadPathNode(loc);
+		java.util.function.Function<Point, RoadPathNode> newPlain = RoadPathNode::new;
+		List<RoadPathNode> updated = PathOperations.applyPolygonSnapPoints(road.nodes, snapStart, naturalStartRI, snapEnd, naturalEndRI, withLoc, newPlain);
+		road.nodes = new java.util.concurrent.CopyOnWriteArrayList<>(updated);
 	}
 
 	private void selectColorFromMap(MouseEvent e)
@@ -1457,11 +1305,11 @@ public class LandWaterTool extends EditorTool
 				Point endRI = end.loc.mult(1.0 / mainWindow.displayQualityScale);
 				for (River r : newRivers)
 				{
-					if (r == null || r.path.isEmpty())
+					if (r == null || r.nodes.isEmpty())
 					{
 						continue;
 					}
-					applyPolygonSnapPoints(r.path, polygonRiverSnapStart, riverStartRI, polygonRiverSnapEnd, endRI);
+					applyRiverSnapPoints(r, polygonRiverSnapStart, riverStartRI, polygonRiverSnapEnd, endRI);
 				}
 			}
 
@@ -1475,7 +1323,7 @@ public class LandWaterTool extends EditorTool
 				for (int i = 0; i < newRivers.size(); i++)
 				{
 					River r = newRivers.get(i);
-					if (r == null || r.path.isEmpty())
+					if (r == null || r.nodes.isEmpty())
 					{
 						continue;
 					}
@@ -1495,7 +1343,7 @@ public class LandWaterTool extends EditorTool
 
 			if (!newRivers.isEmpty())
 			{
-				List<List<Point>> pathsForCenters = newRivers.stream().map(r -> (List<Point>) r.path).collect(Collectors.toList());
+				List<List<Point>> pathsForCenters = newRivers.stream().map(r -> PathOperations.toLocationList(r.nodes)).collect(Collectors.toList());
 				updater.addRiversToRedrawLowPriority(newRivers, mainWindow.displayQualityScale);
 				updater.createAndShowMapIncrementalUsingCenters(getCentersTouchingPoints(pathsForCenters));
 			}
@@ -1521,11 +1369,11 @@ public class LandWaterTool extends EditorTool
 				Point endRI = end.loc.mult(1.0 / mainWindow.displayQualityScale);
 				for (Road road : changed)
 				{
-					if (road == null || road.path.isEmpty())
+					if (road == null || road.nodes.isEmpty())
 					{
 						continue;
 					}
-					applyPolygonSnapPoints(road.path, polygonRoadSnapStart, roadStartRI, polygonSnapEnd, endRI);
+					applyRoadSnapPoints(road, polygonRoadSnapStart, roadStartRI, polygonSnapEnd, endRI);
 				}
 			}
 
@@ -1539,7 +1387,7 @@ public class LandWaterTool extends EditorTool
 				for (int i = 0; i < changed.size(); i++)
 				{
 					Road road = changed.get(i);
-					if (road == null || road.path.isEmpty())
+					if (road == null || road.nodes.isEmpty())
 					{
 						continue;
 					}

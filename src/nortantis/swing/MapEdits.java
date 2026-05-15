@@ -9,6 +9,7 @@ import nortantis.editor.CenterEdit;
 import nortantis.editor.EdgeEdit;
 import nortantis.editor.RegionEdit;
 import nortantis.editor.River;
+import nortantis.editor.RiverPathNode;
 import nortantis.editor.Road;
 import nortantis.geom.Point;
 import nortantis.graph.voronoi.Center;
@@ -47,8 +48,9 @@ public class MapEdits implements Serializable
 	/** All rivers (both generated from the graph and user-drawn). */
 	public CopyOnWriteArrayList<River> rivers;
 	/**
-	 * True once rivers have been initialized from the graph (either at first draw or by SubMapCreator). When false, the first full draw will
-	 * call {@link #initializeRiversFromGraph} to populate {@link #rivers} from the graph's edge river levels plus any rivers already present.
+	 * True once rivers have been initialized from the graph (either at first draw or by SubMapCreator). When false, the first full draw
+	 * will call {@link #initializeRiversFromGraph} to populate {@link #rivers} from the graph's edge river levels plus any rivers already
+	 * present.
 	 */
 	public boolean hasInitializedRivers;
 
@@ -92,8 +94,8 @@ public class MapEdits implements Serializable
 	}
 
 	/**
-	 * Extracts rivers from the graph and appends them to {@link #rivers}. Any rivers already in the list (e.g. loaded from an old save file)
-	 * are preserved. Sets {@link #hasInitializedRivers} to {@code true}.
+	 * Extracts rivers from the graph and appends them to {@link #rivers}. Any rivers already in the list (e.g. loaded from an old save
+	 * file) are preserved. Sets {@link #hasInitializedRivers} to {@code true}.
 	 *
 	 * @param graph
 	 *            The graph whose edge river levels are read.
@@ -112,21 +114,24 @@ public class MapEdits implements Serializable
 				continue;
 			}
 
-			List<Point> path = new ArrayList<>(corners.size());
-			for (Corner corner : corners)
+			// Build nodes carrying the per-segment width and a noise seed derived from the edge.
+			// We need (corners.size() - 1) segments, matching edges.size().
+			List<RiverPathNode> nodes = new ArrayList<>(corners.size());
+			for (int i = 0; i < corners.size(); i++)
 			{
-				path.add(corner.loc.mult(1.0 / resolutionScale));
+				Point loc = corners.get(i).loc.mult(1.0 / resolutionScale);
+				if (i < edges.size())
+				{
+					Edge segmentEdge = edges.get(i);
+					nodes.add(new RiverPathNode(loc, segmentEdge.river, segmentEdge.noisyEdgesSeed));
+				}
+				else
+				{
+					nodes.add(new RiverPathNode(loc, 0, 0L));
+				}
 			}
 
-			List<Integer> widthLevels = new ArrayList<>(edges.size());
-			long seed = 0L;
-			for (Edge edge : edges)
-			{
-				widthLevels.add(edge.river);
-				seed ^= edge.noisyEdgesSeed;
-			}
-
-			rivers.add(new River(path, widthLevels, seed));
+			rivers.add(new River(nodes));
 		}
 		hasInitializedRivers = true;
 	}
@@ -262,9 +267,9 @@ public class MapEdits implements Serializable
 			return false;
 		}
 		MapEdits other = (MapEdits) obj;
-		return bakeGeneratedTextAsEdits == other.bakeGeneratedTextAsEdits && Objects.equals(centerEdits, other.centerEdits)
-				&& Objects.equals(freeIcons, other.freeIcons) && hasIconEdits == other.hasIconEdits && Objects.equals(regionEdits, other.regionEdits) && Objects.equals(text, other.text)
-				&& Objects.equals(roads, other.roads) && Objects.equals(rivers, other.rivers) && hasInitializedRivers == other.hasInitializedRivers;
+		return bakeGeneratedTextAsEdits == other.bakeGeneratedTextAsEdits && Objects.equals(centerEdits, other.centerEdits) && Objects.equals(freeIcons, other.freeIcons)
+				&& hasIconEdits == other.hasIconEdits && Objects.equals(regionEdits, other.regionEdits) && Objects.equals(text, other.text) && Objects.equals(roads, other.roads)
+				&& Objects.equals(rivers, other.rivers) && hasInitializedRivers == other.hasInitializedRivers;
 	}
 
 }

@@ -942,10 +942,10 @@ public class MapEditingPanel extends UnscaledImagePanel
 	}
 
 	/**
-	 * Returns the road control-point hit radius in graph pixels — the centerline radius extended by half the
-	 * stroke width so the visible circle outline is part of the clickable area. The stroke is drawn centered
-	 * on the circle of radius {@link #getRoadControlPointRadiusExact()}, so it extends outward by half its
-	 * width; adding that here keeps the hit area exactly aligned with the outer visible edge.
+	 * Returns the road control-point hit radius in graph pixels — the centerline radius extended by half the stroke width so the visible
+	 * circle outline is part of the clickable area. The stroke is drawn centered on the circle of radius
+	 * {@link #getRoadControlPointRadiusExact()}, so it extends outward by half its width; adding that here keeps the hit area exactly
+	 * aligned with the outer visible edge.
 	 */
 	int getRoadControlPointHitRadiusInGraphPixels()
 	{
@@ -962,9 +962,9 @@ public class MapEditingPanel extends UnscaledImagePanel
 	}
 
 	/**
-	 * Stroke width used to draw the road/river control-point circles, in graph pixels. Scales with mean polygon
-	 * width so it thins at larger world sizes; the 0.065 factor is calibrated so the stroke is half of its
-	 * original fixed value ({@code 3 * resolution}) at maximum world size.
+	 * Stroke width used to draw the road/river control-point circles, in graph pixels. Scales with mean polygon width so it thins at larger
+	 * world sizes; the 0.065 factor is calibrated so the stroke is half of its original fixed value ({@code 3 * resolution}) at maximum
+	 * world size.
 	 */
 	private float getRoadControlPointStrokeWidth()
 	{

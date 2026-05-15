@@ -1,5 +1,6 @@
 package nortantis.editor;
 
+import nortantis.PathOperations;
 import nortantis.geom.Point;
 
 import java.util.ArrayList;
@@ -10,38 +11,43 @@ import java.util.concurrent.CopyOnWriteArrayList;
 public class Road
 {
 	/**
-	 * Points in the path are stored in a resolution-invariant way, meaning that changing the display quality in the editor does not change
-	 * these values.
+	 * Path nodes in resolution-invariant coordinates. The field is reassigned for multi-step modifications (instead of clear+addAll on the
+	 * existing list) so concurrent readers on the background draw thread always see a fully consistent path. Marked {@code volatile} so the
+	 * reference swap is visible across threads.
 	 */
-	public CopyOnWriteArrayList<Point> path;
+	public volatile CopyOnWriteArrayList<RoadPathNode> nodes;
 
-	public Road(List<Point> path)
+	public Road(List<RoadPathNode> nodes)
 	{
-		this.path = new CopyOnWriteArrayList<Point>(deduplicateConsecutive(path));
-	}
-
-	private static List<Point> deduplicateConsecutive(List<Point> path)
-	{
-		List<Point> result = new ArrayList<>(path.size());
-		for (Point point : path)
-		{
-			if (result.isEmpty() || !result.get(result.size() - 1).isCloseEnough(point))
-			{
-				result.add(point);
-			}
-		}
-		return result;
+		this.nodes = new CopyOnWriteArrayList<>(PathOperations.deduplicateConsecutive(nodes));
 	}
 
 	public Road(Road other)
 	{
-		this(other.path);
+		this(other.nodes);
+	}
+
+	/** Convenience constructor for callers that have only locations. */
+	public static Road fromLocations(List<Point> locations)
+	{
+		List<RoadPathNode> built = new ArrayList<>(locations.size());
+		for (Point p : locations)
+		{
+			built.add(new RoadPathNode(p));
+		}
+		return new Road(built);
+	}
+
+	/** Returns a snapshot list of just the locations along the path. */
+	public List<Point> getLocations()
+	{
+		return PathOperations.toLocationList(nodes);
 	}
 
 	@Override
 	public int hashCode()
 	{
-		return Objects.hash(path);
+		return Objects.hash(nodes);
 	}
 
 	@Override
@@ -51,22 +57,17 @@ public class Road
 		{
 			return true;
 		}
-		if (obj == null)
-		{
-			return false;
-		}
-		if (getClass() != obj.getClass())
+		if (obj == null || getClass() != obj.getClass())
 		{
 			return false;
 		}
 		Road other = (Road) obj;
-		return Objects.equals(path, other.path);
+		return Objects.equals(nodes, other.nodes);
 	}
 
 	@Override
 	public String toString()
 	{
-		return "Road [path=" + path + "]";
+		return "Road [nodes=" + nodes + "]";
 	}
-
 }

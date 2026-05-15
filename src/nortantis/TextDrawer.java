@@ -1,6 +1,7 @@
 package nortantis;
 
 import nortantis.editor.River;
+import nortantis.editor.RiverPathNode;
 import nortantis.geom.Dimension;
 import nortantis.geom.Point;
 import nortantis.geom.Rectangle;
@@ -131,8 +132,7 @@ public class TextDrawer
 		this.landAndOceanBackground = null;
 	}
 
-	private void generateText(Image map, WorldGraph graph, NameCreator nameCreator, List<Set<Center>> mountainGroups, List<IconDrawTask> cityDrawTasks, List<Set<Center>> lakes,
-			List<River> rivers)
+	private void generateText(Image map, WorldGraph graph, NameCreator nameCreator, List<Set<Center>> mountainGroups, List<IconDrawTask> cityDrawTasks, List<Set<Center>> lakes, List<River> rivers)
 	{
 		// First, generate text without drawing it. I originally drew text as I generated it, but it led to weird conditions where
 		// the generator placed text, and then the editor moves it slightly when it drew again. To fix this, I draw after generating
@@ -229,8 +229,13 @@ public class TextDrawer
 
 				for (River river : rivers)
 				{
-					int numSegments = river.path.size() - 1;
-					int maxWidth = river.segmentWidthLevels.isEmpty() ? 0 : Collections.max(river.segmentWidthLevels);
+					List<RiverPathNode> nodes = river.nodes;
+					int numSegments = nodes.size() - 1;
+					int maxWidth = 0;
+					for (int i = 0; i < numSegments; i++)
+					{
+						maxWidth = Math.max(maxWidth, nodes.get(i).getWidthLevelToNext());
+					}
 					if (numSegments >= riverMinLength && maxWidth >= riverMinWidth)
 					{
 						RiverType riverType = maxWidth >= largeRiverWidth ? RiverType.Large : RiverType.Small;
@@ -573,21 +578,20 @@ public class TextDrawer
 	{
 		final int maxPointsToInclude = 11; // corresponds to 10 edges
 		final int maxDistanceFromMouth = 2;
-		List<Point> path = river.path;
-		int numSegments = path.size() - 1;
+		List<RiverPathNode> nodes = river.nodes;
+		int numSegments = nodes.size() - 1;
 
 		int from, to;
-		if (path.size() <= maxPointsToInclude)
+		if (nodes.size() <= maxPointsToInclude)
 		{
 			from = 0;
-			to = path.size();
+			to = nodes.size();
 		}
 		else
 		{
 			// Place the label slightly inland from the mouth (wider end of the river).
 			int distanceFromMouth = Math.min(numSegments - (maxPointsToInclude - 1), maxDistanceFromMouth);
-			boolean mouthIsFirst = !river.segmentWidthLevels.isEmpty()
-					&& river.segmentWidthLevels.get(0) > river.segmentWidthLevels.get(river.segmentWidthLevels.size() - 1);
+			boolean mouthIsFirst = numSegments >= 1 && nodes.get(0).getWidthLevelToNext() > nodes.get(numSegments - 1).getWidthLevelToNext();
 			if (mouthIsFirst)
 			{
 				from = distanceFromMouth;
@@ -595,7 +599,7 @@ public class TextDrawer
 			}
 			else
 			{
-				to = path.size() - distanceFromMouth;
+				to = nodes.size() - distanceFromMouth;
 				from = to - maxPointsToInclude;
 			}
 		}
@@ -603,7 +607,7 @@ public class TextDrawer
 		Set<Point> result = new TreeSet<>();
 		for (int i = from; i < to; i++)
 		{
-			Point ri = path.get(i);
+			Point ri = nodes.get(i).getLoc();
 			result.add(new Point(ri.x * settings.resolution, ri.y * settings.resolution));
 		}
 		return result;

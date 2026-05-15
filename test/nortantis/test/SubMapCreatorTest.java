@@ -294,10 +294,10 @@ public class SubMapCreatorTest
 
 		for (int i = 0; i < rivers.size(); i++)
 		{
-			Set<Point> pointsI = new HashSet<>(rivers.get(i).path);
+			Set<Point> pointsI = new HashSet<>(nortantis.PathOperations.toLocationList(rivers.get(i).nodes));
 			for (int j = i + 1; j < rivers.size(); j++)
 			{
-				Set<Point> pointsJ = new HashSet<>(rivers.get(j).path);
+				Set<Point> pointsJ = new HashSet<>(nortantis.PathOperations.toLocationList(rivers.get(j).nodes));
 				Set<Point> intersection = new HashSet<>(pointsI);
 				intersection.retainAll(pointsJ);
 				if (!intersection.isEmpty())
@@ -338,8 +338,9 @@ public class SubMapCreatorTest
 		{
 			River river = rivers.get(ri);
 			Set<Point> seen = new HashSet<>();
-			for (Point p : river.path)
+			for (nortantis.editor.RiverPathNode node : river.nodes)
 			{
+				Point p = node.getLoc();
 				if (!seen.add(p))
 				{
 					String failedMapPath = saveFailedMap(subMapSettings, testName);
@@ -358,10 +359,10 @@ public class SubMapCreatorTest
 		for (int ri = 0; ri < rivers.size(); ri++)
 		{
 			River river = rivers.get(ri);
-			if (river.path.size() < 2)
+			if (river.nodes.size() < 2)
 			{
 				String failedMapPath = saveFailedMap(subMapSettings, testName);
-				fail("River " + ri + " has fewer than 2 path points (" + river.path.size() + "), indicating a failed routing.\nFailed map written to: " + failedMapPath);
+				fail("River " + ri + " has fewer than 2 path points (" + river.nodes.size() + "), indicating a failed routing.\nFailed map written to: " + failedMapPath);
 			}
 		}
 	}

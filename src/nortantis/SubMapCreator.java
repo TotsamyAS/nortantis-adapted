@@ -15,6 +15,7 @@ import nortantis.graph.voronoi.Edge;
 import nortantis.platform.Font;
 import nortantis.GraphRiver;
 import nortantis.editor.River;
+import nortantis.editor.RiverPathNode;
 import nortantis.swing.MapEdits;
 
 import nortantis.util.Tuple2;
@@ -198,9 +199,10 @@ public class SubMapCreator
 		// segments cross the edge so roads reach the map border instead of stopping short.
 		for (Road road : originalEdits.roads)
 		{
-			for (List<Point> clippedPath : clipRoadPath(road.path, selectionBoundsRI, newGenWidth, newGenHeight))
+			List<Point> roadLocations = PathOperations.toLocationList(road.nodes);
+			for (List<Point> clippedPath : clipRoadPath(roadLocations, selectionBoundsRI, newGenWidth, newGenHeight))
 			{
-				newEdits.roads.add(new Road(clippedPath));
+				newEdits.roads.add(Road.fromLocations(clippedPath));
 			}
 		}
 	}
@@ -636,12 +638,13 @@ public class SubMapCreator
 	}
 
 	/**
-	 * Re-routes an original river through the new graph using greedy pathfinding. Each segment of the original river's RI path is clipped to
-	 * the selection bounds, mapped to new-graph corners, and routed via {@link WorldGraph#findPathGreedy}. A final {@link #simplifyToPath}
-	 * pass removes cross-segment loops and branches. Returns the resulting {@link River}, or {@code null} if no edges could be routed.
+	 * Re-routes an original river through the new graph using greedy pathfinding. Each segment of the original river's RI path is clipped
+	 * to the selection bounds, mapped to new-graph corners, and routed via {@link WorldGraph#findPathGreedy}. A final
+	 * {@link #simplifyToPath} pass removes cross-segment loops and branches. Returns the resulting {@link River}, or {@code null} if no
+	 * edges could be routed.
 	 */
-	private static River transferPolylineToSubMap(River originalRiver, double riverLevelScale, Rectangle selectionBoundsRI, WorldGraph newGraph, WorldGraph originalGraph,
-			MapEdits originalEdits, MapEdits newEdits, double originalResolution)
+	private static River transferPolylineToSubMap(River originalRiver, double riverLevelScale, Rectangle selectionBoundsRI, WorldGraph newGraph, WorldGraph originalGraph, MapEdits originalEdits,
+			MapEdits newEdits, double originalResolution)
 	{
 		// Avoid routing river paths along coastlines, lakeshores, or through water bodies.
 		// Blocking coast, ocean, and water corners prevents the path from traversing coast edges
@@ -649,8 +652,13 @@ public class SubMapCreator
 		// between adjacent coast corners.
 		Predicate<Corner> avoidCoastAndOcean = c -> c.isCoast || c.isOcean || c.isWater;
 
-		List<RiverSegment> segments = computeRiverSegments(originalRiver.path, originalRiver.segmentWidthLevels, riverLevelScale, selectionBoundsRI, newGraph, originalGraph, originalEdits,
-				newEdits, originalResolution);
+		List<Point> riPath = PathOperations.toLocationList(originalRiver.nodes);
+		List<Integer> widthLevels = new ArrayList<>(Math.max(0, originalRiver.nodes.size() - 1));
+		for (int i = 0; i < originalRiver.nodes.size() - 1; i++)
+		{
+			widthLevels.add(originalRiver.nodes.get(i).getWidthLevelToNext());
+		}
+		List<RiverSegment> segments = computeRiverSegments(riPath, widthLevels, riverLevelScale, selectionBoundsRI, newGraph, originalGraph, originalEdits, newEdits, originalResolution);
 
 		// New-graph edges → their river level, accumulated across all source segments of this polyline.
 		Map<Edge, Integer> polylineEdgeLevels = new HashMap<>();
@@ -731,7 +739,7 @@ public class SubMapCreator
 
 	/**
 	 * Computes the list of new-graph river segments to route for the given source polyline. The polyline is given as RI-space path points
-	 * (from an {@link River#path}) and per-segment width levels. Handles clipping of segments to the selection bounds, boundary
+	 * (from an {@link River#nodes}) and per-segment width levels. Handles clipping of segments to the selection bounds, boundary
 	 * intersection for entering/exiting segments, and selection of the appropriate new-graph corners (water-adjacent, border, or plain
 	 * closest). Stops early — including the triggering segment — when the river exits the selection.
 	 */
@@ -843,8 +851,7 @@ public class SubMapCreator
 					break;
 				continue;
 			}
-			if (c1 != null && !c1WaterAdjacentIntentional && isNewCornerAdjacentToWater(c1, newEdits)
-					&& !isRIPointAdjacentToWater(sourceV1RI, originalGraph, originalEdits, originalResolution))
+			if (c1 != null && !c1WaterAdjacentIntentional && isNewCornerAdjacentToWater(c1, newEdits) && !isRIPointAdjacentToWater(sourceV1RI, originalGraph, originalEdits, originalResolution))
 			{
 				if (stopAfter)
 					break;
@@ -994,22 +1001,21 @@ public class SubMapCreator
 	private static List<River> clipRiverPath(River river, Rectangle selectionBounds, int newWidth, int newHeight, double riverLevelScale)
 	{
 		List<River> result = new ArrayList<>();
-		List<Point> path = river.path;
-		List<Integer> widths = river.segmentWidthLevels;
-		if (path.isEmpty())
+		List<RiverPathNode> nodes = river.nodes;
+		if (nodes.isEmpty())
 			return result;
 
 		List<Point> currentPath = new ArrayList<>();
 		List<Integer> currentWidths = new ArrayList<>();
-		boolean prevInside = selectionBounds.contains(path.get(0));
+		boolean prevInside = selectionBounds.contains(nodes.get(0).getLoc());
 		if (prevInside)
-			currentPath.add(transformRIPoint(path.get(0), selectionBounds, newWidth, newHeight));
+			currentPath.add(transformRIPoint(nodes.get(0).getLoc(), selectionBounds, newWidth, newHeight));
 
-		for (int i = 1; i < path.size(); i++)
+		for (int i = 1; i < nodes.size(); i++)
 		{
-			Point prev = path.get(i - 1);
-			Point curr = path.get(i);
-			int rawWidth = (i - 1) < widths.size() ? widths.get(i - 1) : 1;
+			Point prev = nodes.get(i - 1).getLoc();
+			Point curr = nodes.get(i).getLoc();
+			int rawWidth = nodes.get(i - 1).getWidthLevelToNext();
 			int scaledWidth = Math.min(GraphRiver.MAX_RIVER_LEVEL, (int) Math.round(rawWidth * riverLevelScale));
 			boolean currInside = selectionBounds.contains(curr);
 
@@ -1027,7 +1033,7 @@ public class SubMapCreator
 					currentWidths.add(scaledWidth);
 				}
 				if (currentPath.size() >= 2)
-					result.add(new River(currentPath, currentWidths, river.noisyEdgesSeed));
+					result.add(River.fromLocationsAndWidths(currentPath, currentWidths));
 				currentPath = new ArrayList<>();
 				currentWidths = new ArrayList<>();
 			}
@@ -1050,22 +1056,22 @@ public class SubMapCreator
 					subPath.add(transformRIPoint(through.get().getFirst(), selectionBounds, newWidth, newHeight));
 					subPath.add(transformRIPoint(through.get().getSecond(), selectionBounds, newWidth, newHeight));
 					subWidths.add(scaledWidth);
-					result.add(new River(subPath, subWidths, river.noisyEdgesSeed));
+					result.add(River.fromLocationsAndWidths(subPath, subWidths));
 				}
 			}
 			prevInside = currInside;
 		}
 
 		if (currentPath.size() >= 2)
-			result.add(new River(currentPath, currentWidths, river.noisyEdgesSeed));
+			result.add(River.fromLocationsAndWidths(currentPath, currentWidths));
 
 		return result;
 	}
 
 	/**
-	 * Walks the edge chain in {@code edgeLevels} from {@code start} to {@code end} and builds a {@link River} with RI-space path points
-	 * and per-segment width levels. Returns {@code null} if the path has fewer than 2 points. After {@link #simplifyToPath} the edge map is
-	 * a simple chain, so the visited-set walk will always reach {@code end} without backtracking.
+	 * Walks the edge chain in {@code edgeLevels} from {@code start} to {@code end} and builds a {@link River} with RI-space path points and
+	 * per-segment width levels. Returns {@code null} if the path has fewer than 2 points. After {@link #simplifyToPath} the edge map is a
+	 * simple chain, so the visited-set walk will always reach {@code end} without backtracking.
 	 */
 	private static River buildRiverFromEdgePath(Map<Edge, Integer> edgeLevels, Corner start, Corner end, double resolution)
 	{
@@ -1105,7 +1111,7 @@ public class SubMapCreator
 		if (path.size() < 2)
 			return null;
 
-		return new River(path, widths);
+		return River.fromLocationsAndWidths(path, widths);
 	}
 
 	/**
