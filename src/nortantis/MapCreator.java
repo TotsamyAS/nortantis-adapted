@@ -1905,6 +1905,10 @@ public class MapCreator implements WarningLogger
 		settings.edits.initializeRiversFromGraph(graph, settings.resolution);
 	}
 
+	// Reads EdgeEdit.riverLevel, which is the deprecated legacy river storage. This method only runs
+	// for pre-3.19 save files (hasInitializedRivers == false) — see migrateLegacyRiversIfNeeded and
+	// the createGraphAndApplyEdits else-branch — so the deprecation warnings here are expected.
+	@SuppressWarnings("deprecation")
 	private static void applyEdgeEdits(WorldGraph graph, MapEdits edits, Collection<EdgeEdit> edgeChanges)
 	{
 		if (edits == null || edits.edgeEdits.isEmpty())

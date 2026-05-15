@@ -743,7 +743,10 @@ public class MapSettings implements Serializable
 		return riversJson;
 	}
 
-	@SuppressWarnings("unchecked")
+	// Reads EdgeEdit.riverLevel, which is the deprecated legacy river storage. This method only runs
+	// during legacy-file migration writes (see edits.hasInitializedRivers guard at the call site), so
+	// the deprecation warnings here are expected.
+	@SuppressWarnings({ "unchecked", "deprecation" })
 	private JSONArray edgeEditsToJson()
 	{
 		JSONArray list = new JSONArray();
