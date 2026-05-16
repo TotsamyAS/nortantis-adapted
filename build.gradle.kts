@@ -1,6 +1,3 @@
-import org.gradle.plugins.ide.eclipse.model.Library
-import org.gradle.plugins.ide.eclipse.model.internal.FileReferenceFactory
-
 plugins {
     java
     application
@@ -13,26 +10,26 @@ repositories {
 }
 
 dependencies {
-    implementation(fileTree(mapOf("dir" to "libraries", "include" to listOf("*.jar"))))
-    implementation("com.github.wendykierp:JTransforms:3.2:with-dependencies")
+    // Apache Commons IO
+    implementation("commons-io:commons-io:2.14.0")
+
+    // Apache Commons Lang
+    implementation("org.apache.commons:commons-lang3:3.18.0")
+
+    // Apache Commons Math
+    implementation("org.apache.commons:commons-math3:3.2")
+
+    // Imgscalr (Java Image Scaling Library)
+    implementation("org.imgscalr:imgscalr-lib:4.2")
+
+    // JSON.simple
+    implementation("com.googlecode.json-simple:json-simple:1.1.1")
+
+    implementation("com.github.wendykierp:JTransforms:3.2")
     testImplementation(platform("org.junit:junit-bom:5.10.2"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     implementation("com.formdev:flatlaf:3.6.2")
-}
-
-// Attaches javadocs to libraries in Eclipse.
-eclipse {
-    classpath {
-        file {
-            whenMerged {
-                val cp = this as org.gradle.plugins.ide.eclipse.model.Classpath
-                val fileReferenceFactory = FileReferenceFactory()
-                val entry = cp.entries.filterIsInstance<Library>().first { it.path.contains("JTransforms") }
-                entry.javadocPath = fileReferenceFactory.fromPath(file("libraries-doc/JTransforms-3.1-javadoc.jar").toString())
-            }
-        }
-    }
 }
 
 application {

@@ -108,26 +108,6 @@ public final class Edge
 			_rightVertex = v;
 		}
 	}
-
-	public double sitesDistance()
-	{
-		return Point.distance(get_leftSite().get_coord(), get_rightSite().get_coord());
-	}
-
-	public static double compareSitesDistances_MAX(Edge edge0, Edge edge1)
-	{
-		double length0 = edge0.sitesDistance();
-		double length1 = edge1.sitesDistance();
-		if (length0 < length1)
-		{
-			return 1;
-		}
-		if (length0 > length1)
-		{
-			return -1;
-		}
-		return 0;
-	}
 	
 	// Once clipVertices() is called, this Dictionary will hold two Points
 	// representing the clipped coordinates of the left and right ends...
