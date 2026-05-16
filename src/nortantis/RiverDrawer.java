@@ -144,13 +144,21 @@ public class RiverDrawer
 		RiverPathNode startNode = nodes.get(segmentIndex);
 		Point riStart = startNode.getLoc();
 		Point riEnd = nodes.get(segmentIndex + 1).getLoc();
+		int numSegments = nodes.size() - 1;
 
 		// Polygon-mode segments carry the Voronoi edge they follow. Drawing them along the graph's
 		// precomputed noisy-edge path makes the river exactly cover the region-color fill boundary —
 		// the fill polygons are built from the same noisy edge — and matches how the old code drew
 		// rivers before they were promoted to River objects.
+		//
+		// First/last segments are excluded from this: at a river's leaf corner the noisy-edge
+		// spline degenerates to a straight line (NoisyEdges.findPrevOrNextPointOnCurve returns the
+		// corner itself when there's no continuation), so an end segment drawn from the noisy edge
+		// loses its terminal curve. Instead we fall through to the Catmull-Rom branch below, which
+		// fakes a tangent using a reflected control point.
 		int edgeIndex = startNode.getEdgeIndexToNext();
-		if (edgeIndex != RiverPathNode.EDGE_INDEX_NONE && graph != null && edgeIndex >= 0 && edgeIndex < graph.edges.size())
+		boolean isEndSegment = segmentIndex == 0 || segmentIndex == numSegments - 1;
+		if (!isEndSegment && edgeIndex != RiverPathNode.EDGE_INDEX_NONE && graph != null && edgeIndex >= 0 && edgeIndex < graph.edges.size())
 		{
 			List<Point> noisyEdgePixels = getOrientedNoisyEdgePixels(edgeIndex, riStart, riEnd);
 			if (noisyEdgePixels != null)

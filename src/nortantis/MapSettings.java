@@ -733,6 +733,13 @@ public class MapSettings implements Serializable
 					nodeJson.put("loc", node.getLoc().toJson());
 					nodeJson.put("widthToNext", (long) node.getWidthLevelToNext());
 					nodeJson.put("seedToNext", node.getSeedToNext());
+					// Persist the Voronoi edge index of the segment leaving this node so polygon-mode
+					// rivers stay linked to their region-boundary edge after a save/reload. Omitted when
+					// EDGE_INDEX_NONE to keep freehand rivers' JSON unchanged from the prior format.
+					if (node.getEdgeIndexToNext() != RiverPathNode.EDGE_INDEX_NONE)
+					{
+						nodeJson.put("edgeIndexToNext", (long) node.getEdgeIndexToNext());
+					}
 					nodesJson.add(nodeJson);
 				}
 			}
@@ -1989,7 +1996,8 @@ public class MapSettings implements Serializable
 					Point loc = Point.fromJSonValue((String) nodeJson.get("loc"));
 					int widthToNext = nodeJson.containsKey("widthToNext") ? (int) (long) nodeJson.get("widthToNext") : 0;
 					long seedToNext = nodeJson.containsKey("seedToNext") ? (long) nodeJson.get("seedToNext") : 0L;
-					nodes.add(new RiverPathNode(loc, widthToNext, seedToNext));
+					int edgeIndexToNext = nodeJson.containsKey("edgeIndexToNext") ? (int) (long) nodeJson.get("edgeIndexToNext") : RiverPathNode.EDGE_INDEX_NONE;
+					nodes.add(new RiverPathNode(loc, widthToNext, seedToNext, edgeIndexToNext));
 				}
 			}
 			rivers.add(new River(nodes));
