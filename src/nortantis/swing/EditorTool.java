@@ -72,9 +72,11 @@ public abstract class EditorTool
 		return toolsOptionsPanelContainer;
 	}
 
-	protected abstract void handleMouseClickOnMap(MouseEvent e);
-
 	protected abstract void handleMousePressedOnMap(MouseEvent e);
+
+	protected void handleMouseRightPressedOnMap(MouseEvent e)
+	{
+	}
 
 	protected abstract void handleMouseReleasedOnMap(MouseEvent e);
 
@@ -169,100 +171,6 @@ public abstract class EditorTool
 		}
 
 		return updater.mapParts.graph.breadthFirstSearch((c) -> isCenterOverlappingCircle(c, getPointOnGraph(pointFromMouse), brushRadius), center);
-	}
-
-	protected Set<Edge> getSelectedEdges(java.awt.Point pointFromMouse, int brushDiameter, EdgeType edgeType)
-	{
-		if (brushDiameter <= 1)
-		{
-			return Collections.singleton(getClosestEdge(getPointOnGraph(pointFromMouse)));
-		}
-		else
-		{
-			nortantis.geom.Point graphPoint = getPointOnGraph(pointFromMouse);
-			Center closestCenter = updater.mapParts.graph.findClosestCenter(graphPoint);
-			Set<Center> overlapping = updater.mapParts.graph.breadthFirstSearch((c) -> isCenterOverlappingCircle(c, graphPoint, brushDiameter / mainWindow.zoom), closestCenter);
-			Set<Edge> selected = new HashSet<>();
-			int brushRadius = (int) ((double) ((brushDiameter / mainWindow.zoom) * mapEditingPanel.osScale)) / 2;
-			for (Center center : overlapping)
-			{
-				for (Edge edge : center.borders)
-				{
-					if (edgeType == EdgeType.Delaunay)
-					{
-						if ((edge.d0 != null && edge.d0.loc.distanceTo(graphPoint) <= brushRadius) || edge.d1 != null && edge.d1.loc.distanceTo(graphPoint) <= brushRadius)
-						{
-							selected.add(edge);
-						}
-					}
-					else
-					{
-						if ((edge.v0 != null && edge.v0.loc.distanceTo(graphPoint) <= brushRadius) || edge.v1 != null && edge.v1.loc.distanceTo(graphPoint) <= brushRadius)
-						{
-							selected.add(edge);
-						}
-					}
-
-				}
-			}
-			return selected;
-		}
-	}
-
-	private Edge getClosestEdge(nortantis.geom.Point point)
-	{
-		Center center = updater.mapParts.graph.findClosestCenter(point);
-		Edge closest = null;
-		double closestDistance = Double.POSITIVE_INFINITY;
-		for (Edge edge : center.borders)
-		{
-			nortantis.geom.Point centroid;
-			if (edge.v0 == null && edge.v1 != null)
-			{
-				centroid = edge.v1.loc;
-			}
-			else if (edge.v1 == null && edge.v0 != null)
-			{
-				centroid = edge.v0.loc;
-			}
-			else if (edge.v0 == null && edge.v1 == null)
-			{
-				continue;
-			}
-			else
-			{
-				centroid = edge.v0.loc.add(edge.v1.loc).mult(0.5);
-			}
-
-			if (centroid == null)
-			{
-				continue;
-			}
-
-			if (closest == null)
-			{
-				closest = edge;
-				if (centroid != null)
-				{
-					closestDistance = centroid.distanceTo(point);
-				}
-				continue;
-			}
-			else
-			{
-				if (centroid != null)
-				{
-					double distance = centroid.distanceTo(point);
-					if (distance < closestDistance)
-					{
-						closest = edge;
-						closestDistance = distance;
-					}
-				}
-
-			}
-		}
-		return closest;
 	}
 
 	/**

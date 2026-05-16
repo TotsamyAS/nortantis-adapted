@@ -398,22 +398,7 @@ public class IconsTool extends EditorTool
 			{
 				deleteButton = new JButton(Translation.get("iconsTool.delete"));
 				deleteButton.setToolTipText(Translation.get("iconsTool.delete.tooltip"));
-
-				// Define the action to perform
-				Action deleteAction = new AbstractAction()
-				{
-					@Override
-					public void actionPerformed(ActionEvent e)
-					{
-						deleteButton.doClick();
-					}
-				};
-
-				// Bind DELETE key to the button
-				InputMap inputMap = deleteButton.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW);
-				ActionMap actionMap = deleteButton.getActionMap();
-				inputMap.put(KeyStroke.getKeyStroke("DELETE"), "deleteAction");
-				actionMap.put("deleteAction", deleteAction);
+				SwingHelper.bindButtonShortcut(deleteButton, KeyStroke.getKeyStroke("DELETE"), "deleteAction");
 
 				deleteButton.addActionListener(new ActionListener()
 				{
@@ -430,23 +415,7 @@ public class IconsTool extends EditorTool
 			{
 				copyButton = new JButton(Translation.get("iconsTool.copy"));
 				copyButton.setToolTipText(Translation.get("iconsTool.copy.tooltip", SwingHelper.getCommandKeyName()));
-				// Define the action to perform
-				Action copyAction = new AbstractAction("Copy")
-				{
-					@Override
-					public void actionPerformed(ActionEvent e)
-					{
-						copyButton.doClick();
-					}
-				};
-
-				// Register the shortcut in the input map
-				InputMap inputMap = copyButton.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW);
-				ActionMap actionMap = copyButton.getActionMap();
-
-				KeyStroke ctrlC = KeyStroke.getKeyStroke(KeyEvent.VK_C, SwingHelper.getMenuShortcutKeyMask());
-				inputMap.put(ctrlC, "copyAction");
-				actionMap.put("copyAction", copyAction);
+				SwingHelper.bindButtonShortcut(copyButton, KeyStroke.getKeyStroke(KeyEvent.VK_C, SwingHelper.getMenuShortcutKeyMask()), "copyAction");
 
 				copyButton.addActionListener(new ActionListener()
 				{
@@ -462,23 +431,7 @@ public class IconsTool extends EditorTool
 			{
 				pasteButton = new JButton(Translation.get("iconsTool.paste"));
 				pasteButton.setToolTipText(Translation.get("iconsTool.paste.tooltip", SwingHelper.getCommandKeyName()));
-				// Define the action to perform
-				Action pasteAction = new AbstractAction("Paste")
-				{
-					@Override
-					public void actionPerformed(ActionEvent e)
-					{
-						pasteButton.doClick();
-					}
-				};
-
-				// Register the shortcut in the input map
-				InputMap inputMap = pasteButton.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW);
-				ActionMap actionMap = pasteButton.getActionMap();
-
-				KeyStroke ctrlV = KeyStroke.getKeyStroke(KeyEvent.VK_V, SwingHelper.getMenuShortcutKeyMask());
-				inputMap.put(ctrlV, "pasteAction");
-				actionMap.put("pasteAction", pasteAction);
+				SwingHelper.bindButtonShortcut(pasteButton, KeyStroke.getKeyStroke(KeyEvent.VK_V, SwingHelper.getMenuShortcutKeyMask()), "pasteAction");
 
 				pasteButton.addActionListener(new ActionListener()
 				{
@@ -1406,11 +1359,6 @@ public class IconsTool extends EditorTool
 		}
 	}
 
-	@Override
-	protected void handleMouseClickOnMap(MouseEvent e)
-	{
-	}
-
 	private void handleMousePressOrDrag(MouseEvent e, boolean isPress)
 	{
 		showOrHideBrush(e.getPoint());
@@ -2119,6 +2067,78 @@ public class IconsTool extends EditorTool
 			highlightHoverIconsAndShowBrush(e.getPoint(), SwingHelper.isCommandKeyDown(e));
 		}
 		handleMousePressOrDrag(e, false);
+	}
+
+	@Override
+	protected void handleMouseRightPressedOnMap(MouseEvent e)
+	{
+		if (!modeWidget.isEditMode())
+		{
+			return;
+		}
+		if (!updater.isMapReadyForInteractions())
+		{
+			return;
+		}
+
+		// If the user right-clicks on an icon that isn't currently selected, treat the right-click
+		// as a selecting click first so the context menu acts on the icon the user pointed at. Holding
+		// the command key extends the existing selection (matches left-click extend semantics).
+		List<FreeIcon> underCursor = getSelectedIcons(e.getPoint());
+		if (underCursor != null && !underCursor.isEmpty())
+		{
+			boolean alreadySelected = iconsToEdit != null && !iconsToEdit.isEmpty() && iconsToEdit.containsAll(underCursor);
+			if (!alreadySelected)
+			{
+				if (iconsToEdit == null)
+				{
+					iconsToEdit = new HashSet<>();
+				}
+				if (!SwingHelper.isCommandKeyDown(e))
+				{
+					iconsToEdit.clear();
+				}
+				iconsToEdit.addAll(underCursor);
+				handleIconSelectionChange(true);
+				mapEditingPanel.repaint();
+			}
+		}
+
+		showEditModeContextMenu(e);
+	}
+
+	private void showEditModeContextMenu(MouseEvent e)
+	{
+		boolean hasSelection = iconsToEdit != null && !iconsToEdit.isEmpty();
+		boolean hasClipboard = copied != null && !copied.isEmpty();
+		if (!hasSelection && !hasClipboard)
+		{
+			return;
+		}
+
+		JPopupMenu menu = new JPopupMenu();
+
+		JMenuItem copyItem = new JMenuItem(Translation.get("iconsTool.copy"));
+		copyItem.setEnabled(hasSelection);
+		copyItem.addActionListener(ev -> copySelectedIcons());
+		menu.add(copyItem);
+
+		JMenuItem pasteItem = new JMenuItem(Translation.get("iconsTool.paste"));
+		pasteItem.setEnabled(hasClipboard);
+		pasteItem.addActionListener(ev -> pasteSelectedIcons());
+		menu.add(pasteItem);
+
+		JMenuItem deleteItem = new JMenuItem(Translation.get("iconsTool.delete"));
+		deleteItem.setEnabled(hasSelection);
+		deleteItem.addActionListener(ev -> deleteSelectedIcons());
+		menu.add(deleteItem);
+
+		JMenuItem resetScaleItem = new JMenuItem(Translation.get("iconsTool.resetScale"));
+		resetScaleItem.setEnabled(hasSelection);
+		resetScaleItem.addActionListener(ev -> clearScaleOnSelectedIcons());
+		menu.add(resetScaleItem);
+
+		menu.show(e.getComponent(), e.getX(), e.getY());
 	}
 
 	@Override

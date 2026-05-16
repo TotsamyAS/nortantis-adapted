@@ -65,6 +65,13 @@ public class TextTool extends EditorTool
 	private FontChooser fontChooser;
 	private final int backgroundFadeDivider = 10;
 	private JSlider backgroundFadeSlider;
+	/**
+	 * In-memory clipboard for a single MapText. Mirrors the {@code copied} pattern in IconsTool — not the OS clipboard, since pasting text
+	 * from other apps doesn't translate to a MapText with its full set of properties (type, color, font, rotation, etc.).
+	 */
+	private MapText textClipboard;
+	private RowHider copyPasteDeleteButtonsHider;
+	private RowHider copyPasteDeleteButtonsSeparatorHider;
 
 	public TextTool(MainWindow parent, ToolsPanel toolsPanel, MapUpdater mapUpdater)
 	{
@@ -167,21 +174,7 @@ public class TextTool extends EditorTool
 
 		JButton clearRotationButton = new JButton(Translation.get("textTool.rotateToHorizontal"));
 		clearRotationButton.setToolTipText(Translation.get("textTool.rotateToHorizontal.tooltip"));
-		clearRotationButton.addActionListener(new ActionListener()
-		{
-			@Override
-			public void actionPerformed(ActionEvent e)
-			{
-				if (lastSelected != null)
-				{
-					MapText before = lastSelected.deepCopy();
-					lastSelected.angle = 0;
-					undoer.setUndoPoint(UpdateType.Incremental, TextTool.this);
-					mapEditingPanel.setTextBoxToDraw(lastSelected.line1Bounds, lastSelected.line2Bounds);
-					updater.createAndShowMapIncrementalUsingText(Arrays.asList(before, lastSelected));
-				}
-			}
-		});
+		clearRotationButton.addActionListener(ev -> rotateSelectedTextToHorizontal());
 		clearRotationButtonHider = organizer.addLeftAlignedComponents(Arrays.asList(clearRotationButton));
 
 		editToolsSeparatorHider.add(organizer.addSeparator());
@@ -388,6 +381,28 @@ public class TextTool extends EditorTool
 					sliderWithDisplay.addToOrganizer(organizer, Translation.get("textTool.backgroundFade.label"), Translation.get("textTool.backgroundFade.help"), clearBackgroundFadeButton, 0, 0));
 		}
 
+
+		{
+			copyPasteDeleteButtonsSeparatorHider = organizer.addSeparator();
+
+			JButton copyButton = new JButton(Translation.get("textTool.copy"));
+			copyButton.setToolTipText(Translation.get("textTool.copy.tooltip", SwingHelper.getCommandKeyName()));
+			SwingHelper.bindButtonShortcut(copyButton, KeyStroke.getKeyStroke(KeyEvent.VK_C, SwingHelper.getMenuShortcutKeyMask()), "textCopyAction");
+			copyButton.addActionListener(ev -> copySelectedText());
+
+			JButton pasteButton = new JButton(Translation.get("textTool.paste"));
+			pasteButton.setToolTipText(Translation.get("textTool.paste.tooltip", SwingHelper.getCommandKeyName()));
+			SwingHelper.bindButtonShortcut(pasteButton, KeyStroke.getKeyStroke(KeyEvent.VK_V, SwingHelper.getMenuShortcutKeyMask()), "textPasteAction");
+			pasteButton.addActionListener(ev -> pasteText());
+
+			JButton deleteButton = new JButton(Translation.get("textTool.delete"));
+			deleteButton.setToolTipText(Translation.get("textTool.delete.tooltip"));
+			SwingHelper.bindButtonShortcut(deleteButton, KeyStroke.getKeyStroke("DELETE"), "textDeleteAction");
+			deleteButton.addActionListener(ev -> deleteSelectedText());
+
+			copyPasteDeleteButtonsHider = organizer.addLeftAlignedComponents(Arrays.asList(copyButton, pasteButton, deleteButton));
+		}
+
 		Tuple2<JComboBox<ImageIcon>, RowHider> brushSizeTuple = organizer.addBrushSizeComboBox(brushSizes);
 		brushSizeComboBox = brushSizeTuple.getFirst();
 		brushSizeHider = brushSizeTuple.getSecond();
@@ -461,12 +476,14 @@ public class TextTool extends EditorTool
 		boldBackgroundColorOverrideHider.setVisible(false);
 		fontHider.setVisible(false);
 		clearRotationButtonHider.setVisible(false);
+		copyPasteDeleteButtonsHider.setVisible(modeWidget.isEditMode());
 		if (modeWidget.isEditMode() && lastSelected != null)
 		{
 			editTextField.setText(lastSelected.value);
 			editTextField.requestFocus();
 		}
 		actionsSeparatorHider.setVisible((modeWidget.isEditMode() && lastSelected != null) || modeWidget.isDrawMode() || modeWidget.isEraseMode());
+		copyPasteDeleteButtonsSeparatorHider.setVisible((modeWidget.isEditMode()));
 
 		// For some reason this is necessary to prevent the text editing field
 		// from flattening sometimes.
@@ -632,7 +649,11 @@ public class TextTool extends EditorTool
 			else
 			{
 				MapText selectedText = mainWindow.edits.findTextPicked(getPointOnGraph(e.getPoint()));
-				handleSelectingTextToEdit(selectedText, true);
+				// Don't grab focus on selection — selecting a text is a visual selection (like clicking an
+				// icon), not the same as starting to edit it. This keeps ctrl+C / ctrl+V / DELETE shortcuts
+				// targeting the selected MapText object instead of being swallowed by the text-edit field.
+				// Users click into the text field to start typing.
+				handleSelectingTextToEdit(selectedText, false);
 			}
 		}
 	}
@@ -671,6 +692,131 @@ public class TextTool extends EditorTool
 				mapEditingPanel.repaint();
 			});
 		}
+	}
+
+	private void copySelectedText()
+	{
+		if (!modeWidget.isEditMode() || lastSelected == null)
+		{
+			return;
+		}
+		textClipboard = lastSelected.deepCopy();
+	}
+
+	private void pasteText()
+	{
+		if (textClipboard == null)
+		{
+			return;
+		}
+
+		// Position the paste at the current mouse location (in graph pixel coordinates). When the mouse
+		// is off-map, fall back to a fixed offset from the source location so the new text is visible
+		// rather than landing exactly on top of the original.
+		nortantis.geom.Point pasteLoc;
+		java.awt.Point mouseOnPanel = mapEditingPanel.getMousePosition();
+		if (mouseOnPanel != null)
+		{
+			pasteLoc = getPointOnGraph(mouseOnPanel);
+		}
+		else
+		{
+			final double offset = 50.0 * mainWindow.displayQualityScale;
+			pasteLoc = new nortantis.geom.Point(textClipboard.location.x + offset, textClipboard.location.y + offset);
+		}
+
+		MapText pasted = textClipboard.deepCopy();
+		pasted.location = pasteLoc;
+		pasted.line1Bounds = null;
+		pasted.line2Bounds = null;
+		mainWindow.edits.text.add(pasted);
+
+		undoer.setUndoPoint(UpdateType.Incremental, this);
+		updater.createAndShowMapIncrementalUsingText(Arrays.asList(pasted));
+		handleSelectingTextToEdit(pasted, false);
+	}
+
+	private void deleteSelectedText()
+	{
+		if (!modeWidget.isEditMode() || lastSelected == null)
+		{
+			return;
+		}
+		MapText toDelete = lastSelected;
+		MapText before = toDelete.deepCopy();
+		// Match the erase-mode pattern: clear the value and let purgeEmptyText reap the entry once
+		// drawing is idle. Going through the same code path means undo/redo handling stays uniform.
+		toDelete.value = "";
+		handleSelectingTextToEdit(null, false);
+		undoer.setUndoPoint(UpdateType.Incremental, this);
+		triggerPurgeEmptyText();
+		updater.createAndShowMapIncrementalUsingText(Arrays.asList(before, toDelete));
+	}
+
+	private void rotateSelectedTextToHorizontal()
+	{
+		if (lastSelected == null)
+		{
+			return;
+		}
+		MapText before = lastSelected.deepCopy();
+		lastSelected.angle = 0;
+		undoer.setUndoPoint(UpdateType.Incremental, this);
+		mapEditingPanel.setTextBoxToDraw(lastSelected.line1Bounds, lastSelected.line2Bounds);
+		updater.createAndShowMapIncrementalUsingText(Arrays.asList(before, lastSelected));
+	}
+
+	@Override
+	protected void handleMouseRightPressedOnMap(MouseEvent e)
+	{
+		if (!modeWidget.isEditMode())
+		{
+			return;
+		}
+		if (drawTextDisabledLabel.isVisible())
+		{
+			return;
+		}
+
+		// If right-click is on a text that isn't currently the selection, select it first so the menu
+		// acts on what the user pointed at. Don't grab focus — see Option A in selection-vs-editing
+		// design (focus would route ctrl+C/V/DELETE to the text-edit field instead of the MapText).
+		MapText underCursor = mainWindow.edits.findTextPicked(getPointOnGraph(e.getPoint()));
+		if (underCursor != null && underCursor != lastSelected)
+		{
+			handleSelectingTextToEdit(underCursor, false);
+		}
+
+		boolean hasSelection = lastSelected != null;
+		boolean hasClipboard = textClipboard != null;
+		if (!hasSelection && !hasClipboard)
+		{
+			return;
+		}
+
+		JPopupMenu menu = new JPopupMenu();
+
+		JMenuItem copyItem = new JMenuItem(Translation.get("textTool.copy"));
+		copyItem.setEnabled(hasSelection);
+		copyItem.addActionListener(ev -> copySelectedText());
+		menu.add(copyItem);
+
+		JMenuItem pasteItem = new JMenuItem(Translation.get("textTool.paste"));
+		pasteItem.setEnabled(hasClipboard);
+		pasteItem.addActionListener(ev -> pasteText());
+		menu.add(pasteItem);
+
+		JMenuItem deleteItem = new JMenuItem(Translation.get("textTool.delete"));
+		deleteItem.setEnabled(hasSelection);
+		deleteItem.addActionListener(ev -> deleteSelectedText());
+		menu.add(deleteItem);
+
+		JMenuItem rotateItem = new JMenuItem(Translation.get("textTool.rotateToHorizontal"));
+		rotateItem.setEnabled(hasSelection);
+		rotateItem.addActionListener(ev -> rotateSelectedTextToHorizontal());
+		menu.add(rotateItem);
+
+		menu.show(e.getComponent(), e.getX(), e.getY());
 	}
 
 	@Override
@@ -784,11 +930,6 @@ public class TextTool extends EditorTool
 			// that didn't change anything.
 			undoer.setUndoPoint(UpdateType.Incremental, this);
 		}
-	}
-
-	@Override
-	protected void handleMouseClickOnMap(MouseEvent e)
-	{
 	}
 
 	public void changeToEditModeAndSelectText(MapText selectedText, boolean grabFocus)

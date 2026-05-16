@@ -81,6 +81,46 @@ public class SwingHelper
 		return OSHelper.isMac() ? "\u2318" : Translation.get("key.ctrl");
 	}
 
+	/**
+	 * Binds a keyboard shortcut to {@code button} so that pressing the shortcut anywhere in the editor window invokes the button's
+	 * {@code ActionListener} (via {@code doClick()}). When focus is on an editable {@link JTextComponent} the shortcut is suppressed so the
+	 * text component's built-in handler runs instead \u2014 this matters for {@code DELETE} in particular (which would otherwise delete a
+	 * selected map object instead of a character) and for any future shortcuts that overlap with text-editing keys.
+	 *
+	 * <p>
+	 * Replaces the boilerplate of building an {@link AbstractAction} and wiring {@link InputMap}/{@link ActionMap} by hand at each call
+	 * site. Bindings are registered at {@link JComponent#WHEN_IN_FOCUSED_WINDOW} so the user doesn't have to focus the button first.
+	 *
+	 * @param button
+	 *            The button to fire when the shortcut is pressed. The shortcut runs the button's existing {@code ActionListener}s.
+	 * @param keyStroke
+	 *            The shortcut, e.g. {@code KeyStroke.getKeyStroke("DELETE")} or
+	 *            {@code KeyStroke.getKeyStroke(KeyEvent.VK_C, getMenuShortcutKeyMask())}.
+	 * @param actionName
+	 *            An InputMap/ActionMap key. Must be unique per button; conventionally something like {@code "deleteAction"} or
+	 *            {@code "copyAction"}.
+	 */
+	public static void bindButtonShortcut(JButton button, KeyStroke keyStroke, String actionName)
+	{
+		Action action = new AbstractAction(actionName)
+		{
+			@Override
+			public void actionPerformed(ActionEvent e)
+			{
+				Component focused = KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();
+				if (focused instanceof JTextComponent && ((JTextComponent) focused).isEditable())
+				{
+					// Let the text component's own handler take this shortcut (e.g. so DELETE inside a text
+					// field deletes a character, not a selected map object).
+					return;
+				}
+				button.doClick();
+			}
+		};
+		button.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(keyStroke, actionName);
+		button.getActionMap().put(actionName, action);
+	}
+
 
 	public static void initializeComboBoxItems(JComboBox<String> comboBox, Collection<String> items, String selectedItem, boolean forceAddSelectedItem)
 	{

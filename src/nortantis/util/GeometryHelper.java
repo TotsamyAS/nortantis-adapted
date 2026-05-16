@@ -9,8 +9,37 @@ import java.util.Set;
 public class GeometryHelper
 {
 	/**
+	 * Shortest distance from {@code p} to the line segment from {@code a} to {@code b}, clamping to the segment endpoints (i.e. distance to
+	 * the closest point that actually lies on the segment, not the infinite line).
+	 */
+	public static double distanceFromPointToSegment(Point p, Point a, Point b)
+	{
+		double dx = b.x - a.x;
+		double dy = b.y - a.y;
+		double segLenSq = dx * dx + dy * dy;
+		if (segLenSq == 0.0)
+		{
+			return p.distanceTo(a);
+		}
+		double t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / segLenSq;
+		if (t < 0.0)
+		{
+			return p.distanceTo(a);
+		}
+		if (t > 1.0)
+		{
+			return p.distanceTo(b);
+		}
+		double projX = a.x + t * dx;
+		double projY = a.y + t * dy;
+		double ex = p.x - projX;
+		double ey = p.y - projY;
+		return Math.sqrt(ex * ex + ey * ey);
+	}
+
+	/**
 	 * Determines if a line defined by two points overlaps with a circle.
-	 * 
+	 *
 	 * @param p1
 	 *            The first point of the line.
 	 * @param p2

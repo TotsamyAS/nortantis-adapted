@@ -384,13 +384,6 @@ public class MainWindow extends JFrame implements ILoggerTarget
 			@Override
 			public void mouseClicked(MouseEvent e)
 			{
-				if (SwingUtilities.isLeftMouseButton(e))
-				{
-					if (!mapEditingPanel.isSelectionBoxActive())
-					{
-						updater.doIfMapIsReadyForInteractions(() -> toolsPanel.currentTool.handleMouseClickOnMap(e));
-					}
-				}
 			}
 
 			@Override
@@ -404,9 +397,16 @@ public class MainWindow extends JFrame implements ILoggerTarget
 				{
 					mouseLocationForMiddleButtonDrag = e.getPoint();
 				}
-				else if (SwingUtilities.isLeftMouseButton(e) || SwingUtilities.isRightMouseButton(e))
+				else if (SwingUtilities.isLeftMouseButton(e))
 				{
 					updater.doIfMapIsReadyForInteractions(() -> toolsPanel.currentTool.handleMousePressedOnMap(e));
+				}
+				else if (SwingUtilities.isRightMouseButton(e))
+				{
+					// Right-press goes to a dedicated handler so drawing/erase modes don't accidentally
+					// trigger on right-click. Tools opt in to right-click gestures (e.g. removing the last
+					// freehand control point) or, eventually, context menus.
+					updater.doIfMapIsReadyForInteractions(() -> toolsPanel.currentTool.handleMouseRightPressedOnMap(e));
 				}
 			}
 

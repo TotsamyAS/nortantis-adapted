@@ -85,9 +85,63 @@ public class LandWaterTool extends EditorTool
 	private JToggleButton riverFreeHandDrawStyleButton;
 	private RowHider riverDrawStyleHider;
 
+	// Sticky segment selection. Persists across mouse moves until cleared by an action (e.g. line
+	// removed by an edit, or user clicks empty space). Used so the river width slider has a fixed
+	// target segment to retune, and so the segment stays visibly highlighted while the user moves
+	// the mouse. At most one of {stickyRiver, stickyRoad} is non-null. stickySegmentIndex points
+	// at the segment from nodes[stickySegmentIndex] to nodes[stickySegmentIndex + 1].
+	private River stickyRiver = null;
+	private Road stickyRoad = null;
+	private int stickySegmentIndex = -1;
+
+	// Hover state — what's under the cursor right now, refreshed on every mouse-moved. Drives the
+	// hover ring on a control point and the right-click context menu's target. Cleared when the
+	// mouse leaves the map or moves to a position where nothing is in range.
+	private River hoveredRiver = null;
+	private Road hoveredRoad = null;
+
+	// In-progress control-point drag (edit mode). Captures which line/control-point was grabbed
+	// independent of sticky/hover state, since neither concept reflects "currently being dragged".
+	// dragSnapshotPath is the line's nodes-as-locations before the drag started, used to determine
+	// which centers need redraw at commit time. dragOccurred distinguishes a true drag from a
+	// single click that happens to land on a control point.
+	private boolean dragInProgress = false;
+	private boolean dragOccurred = false;
+	private List<Point> dragSnapshotPath = null;
+	private River dragRiver = null;
+	private Road dragRoad = null;
+	private int dragControlPointIndex = -1;
+
+	// Width-slider edit state. sliderEditWidthBeforeDrag is the selected segment's width level before
+	// the user grabs the slider thumb; on release we compare against the new width and only push an
+	// undo point if it actually changed. -1 means "no edit in progress".
+	private int sliderEditWidthBeforeDrag = -1;
+	// True while we're applying the slider's value to the selected segment programmatically, so the
+	// change listener doesn't recurse or attempt to re-tune the segment.
+	private boolean syncingSliderToSelection = false;
+
 	private enum LineType
 	{
 		RIVER, ROAD
+	}
+
+	/**
+	 * Result of hit-testing the cursor against rivers (or roads): the closest control point or
+	 * segment if one is in range, or null at the call site. Exactly one of {@code river} or
+	 * {@code road} is non-null. Exactly one of {@code controlPointIndex} or {@code segmentIndex}
+	 * is &gt;= 0.
+	 */
+	private record LineHit(River river, Road road, int controlPointIndex, int segmentIndex)
+	{
+		boolean isControlPoint()
+		{
+			return controlPointIndex >= 0;
+		}
+
+		boolean isSegment()
+		{
+			return segmentIndex >= 0;
+		}
 	}
 
 	static String getToolbarNameStatic()
@@ -211,8 +265,8 @@ public class LandWaterTool extends EditorTool
 
 		// River options
 		{
-			modeWidget = new DrawModeWidget(Translation.get("landWaterTool.drawRivers"), Translation.get("landWaterTool.eraseRivers"), false, "", false, "",
-					() -> brushActionListener.actionPerformed(null));
+			modeWidget = new DrawModeWidget(Translation.get("landWaterTool.drawRivers"), Translation.get("landWaterTool.eraseRivers"), false, "", true,
+					Translation.get("landWaterTool.editRiverOrRoad"), () -> brushActionListener.actionPerformed(null));
 			modeHider = modeWidget.addToOrganizer(organizer, Translation.get("landWaterTool.riverMode.help"));
 
 			int maxSliderValue = 1 + (int) Math.round(Math.sqrt((GraphRiver.MAX_RIVER_LEVEL - GraphRiver.RIVERS_THIS_SIZE_OR_SMALLER_WILL_NOT_BE_DRAWN - 1) / 2.0));
@@ -221,6 +275,26 @@ public class LandWaterTool extends EditorTool
 			riverWidthSlider.setValue(initialValue);
 			SliderWithDisplayedValue sliderWithDisplay = new SliderWithDisplayedValue(riverWidthSlider);
 			riverOptionHider = sliderWithDisplay.addToOrganizer(organizer, Translation.get("landWaterTool.riverWidth.label"), Translation.get("landWaterTool.riverWidth.help"));
+
+			// In edit mode with a river segment selected, slider changes retune that segment's width
+			// rather than (or in addition to) setting the width for the next-drawn river. Live updates
+			// fire on every tick; the undo point is only set when the slider is released (or focus
+			// leaves) to avoid an undo entry per drag pixel.
+			riverWidthSlider.addChangeListener(ev -> handleRiverWidthSliderChanged());
+			riverWidthSlider.addMouseListener(new java.awt.event.MouseAdapter()
+			{
+				@Override
+				public void mousePressed(java.awt.event.MouseEvent ev)
+				{
+					sliderEditWidthBeforeDrag = currentEditSelectedSegmentWidthLevel();
+				}
+
+				@Override
+				public void mouseReleased(java.awt.event.MouseEvent ev)
+				{
+					commitSliderEditIfChanged();
+				}
+			});
 		}
 
 		// River draw style (graph vs. free-hand)
@@ -355,9 +429,28 @@ public class LandWaterTool extends EditorTool
 	private void showOrHideRoadAndRiverOptions()
 	{
 		modeHider.setVisible(riversButton.isSelected() || roadsButton.isSelected());
-		riverOptionHider.setVisible(riversButton.isSelected() && modeWidget.isDrawMode());
+		// River width slider is also shown in edit mode for rivers, so it can retune the width of a
+		// selected segment (handled in Step 9 — slider listener applies to the selected segment).
+		riverOptionHider.setVisible(riversButton.isSelected() && (modeWidget.isDrawMode() || modeWidget.isEditMode()));
 		riverDrawStyleHider.setVisible(riversButton.isSelected() && modeWidget.isDrawMode());
 		drawStyleHider.setVisible(roadsButton.isSelected() && modeWidget.isDrawMode());
+		// Clear edit-mode sticky selection and hover state when leaving edit mode, leaving the rivers/roads
+		// brush family entirely, or switching between rivers and roads (sticky on one type would render
+		// stale highlights while editing the other type).
+		boolean leftEditMode = !modeWidget.isEditMode() || (!riversButton.isSelected() && !roadsButton.isSelected());
+		boolean stickyTypeMismatch = (stickyRiver != null && !riversButton.isSelected()) || (stickyRoad != null && !roadsButton.isSelected());
+		if (leftEditMode || stickyTypeMismatch)
+		{
+			boolean hadSticky = stickyRiver != null || stickyRoad != null;
+			boolean hadHover = hoveredRiver != null || hoveredRoad != null;
+			if (hadSticky || hadHover)
+			{
+				clearStickySegment();
+				clearHoverState();
+				mapEditingPanel.clearHighlightedPolylines();
+				mapEditingPanel.repaint();
+			}
+		}
 		if (updater != null)
 		{
 			updater.doWhenMapIsReadyForInteractions(() ->
@@ -565,7 +658,6 @@ public class LandWaterTool extends EditorTool
 			{
 				return;
 			}
-			updater.addRiversToRedrawLowPriority(newRivers, mainWindow.displayQualityScale);
 			pathsForCenters = newRivers.stream().map(r -> PathOperations.toLocationList(r.nodes)).collect(Collectors.toList());
 		}
 		else
@@ -664,11 +756,403 @@ public class LandWaterTool extends EditorTool
 		colorGeneratorSettingsHider.setVisible(showColorControls);
 	}
 
-	@Override
-	protected void handleMouseClickOnMap(MouseEvent e)
+	/**
+	 * Hit-tests {@code panelPoint} against rivers or roads (whichever brush is active) and returns the closest control point or segment in
+	 * range, or {@code null} if nothing is close enough. Control points take precedence over segments when both are in range, since the
+	 * user is more likely to want to grab a control point. Control-point threshold matches the road control-point hit radius; segment
+	 * threshold is twice that, so thick lines are easy to grab.
+	 *
+	 * @param scopeRiver
+	 *            if non-null, only this river is considered (used in edit mode while a sticky segment is locked).
+	 * @param scopeRoad
+	 *            if non-null, only this road is considered (used in edit mode while a sticky segment is locked).
+	 */
+	private LineHit editModeHitTest(java.awt.Point panelPoint, LineType activeType, River scopeRiver, Road scopeRoad)
 	{
-		// Free-hand control-point placement and double-click finalization are handled in handleMousePressedOnMap
-		// so that moving the mouse between press and release still registers the action.
+		if (updater.mapParts == null || updater.mapParts.graph == null || panelPoint == null)
+		{
+			return null;
+		}
+		Point clickGraph = getPointOnGraph(panelPoint);
+		double controlPointRadius = mapEditingPanel.getRoadControlPointHitRadiusInGraphPixels();
+		double segmentThreshold = controlPointRadius * 2.0;
+		double scale = mainWindow.displayQualityScale;
+
+		River bestCpRiver = null;
+		Road bestCpRoad = null;
+		int bestCpIdx = -1;
+		double bestCpDist = controlPointRadius;
+		River bestSegRiver = null;
+		Road bestSegRoad = null;
+		int bestSegIdx = -1;
+		double bestSegDist = segmentThreshold;
+
+		if (activeType == LineType.RIVER)
+		{
+			Iterable<River> riversToScan = scopeRiver != null ? Collections.singletonList(scopeRiver) : mainWindow.edits.rivers;
+			for (River river : riversToScan)
+			{
+				List<RiverPathNode> nodes = river.nodes;
+				for (int i = 0; i < nodes.size(); i++)
+				{
+					Point pGraph = nodes.get(i).getLoc().mult(scale);
+					double d = clickGraph.distanceTo(pGraph);
+					if (d < bestCpDist)
+					{
+						bestCpDist = d;
+						bestCpRiver = river;
+						bestCpIdx = i;
+					}
+				}
+				for (int i = 0; i < nodes.size() - 1; i++)
+				{
+					Point a = nodes.get(i).getLoc().mult(scale);
+					Point b = nodes.get(i + 1).getLoc().mult(scale);
+					double d = GeometryHelper.distanceFromPointToSegment(clickGraph, a, b);
+					if (d < bestSegDist)
+					{
+						bestSegDist = d;
+						bestSegRiver = river;
+						bestSegIdx = i;
+					}
+				}
+			}
+		}
+		else
+		{
+			Iterable<Road> roadsToScan = scopeRoad != null ? Collections.singletonList(scopeRoad) : mainWindow.edits.roads;
+			for (Road road : roadsToScan)
+			{
+				List<RoadPathNode> nodes = road.nodes;
+				for (int i = 0; i < nodes.size(); i++)
+				{
+					Point pGraph = nodes.get(i).getLoc().mult(scale);
+					double d = clickGraph.distanceTo(pGraph);
+					if (d < bestCpDist)
+					{
+						bestCpDist = d;
+						bestCpRoad = road;
+						bestCpIdx = i;
+					}
+				}
+				for (int i = 0; i < nodes.size() - 1; i++)
+				{
+					Point a = nodes.get(i).getLoc().mult(scale);
+					Point b = nodes.get(i + 1).getLoc().mult(scale);
+					double d = GeometryHelper.distanceFromPointToSegment(clickGraph, a, b);
+					if (d < bestSegDist)
+					{
+						bestSegDist = d;
+						bestSegRoad = road;
+						bestSegIdx = i;
+					}
+				}
+			}
+		}
+
+		if (bestCpRiver != null)
+		{
+			return new LineHit(bestCpRiver, null, bestCpIdx, -1);
+		}
+		if (bestCpRoad != null)
+		{
+			return new LineHit(null, bestCpRoad, bestCpIdx, -1);
+		}
+		if (bestSegRiver != null)
+		{
+			return new LineHit(bestSegRiver, null, -1, bestSegIdx);
+		}
+		if (bestSegRoad != null)
+		{
+			return new LineHit(null, bestSegRoad, -1, bestSegIdx);
+		}
+		return null;
+	}
+
+	/**
+	 * Returns the hit-test scope for the active brush in edit mode while a sticky line is locked: only the sticky line is considered.
+	 * Used by right-click and hover so they don't surface other lines while the user has one selected.
+	 */
+	private LineHit editModeHitTestScopedToStickyIfAny(java.awt.Point panelPoint, LineType activeType)
+	{
+		if (stickyRiver != null && activeType == LineType.RIVER)
+		{
+			return editModeHitTest(panelPoint, activeType, stickyRiver, null);
+		}
+		if (stickyRoad != null && activeType == LineType.ROAD)
+		{
+			return editModeHitTest(panelPoint, activeType, null, stickyRoad);
+		}
+		return editModeHitTest(panelPoint, activeType, null, null);
+	}
+
+	private void clearHoverState()
+	{
+		hoveredRiver = null;
+		hoveredRoad = null;
+	}
+
+	private void setStickyRiverSegment(River river, int segmentIndex)
+	{
+		stickyRiver = river;
+		stickyRoad = null;
+		stickySegmentIndex = segmentIndex;
+	}
+
+	private void setStickyRoadSegment(Road road, int segmentIndex)
+	{
+		stickyRiver = null;
+		stickyRoad = road;
+		stickySegmentIndex = segmentIndex;
+	}
+
+	private void clearStickySegment()
+	{
+		stickyRiver = null;
+		stickyRoad = null;
+		stickySegmentIndex = -1;
+	}
+
+	private boolean stickyLineActive()
+	{
+		return stickyRiver != null || stickyRoad != null;
+	}
+
+	/**
+	 * Refreshes the edit-mode hover visuals (control-point circles + the hover ring) at {@code mouseLocation}. When a sticky line is locked,
+	 * only that line's control points are drawn (regardless of cursor distance), and the hover ring is restricted to that line's CPs.
+	 * When nothing is sticky, behaves like draw mode: any line within the highlight threshold contributes its CPs.
+	 */
+	private void updateEditModeHoverDisplay(java.awt.Point mouseLocation, LineType type)
+	{
+		if (updater.mapParts == null || updater.mapParts.graph == null)
+		{
+			return;
+		}
+		double scale = mainWindow.displayQualityScale;
+		List<Point> circlesGraphPixels = new ArrayList<>();
+		Point mouseRI = mouseLocation != null ? getPointOnGraph(mouseLocation).mult(1.0 / scale) : null;
+
+		if (stickyLineActive())
+		{
+			if (type == LineType.RIVER && stickyRiver != null)
+			{
+				for (RiverPathNode n : stickyRiver.nodes)
+				{
+					circlesGraphPixels.add(n.getLoc().mult(scale));
+				}
+			}
+			else if (type == LineType.ROAD && stickyRoad != null)
+			{
+				for (RoadPathNode n : stickyRoad.nodes)
+				{
+					circlesGraphPixels.add(n.getLoc().mult(scale));
+				}
+			}
+		}
+		else
+		{
+			double highlightThresholdRI = updater.mapParts.graph.getMeanCenterWidth() / scale;
+			for (List<Point> path : getAllLinePaths(type))
+			{
+				if (mouseRI != null && isPathNearPoint(path, mouseRI, highlightThresholdRI))
+				{
+					for (Point riPoint : path)
+					{
+						circlesGraphPixels.add(riPoint.mult(scale));
+					}
+				}
+			}
+		}
+		mapEditingPanel.setControlPointCircles(circlesGraphPixels);
+
+		// Hover ring on the specific CP under the cursor, scoped to the sticky line if one is locked.
+		Point snapPointRI = null;
+		if (mouseLocation != null && mouseRI != null)
+		{
+			double snapRadius = getSnapRadiusRI();
+			if (stickyLineActive())
+			{
+				if (type == LineType.RIVER && stickyRiver != null)
+				{
+					snapPointRI = findNearestPointInSinglePath(mouseRI, PathOperations.toLocationList(stickyRiver.nodes), snapRadius);
+				}
+				else if (type == LineType.ROAD && stickyRoad != null)
+				{
+					snapPointRI = findNearestPointInSinglePath(mouseRI, PathOperations.toLocationList(stickyRoad.nodes), snapRadius);
+				}
+			}
+			else
+			{
+				snapPointRI = computeSnapPointForType(mouseLocation, type);
+			}
+		}
+		if (snapPointRI != null)
+		{
+			mapEditingPanel.setHoveredRoadControlPoint(snapPointRI.mult(scale));
+		}
+		else
+		{
+			mapEditingPanel.clearHoveredControlPoint();
+		}
+	}
+
+	private Point findNearestPointInSinglePath(Point mouseRI, List<Point> path, double snapRadius)
+	{
+		Point best = null;
+		double bestDist = snapRadius;
+		for (Point p : path)
+		{
+			double d = p.distanceTo(mouseRI);
+			if (d < bestDist)
+			{
+				bestDist = d;
+				best = p;
+			}
+		}
+		return best;
+	}
+
+	/**
+	 * Adds the sticky segment polyline to the panel's highlight list. Callers must clear highlighted polylines beforehand if they want
+	 * only the sticky highlight to remain. Safe to call when no sticky segment is selected (no-op).
+	 */
+	private void applyStickySegmentHighlight()
+	{
+		double scale = mainWindow.displayQualityScale;
+		if (stickyRiver != null && stickySegmentIndex >= 0)
+		{
+			List<RiverPathNode> nodes = stickyRiver.nodes;
+			if (stickySegmentIndex < nodes.size() - 1)
+			{
+				Point a = nodes.get(stickySegmentIndex).getLoc().mult(scale);
+				Point b = nodes.get(stickySegmentIndex + 1).getLoc().mult(scale);
+				mapEditingPanel.addPolylinesToHighlight(List.of(a, b));
+			}
+		}
+		else if (stickyRoad != null && stickySegmentIndex >= 0)
+		{
+			List<RoadPathNode> nodes = stickyRoad.nodes;
+			if (stickySegmentIndex < nodes.size() - 1)
+			{
+				Point a = nodes.get(stickySegmentIndex).getLoc().mult(scale);
+				Point b = nodes.get(stickySegmentIndex + 1).getLoc().mult(scale);
+				mapEditingPanel.addPolylinesToHighlight(List.of(a, b));
+			}
+		}
+	}
+
+	/** Returns the river level for {@code sliderValue} using the same formula as the draw-mode press handlers. */
+	private int sliderValueToRiverLevel(int sliderValue)
+	{
+		int base = sliderValue - 1;
+		return base * base * 2 + GraphRiver.RIVERS_THIS_SIZE_OR_SMALLER_WILL_NOT_BE_DRAWN + 1;
+	}
+
+	/** Inverse of {@link #sliderValueToRiverLevel(int)}; clamped to the slider's bounds. */
+	private int riverLevelToSliderValue(int riverLevel)
+	{
+		int adjusted = riverLevel - GraphRiver.RIVERS_THIS_SIZE_OR_SMALLER_WILL_NOT_BE_DRAWN - 1;
+		if (adjusted < 0)
+		{
+			adjusted = 0;
+		}
+		int base = (int) Math.round(Math.sqrt(adjusted / 2.0));
+		int value = base + 1;
+		if (value < riverWidthSlider.getMinimum())
+		{
+			value = riverWidthSlider.getMinimum();
+		}
+		if (value > riverWidthSlider.getMaximum())
+		{
+			value = riverWidthSlider.getMaximum();
+		}
+		return value;
+	}
+
+	private int currentEditSelectedSegmentWidthLevel()
+	{
+		if (stickyRiver == null || stickySegmentIndex < 0)
+		{
+			return -1;
+		}
+		List<RiverPathNode> nodes = stickyRiver.nodes;
+		if (stickySegmentIndex >= nodes.size() - 1)
+		{
+			return -1;
+		}
+		return nodes.get(stickySegmentIndex).getWidthLevelToNext();
+	}
+
+	/**
+	 * Whenever the slider value changes AND we're in edit mode with a river segment selected, rewrite the segment's width level live. The
+	 * change listener also fires when the slider is synced programmatically from selection; {@link #syncingSliderToSelection} suppresses
+	 * the rewrite in that case.
+	 */
+	private void handleRiverWidthSliderChanged()
+	{
+		if (syncingSliderToSelection)
+		{
+			return;
+		}
+		if (!modeWidget.isEditMode() || stickyRiver == null || stickySegmentIndex < 0)
+		{
+			return;
+		}
+		List<RiverPathNode> nodes = new ArrayList<>(stickyRiver.nodes);
+		if (stickySegmentIndex >= nodes.size() - 1)
+		{
+			return;
+		}
+		int newLevel = sliderValueToRiverLevel(riverWidthSlider.getValue());
+		RiverPathNode old = nodes.get(stickySegmentIndex);
+		if (old.getWidthLevelToNext() == newLevel)
+		{
+			return;
+		}
+		nodes.set(stickySegmentIndex, new RiverPathNode(old.getLoc(), newLevel, old.getSeedToNext(), old.getEdgeIndexToNext()));
+		stickyRiver.nodes = new java.util.concurrent.CopyOnWriteArrayList<>(nodes);
+		List<List<Point>> centersTouched = new ArrayList<>();
+		centersTouched.add(PathOperations.toLocationList(nodes));
+		updater.createAndShowMapIncrementalUsingCenters(getCentersTouchingPoints(centersTouched));
+	}
+
+	private void commitSliderEditIfChanged()
+	{
+		if (sliderEditWidthBeforeDrag < 0)
+		{
+			return;
+		}
+		int newLevel = currentEditSelectedSegmentWidthLevel();
+		if (newLevel >= 0 && newLevel != sliderEditWidthBeforeDrag)
+		{
+			undoer.setUndoPoint(UpdateType.Incremental, this);
+		}
+		sliderEditWidthBeforeDrag = -1;
+	}
+
+	/** Reflects the selected segment's current width in the slider, suppressing the change-listener side effect. */
+	private void syncSliderToSelectedSegment()
+	{
+		int level = currentEditSelectedSegmentWidthLevel();
+		if (level < 0)
+		{
+			return;
+		}
+		int sliderValue = riverLevelToSliderValue(level);
+		if (sliderValue == riverWidthSlider.getValue())
+		{
+			return;
+		}
+		syncingSliderToSelection = true;
+		try
+		{
+			riverWidthSlider.setValue(sliderValue);
+		}
+		finally
+		{
+			syncingSliderToSelection = false;
+		}
 	}
 
 	private Integer regionIdToExpand;
@@ -844,10 +1328,9 @@ public class LandWaterTool extends EditorTool
 			if (modeWidget.isEraseMode())
 			{
 				List<List<Point>> riverSegmentsToRemove = getSelectedRiverSegments(e.getPoint());
-				List<River> riversChanged = RiverDrawer.removeSegmentsAndSplitRivers(mainWindow.edits.rivers, riverSegmentsToRemove);
+				RiverDrawer.removeSegmentsAndSplitRivers(mainWindow.edits.rivers, riverSegmentsToRemove);
 				RiverDrawer.removeEmptyOrShortRivers(mainWindow.edits.rivers);
 				mapEditingPanel.clearHighlightedEdges();
-				updater.addRiversToRedrawLowPriority(riversChanged, mainWindow.displayQualityScale);
 
 				if (!riverSegmentsToRemove.isEmpty())
 				{
@@ -1098,9 +1581,8 @@ public class LandWaterTool extends EditorTool
 			return;
 		}
 
-		List<River> riversChanged = RiverDrawer.removeSegmentsAndSplitRivers(mainWindow.edits.rivers, segmentsToRemove);
+		RiverDrawer.removeSegmentsAndSplitRivers(mainWindow.edits.rivers, segmentsToRemove);
 		RiverDrawer.removeEmptyOrShortRivers(mainWindow.edits.rivers);
-		updater.addRiversToRedrawLowPriority(riversChanged, mainWindow.displayQualityScale);
 
 		// Redraw centers on the land side of removed segments too, so the river pixels there get cleared.
 		Set<Center> centersToRedraw = getCentersTouchingPoints(segmentsToRemove);
@@ -1221,15 +1703,6 @@ public class LandWaterTool extends EditorTool
 			polygonRiverSnapStart = computeSnapPointForType(e.getPoint(), LineType.RIVER);
 			riverStart = updater.mapParts.graph.findClosestCorner(getPointOnGraph(e.getPoint()));
 		}
-		else if (riversButton.isSelected() && modeWidget.isDrawMode() && isFreeHandRiverDrawMode() && SwingUtilities.isRightMouseButton(e) && freeHandRiverPathRI != null)
-		{
-			if (freeHandRiverPathRI.size() > 1)
-			{
-				freeHandRiverPathRI.remove(freeHandRiverPathRI.size() - 1);
-			}
-			updateControlPointDisplay(e.getPoint(), LineType.RIVER);
-			mapEditingPanel.repaint();
-		}
 		else if (riversButton.isSelected() && modeWidget.isDrawMode() && isFreeHandRiverDrawMode() && SwingUtilities.isLeftMouseButton(e) && updater.mapParts != null && updater.mapParts.graph != null)
 		{
 			Point riPoint = freeHandRiverSnapPoint != null ? freeHandRiverSnapPoint : getPointOnGraph(e.getPoint()).mult(1.0 / mainWindow.displayQualityScale);
@@ -1247,16 +1720,6 @@ public class LandWaterTool extends EditorTool
 			{
 				finalizeFreeHandLine(LineType.RIVER);
 			}
-		}
-		else if (roadsButton.isSelected() && modeWidget.isDrawMode() && isFreeHandDrawMode() && SwingUtilities.isRightMouseButton(e) && freeHandRoadPathRI != null)
-		{
-			// Remove the last control point (like Krita), keeping at least the first point.
-			if (freeHandRoadPathRI.size() > 1)
-			{
-				freeHandRoadPathRI.remove(freeHandRoadPathRI.size() - 1);
-			}
-			updateControlPointDisplay(e.getPoint(), LineType.ROAD);
-			mapEditingPanel.repaint();
 		}
 		else if (roadsButton.isSelected() && modeWidget.isDrawMode() && isFreeHandDrawMode() && SwingUtilities.isLeftMouseButton(e) && updater.mapParts != null && updater.mapParts.graph != null)
 		{
@@ -1283,12 +1746,679 @@ public class LandWaterTool extends EditorTool
 			polygonRoadSnapStart = computeSnapPointForType(e.getPoint(), LineType.ROAD);
 			roadStart = updater.mapParts.graph.findClosestCenter(getPointOnGraph(e.getPoint()));
 		}
+		else if (modeWidget.isEditMode() && (riversButton.isSelected() || roadsButton.isSelected()) && SwingUtilities.isLeftMouseButton(e))
+		{
+			// Edit mode press. The hit-test scope is restricted to the sticky line while one is
+			// locked, matching what's highlighted on screen. Clicking on the sticky line's control
+			// point starts a drag; clicking on a different segment of it updates the sticky segment;
+			// clicking anything outside the sticky line clears the sticky lock (no other action this
+			// click — the next click is fresh).
+			LineType activeType = riversButton.isSelected() ? LineType.RIVER : LineType.ROAD;
+			LineHit hit = editModeHitTestScopedToStickyIfAny(e.getPoint(), activeType);
+			if (hit != null && hit.isControlPoint())
+			{
+				dragRiver = hit.river();
+				dragRoad = hit.road();
+				dragControlPointIndex = hit.controlPointIndex();
+				dragInProgress = true;
+				dragOccurred = false;
+				dragSnapshotPath = dragRiver != null ? PathOperations.toLocationList(dragRiver.nodes)
+						: PathOperations.toLocationList(dragRoad.nodes);
+			}
+			else if (hit != null && hit.isSegment())
+			{
+				if (hit.river() != null)
+				{
+					setStickyRiverSegment(hit.river(), hit.segmentIndex());
+					syncSliderToSelectedSegment();
+				}
+				else
+				{
+					setStickyRoadSegment(hit.road(), hit.segmentIndex());
+				}
+				mapEditingPanel.clearHighlightedPolylines();
+				applyStickySegmentHighlight();
+				// Refresh hover so the sticky line's CPs are now the only ones drawn.
+				updateEditModeHoverDisplay(e.getPoint(), activeType);
+				mapEditingPanel.repaint();
+				dragInProgress = false;
+				dragOccurred = false;
+				dragSnapshotPath = null;
+			}
+			else
+			{
+				if (stickyRiver != null || stickyRoad != null)
+				{
+					clearStickySegment();
+					mapEditingPanel.clearHighlightedPolylines();
+					// Refresh hover so other lines' CPs reappear now that the lock is released.
+					updateEditModeHoverDisplay(e.getPoint(), activeType);
+					mapEditingPanel.repaint();
+				}
+				dragInProgress = false;
+				dragOccurred = false;
+				dragSnapshotPath = null;
+			}
+		}
+	}
+
+	/**
+	 * Moves the in-progress dragged control point to follow the cursor. Updates {@code river.nodes} (or {@code road.nodes}) in place and
+	 * triggers an incremental redraw of the centers under the new path so the user sees the line follow the cursor live. The undo point
+	 * is set only on mouse release ({@link #handleEditModeControlPointDragEnd(java.util.List)}), not on each drag tick.
+	 */
+	private void handleEditModeControlPointDrag(MouseEvent e)
+	{
+		dragOccurred = true;
+		Point newLocRI = getPointOnGraph(e.getPoint()).mult(1.0 / mainWindow.displayQualityScale);
+		List<List<Point>> centersTouched = new ArrayList<>();
+		if (dragRiver != null)
+		{
+			List<RiverPathNode> nodes = new ArrayList<>(dragRiver.nodes);
+			int idx = dragControlPointIndex;
+			if (idx < 0 || idx >= nodes.size())
+			{
+				return;
+			}
+			centersTouched.add(PathOperations.toLocationList(nodes));
+			RiverPathNode old = nodes.get(idx);
+			// Moving a polygon-mode control point breaks its alignment with the original Voronoi
+			// corner. Both adjacent segments lose their edge index — the node is no longer on a
+			// graph corner.
+			nodes.set(idx, new RiverPathNode(newLocRI, old.getWidthLevelToNext(), old.getSeedToNext(), RiverPathNode.EDGE_INDEX_NONE));
+			if (idx > 0)
+			{
+				RiverPathNode prev = nodes.get(idx - 1);
+				nodes.set(idx - 1, new RiverPathNode(prev.getLoc(), prev.getWidthLevelToNext(), prev.getSeedToNext(), RiverPathNode.EDGE_INDEX_NONE));
+			}
+			dragRiver.nodes = new java.util.concurrent.CopyOnWriteArrayList<>(nodes);
+			centersTouched.add(PathOperations.toLocationList(nodes));
+		}
+		else if (dragRoad != null)
+		{
+			List<RoadPathNode> nodes = new ArrayList<>(dragRoad.nodes);
+			int idx = dragControlPointIndex;
+			if (idx < 0 || idx >= nodes.size())
+			{
+				return;
+			}
+			centersTouched.add(PathOperations.toLocationList(nodes));
+			nodes.set(idx, new RoadPathNode(newLocRI));
+			dragRoad.nodes = new java.util.concurrent.CopyOnWriteArrayList<>(nodes);
+			centersTouched.add(PathOperations.toLocationList(nodes));
+		}
+		else
+		{
+			return;
+		}
+		// Refresh hover visuals (control-point circles + hover ring) at the new cursor position, then
+		// re-apply the sticky segment highlight on top so it survives the polyline clear.
+		LineType activeType = riversButton.isSelected() ? LineType.RIVER : LineType.ROAD;
+		mapEditingPanel.clearHighlightedPolylines();
+		updateEditModeHoverDisplay(e.getPoint(), activeType);
+		applyStickySegmentHighlight();
+		updater.createAndShowMapIncrementalUsingCenters(getCentersTouchingPoints(centersTouched));
+		mapEditingPanel.repaint();
+	}
+
+	/**
+	 * Commits the drag: snapshots the new path, records the undo point, and triggers the redraw of the changed line. Called from the
+	 * mouse release handler. The drag's snapshot of the path before the drag is provided so centers along the original path are also
+	 * redrawn (in case the moved control point pulled the line off some centers).
+	 */
+	private void handleEditModeControlPointDragEnd(List<Point> beforePath)
+	{
+		List<List<Point>> centerPaths = new ArrayList<>();
+		if (beforePath != null)
+		{
+			centerPaths.add(beforePath);
+		}
+		if (dragRiver != null)
+		{
+			centerPaths.add(PathOperations.toLocationList(dragRiver.nodes));
+		}
+		else if (dragRoad != null)
+		{
+			centerPaths.add(PathOperations.toLocationList(dragRoad.nodes));
+			// Queue a low-priority redraw of the entire road so the dotted pattern is recomputed across
+			// any centers the drag pulled the road onto but that aren't a node location. The drag itself
+			// already redrew (per-tick) the centers under the before+after node locations, so this catches
+			// the long-haul centers along the unchanged portions of the road.
+			updater.addRoadsToRedrawLowPriority(Collections.singletonList(dragRoad), mainWindow.displayQualityScale);
+		}
+		undoer.setUndoPoint(UpdateType.Incremental, this);
+		updater.createAndShowMapIncrementalUsingCenters(getCentersTouchingPoints(centerPaths));
+		updater.doWhenMapIsNotDrawing(() -> updater.createAndShowLowPriorityChanges());
+		dragRiver = null;
+		dragRoad = null;
+		dragControlPointIndex = -1;
+	}
+
+	/**
+	 * Right-click handling:
+	 * <ul>
+	 * <li>When a free-hand line is in progress, removes the last control point Krita-style.</li>
+	 * <li>Otherwise, in draw or edit mode for rivers/roads, opens a context menu targeted at whatever is under the cursor.</li>
+	 * </ul>
+	 */
+	@Override
+	protected void handleMouseRightPressedOnMap(MouseEvent e)
+	{
+		if (riversButton.isSelected() && modeWidget.isDrawMode() && isFreeHandRiverDrawMode() && freeHandRiverPathRI != null && !freeHandRiverPathRI.isEmpty())
+		{
+			if (freeHandRiverPathRI.size() > 1)
+			{
+				freeHandRiverPathRI.remove(freeHandRiverPathRI.size() - 1);
+			}
+			updateControlPointDisplay(e.getPoint(), LineType.RIVER);
+			mapEditingPanel.repaint();
+			return;
+		}
+		if (roadsButton.isSelected() && modeWidget.isDrawMode() && isFreeHandDrawMode() && freeHandRoadPathRI != null && !freeHandRoadPathRI.isEmpty())
+		{
+			if (freeHandRoadPathRI.size() > 1)
+			{
+				freeHandRoadPathRI.remove(freeHandRoadPathRI.size() - 1);
+			}
+			updateControlPointDisplay(e.getPoint(), LineType.ROAD);
+			mapEditingPanel.repaint();
+			return;
+		}
+		if ((riversButton.isSelected() || roadsButton.isSelected()) && (modeWidget.isDrawMode() || modeWidget.isEditMode()))
+		{
+			showRiverRoadContextMenu(e);
+		}
+	}
+
+	/**
+	 * Re-runs the cursor hit-test and shows a context menu targeted at whatever is under the cursor. Items are context-dependent:
+	 * Delete Control Point when on a control point; Delete Segment, Insert Control Point, and (in edit mode only) Select Segment when on
+	 * a segment. Returns without showing a menu when nothing is in range.
+	 */
+	private void showRiverRoadContextMenu(MouseEvent e)
+	{
+		LineType activeType = riversButton.isSelected() ? LineType.RIVER : LineType.ROAD;
+		// While a sticky segment is locked in edit mode, the menu only targets that line.
+		final LineHit hit = modeWidget.isEditMode() ? editModeHitTestScopedToStickyIfAny(e.getPoint(), activeType)
+				: editModeHitTest(e.getPoint(), activeType, null, null);
+		if (hit == null)
+		{
+			return;
+		}
+		JPopupMenu menu = new JPopupMenu();
+		if (hit.isControlPoint())
+		{
+			JMenuItem deleteCp = new JMenuItem(Translation.get("landWaterTool.edit.deleteControlPoint"));
+			deleteCp.addActionListener(ev -> deleteControlPoint(hit));
+			menu.add(deleteCp);
+		}
+		else if (hit.isSegment())
+		{
+			JMenuItem deleteSeg = new JMenuItem(Translation.get("landWaterTool.edit.deleteSegment"));
+			deleteSeg.addActionListener(ev -> deleteSegment(hit));
+			menu.add(deleteSeg);
+
+			JMenuItem insertCp = new JMenuItem(Translation.get("landWaterTool.edit.insertControlPoint"));
+			final java.awt.Point clickPanelPoint = e.getPoint();
+			insertCp.addActionListener(ev -> insertControlPointIntoSegment(hit, clickPanelPoint));
+			menu.add(insertCp);
+
+			// "Select Segment" makes the hit segment the sticky selection. Only meaningful in edit mode
+			// (where the slider applies to it) and when it isn't already the sticky selection.
+			boolean alreadySticky = (hit.river() != null && hit.river() == stickyRiver && hit.segmentIndex() == stickySegmentIndex)
+					|| (hit.road() != null && hit.road() == stickyRoad && hit.segmentIndex() == stickySegmentIndex);
+			if (modeWidget.isEditMode() && !alreadySticky)
+			{
+				JMenuItem selectSeg = new JMenuItem(Translation.get("landWaterTool.edit.selectSegment"));
+				selectSeg.addActionListener(ev -> selectSegmentFromHit(hit));
+				menu.add(selectSeg);
+			}
+		}
+		if (menu.getComponentCount() > 0)
+		{
+			menu.show(e.getComponent(), e.getX(), e.getY());
+		}
+	}
+
+	private void selectSegmentFromHit(LineHit hit)
+	{
+		if (hit.river() != null)
+		{
+			setStickyRiverSegment(hit.river(), hit.segmentIndex());
+			syncSliderToSelectedSegment();
+		}
+		else if (hit.road() != null)
+		{
+			setStickyRoadSegment(hit.road(), hit.segmentIndex());
+		}
+		mapEditingPanel.clearHighlightedPolylines();
+		applyStickySegmentHighlight();
+		mapEditingPanel.repaint();
+	}
+
+	/**
+	 * Deletes the control point identified by {@code hit} (must be a control-point hit). The sticky
+	 * selection is preserved across the edit: if the deleted CP belongs to the sticky river/road,
+	 * {@link #stickySegmentIndex} is adjusted so it tracks the same geometric segment when possible.
+	 * If the line drops below 2 control points, the line is removed and any sticky selection on it
+	 * is cleared.
+	 */
+	private void deleteControlPoint(LineHit hit)
+	{
+		int idx = hit.controlPointIndex();
+		if (hit.river() != null)
+		{
+			River line = hit.river();
+			List<RiverPathNode> nodes = new ArrayList<>(line.nodes);
+			if (idx < 0 || idx >= nodes.size())
+			{
+				return;
+			}
+			List<Point> beforePath = PathOperations.toLocationList(nodes);
+			if (idx > 0 && idx < nodes.size() - 1)
+			{
+				// Middle: the previous node's outgoing segment now spans to nodes[idx+1]. Clear its
+				// edge index because the new bridging segment doesn't follow a single Voronoi edge.
+				RiverPathNode prev = nodes.get(idx - 1);
+				nodes.set(idx - 1, new RiverPathNode(prev.getLoc(), prev.getWidthLevelToNext(), prev.getSeedToNext(), RiverPathNode.EDGE_INDEX_NONE));
+			}
+			nodes.remove(idx);
+			adjustStickyAfterControlPointDelete(line, null, idx, nodes.size());
+			commitRiverEdit(line, beforePath, nodes);
+		}
+		else if (hit.road() != null)
+		{
+			Road line = hit.road();
+			List<RoadPathNode> nodes = new ArrayList<>(line.nodes);
+			if (idx < 0 || idx >= nodes.size())
+			{
+				return;
+			}
+			List<Point> beforePath = PathOperations.toLocationList(nodes);
+			nodes.remove(idx);
+			adjustStickyAfterControlPointDelete(null, line, idx, nodes.size());
+			commitRoadEdit(line, beforePath, nodes);
+		}
+	}
+
+	/**
+	 * Deletes the segment identified by {@code hit} (must be a segment hit). Splits the line at that segment into a "first half" and a
+	 * "second half". The first half mutates the existing line in place; the second half (if non-degenerate) becomes a new line. The
+	 * sticky selection follows the segment when possible: if the sticky segment was before the deleted segment it stays in the first half;
+	 * if it was after it moves to the second half. The deleted segment itself can't be sticky after the operation.
+	 */
+	private void deleteSegment(LineHit hit)
+	{
+		int idx = hit.segmentIndex();
+		if (hit.river() != null)
+		{
+			River line = hit.river();
+			List<RiverPathNode> nodes = new ArrayList<>(line.nodes);
+			if (idx < 0 || idx >= nodes.size() - 1)
+			{
+				return;
+			}
+			List<Point> beforePath = PathOperations.toLocationList(nodes);
+			List<RiverPathNode> firstHalf = new ArrayList<>(nodes.subList(0, idx + 1));
+			List<RiverPathNode> secondHalf = new ArrayList<>(nodes.subList(idx + 1, nodes.size()));
+			// The last node of the first half no longer has an outgoing segment; clear its "to-next"
+			// metadata so we don't leave dangling width/seed/edgeIndex referencing the removed segment.
+			if (!firstHalf.isEmpty())
+			{
+				RiverPathNode last = firstHalf.get(firstHalf.size() - 1);
+				firstHalf.set(firstHalf.size() - 1, new RiverPathNode(last.getLoc(), 0, 0L, RiverPathNode.EDGE_INDEX_NONE));
+			}
+			List<River> changed = new ArrayList<>();
+			if (firstHalf.size() >= 2)
+			{
+				line.nodes = new java.util.concurrent.CopyOnWriteArrayList<>(firstHalf);
+				changed.add(line);
+			}
+			else
+			{
+				mainWindow.edits.rivers.remove(line);
+			}
+			River newRiver = null;
+			if (secondHalf.size() >= 2)
+			{
+				newRiver = new River(secondHalf);
+				mainWindow.edits.rivers.add(newRiver);
+				changed.add(newRiver);
+			}
+			adjustStickyAfterRiverSegmentDelete(line, newRiver, idx, firstHalf.size());
+			commitRiverPostEdit(beforePath, changed);
+		}
+		else if (hit.road() != null)
+		{
+			Road line = hit.road();
+			List<RoadPathNode> nodes = new ArrayList<>(line.nodes);
+			if (idx < 0 || idx >= nodes.size() - 1)
+			{
+				return;
+			}
+			List<Point> beforePath = PathOperations.toLocationList(nodes);
+			List<RoadPathNode> firstHalf = new ArrayList<>(nodes.subList(0, idx + 1));
+			List<RoadPathNode> secondHalf = new ArrayList<>(nodes.subList(idx + 1, nodes.size()));
+			List<Road> changed = new ArrayList<>();
+			if (firstHalf.size() >= 2)
+			{
+				line.nodes = new java.util.concurrent.CopyOnWriteArrayList<>(firstHalf);
+				changed.add(line);
+			}
+			else
+			{
+				mainWindow.edits.roads.remove(line);
+			}
+			Road newRoad = null;
+			if (secondHalf.size() >= 2)
+			{
+				newRoad = new Road(secondHalf);
+				mainWindow.edits.roads.add(newRoad);
+				changed.add(newRoad);
+			}
+			adjustStickyAfterRoadSegmentDelete(line, newRoad, idx, firstHalf.size());
+			commitRoadPostEdit(beforePath, changed);
+		}
+	}
+
+	/**
+	 * Inserts a new control point at {@code panelPoint} into the segment identified by {@code hit} (must be a segment hit). The sticky
+	 * selection is preserved: if the sticky segment was the one being inserted into, it stays as the "first half" of the split; sticky
+	 * segments after the insert point shift by 1 to remain on the same geometric segment.
+	 */
+	private void insertControlPointIntoSegment(LineHit hit, java.awt.Point panelPoint)
+	{
+		Point clickRI = getPointOnGraph(panelPoint).mult(1.0 / mainWindow.displayQualityScale);
+		int idx = hit.segmentIndex();
+		if (hit.river() != null)
+		{
+			River line = hit.river();
+			List<RiverPathNode> nodes = new ArrayList<>(line.nodes);
+			if (idx < 0 || idx >= nodes.size() - 1)
+			{
+				return;
+			}
+			List<Point> beforePath = PathOperations.toLocationList(nodes);
+			RiverPathNode boundary = nodes.get(idx);
+			int width = boundary.getWidthLevelToNext();
+			Random random = new Random();
+			// Existing node[idx] now goes to the new node — keep its width but generate a fresh seed
+			// and clear its edge index since the split segment no longer follows a single Voronoi edge.
+			nodes.set(idx, new RiverPathNode(boundary.getLoc(), width, random.nextLong(), RiverPathNode.EDGE_INDEX_NONE));
+			// New node carries its outgoing segment's width with a fresh seed; no edge index either.
+			RiverPathNode newNode = new RiverPathNode(clickRI, width, random.nextLong(), RiverPathNode.EDGE_INDEX_NONE);
+			nodes.add(idx + 1, newNode);
+			adjustStickyAfterControlPointInsert(line, null, idx);
+			commitRiverEdit(line, beforePath, nodes);
+		}
+		else if (hit.road() != null)
+		{
+			Road line = hit.road();
+			List<RoadPathNode> nodes = new ArrayList<>(line.nodes);
+			if (idx < 0 || idx >= nodes.size() - 1)
+			{
+				return;
+			}
+			List<Point> beforePath = PathOperations.toLocationList(nodes);
+			nodes.add(idx + 1, new RoadPathNode(clickRI));
+			adjustStickyAfterControlPointInsert(null, line, idx);
+			commitRoadEdit(line, beforePath, nodes);
+		}
+	}
+
+	/**
+	 * Adjusts {@link #stickySegmentIndex} after a control point was removed from a line. If the sticky line wasn't the modified line, no
+	 * change. Otherwise the index is shifted to track the same geometric segment when possible. If the line drops below 2 nodes the sticky
+	 * is cleared.
+	 *
+	 * @param river
+	 *            the river that was modified, or null if a road was modified
+	 * @param road
+	 *            the road that was modified, or null if a river was modified
+	 * @param deletedIdx
+	 *            index of the deleted control point in the pre-delete node list
+	 * @param newSize
+	 *            number of nodes remaining after the delete
+	 */
+	private void adjustStickyAfterControlPointDelete(River river, Road road, int deletedIdx, int newSize)
+	{
+		boolean affectsSticky = (river != null && river == stickyRiver) || (road != null && road == stickyRoad);
+		if (!affectsSticky || stickySegmentIndex < 0)
+		{
+			return;
+		}
+		int newSegmentCount = newSize - 1;
+		if (newSegmentCount < 1)
+		{
+			clearStickySegment();
+			return;
+		}
+		int K = stickySegmentIndex;
+		if (deletedIdx == 0)
+		{
+			// First CP deleted: segment 0 disappears, segments K >= 1 shift to K - 1.
+			stickySegmentIndex = Math.max(0, K - 1);
+		}
+		else if (deletedIdx == newSize)
+		{
+			// Last CP deleted (deletedIdx equals the old last-node index, which is newSize after delete).
+			// Segment newSize-1 (= old size-2) disappears. Earlier segments unchanged.
+			if (K >= newSegmentCount)
+			{
+				stickySegmentIndex = newSegmentCount - 1;
+			}
+		}
+		else
+		{
+			// Middle CP deleted. Segments deletedIdx-1 and deletedIdx merge into segment deletedIdx-1.
+			// Segments > deletedIdx shift down by 1.
+			if (K < deletedIdx - 1)
+			{
+				// unchanged
+			}
+			else if (K == deletedIdx - 1 || K == deletedIdx)
+			{
+				stickySegmentIndex = deletedIdx - 1;
+			}
+			else
+			{
+				stickySegmentIndex = K - 1;
+			}
+		}
+		if (stickySegmentIndex >= newSegmentCount || stickySegmentIndex < 0)
+		{
+			clearStickySegment();
+		}
+	}
+
+	/**
+	 * Adjusts sticky-segment indices after a segment was deleted from a river. If the sticky river was the modified one, the sticky may
+	 * migrate to the newly-split second half river ({@code newRiver}), or be cleared entirely if it landed on the deleted segment.
+	 */
+	private void adjustStickyAfterRiverSegmentDelete(River modifiedRiver, River newRiver, int deletedSegIdx, int firstHalfSize)
+	{
+		if (stickyRiver != modifiedRiver || stickySegmentIndex < 0)
+		{
+			return;
+		}
+		int K = stickySegmentIndex;
+		if (K < deletedSegIdx)
+		{
+			if (firstHalfSize >= 2)
+			{
+				// Sticky stays in the first half (still the original line).
+				return;
+			}
+			clearStickySegment();
+		}
+		else if (K == deletedSegIdx)
+		{
+			// Sticky segment was the deleted one.
+			clearStickySegment();
+		}
+		else
+		{
+			// K > deletedSegIdx — sticky belongs to what's now the second half.
+			if (newRiver != null)
+			{
+				int newIdx = K - (deletedSegIdx + 1);
+				if (newIdx >= 0 && newIdx < newRiver.nodes.size() - 1)
+				{
+					setStickyRiverSegment(newRiver, newIdx);
+					return;
+				}
+			}
+			clearStickySegment();
+		}
+	}
+
+	/** Road counterpart of {@link #adjustStickyAfterRiverSegmentDelete}. */
+	private void adjustStickyAfterRoadSegmentDelete(Road modifiedRoad, Road newRoad, int deletedSegIdx, int firstHalfSize)
+	{
+		if (stickyRoad != modifiedRoad || stickySegmentIndex < 0)
+		{
+			return;
+		}
+		int K = stickySegmentIndex;
+		if (K < deletedSegIdx)
+		{
+			if (firstHalfSize >= 2)
+			{
+				return;
+			}
+			clearStickySegment();
+		}
+		else if (K == deletedSegIdx)
+		{
+			clearStickySegment();
+		}
+		else
+		{
+			if (newRoad != null)
+			{
+				int newIdx = K - (deletedSegIdx + 1);
+				if (newIdx >= 0 && newIdx < newRoad.nodes.size() - 1)
+				{
+					setStickyRoadSegment(newRoad, newIdx);
+					return;
+				}
+			}
+			clearStickySegment();
+		}
+	}
+
+	/**
+	 * Adjusts {@link #stickySegmentIndex} after a control point was inserted into segment {@code splitSegmentIdx} of a line. If the sticky
+	 * line wasn't the modified one, no change. The sticky segment stays on the same geometric portion when possible: the original split
+	 * segment becomes the new "first half" (kept as sticky); segments after the insert shift up by 1.
+	 */
+	private void adjustStickyAfterControlPointInsert(River river, Road road, int splitSegmentIdx)
+	{
+		boolean affectsSticky = (river != null && river == stickyRiver) || (road != null && road == stickyRoad);
+		if (!affectsSticky || stickySegmentIndex < 0)
+		{
+			return;
+		}
+		int K = stickySegmentIndex;
+		if (K > splitSegmentIdx)
+		{
+			stickySegmentIndex = K + 1;
+		}
+		// K <= splitSegmentIdx: unchanged (the first half keeps the same index as the original segment).
+	}
+
+	/** Commits a modified river's node list in place and triggers the redraw + undo, preserving sticky selection. */
+	private void commitRiverEdit(River line, List<Point> beforePath, List<RiverPathNode> newNodes)
+	{
+		if (newNodes.size() < 2)
+		{
+			mainWindow.edits.rivers.remove(line);
+			if (stickyRiver == line)
+			{
+				clearStickySegment();
+			}
+		}
+		else
+		{
+			line.nodes = new java.util.concurrent.CopyOnWriteArrayList<>(newNodes);
+		}
+		List<River> changed = newNodes.size() >= 2 ? Collections.singletonList(line) : Collections.emptyList();
+		commitRiverPostEdit(beforePath, changed);
+	}
+
+	private void commitRiverPostEdit(List<Point> beforePath, List<River> changed)
+	{
+		List<List<Point>> centerPaths = new ArrayList<>();
+		centerPaths.add(beforePath);
+		for (River r : changed)
+		{
+			centerPaths.add(PathOperations.toLocationList(r.nodes));
+		}
+		undoer.setUndoPoint(UpdateType.Incremental, this);
+		updater.createAndShowMapIncrementalUsingCenters(getCentersTouchingPoints(centerPaths));
+		mapEditingPanel.clearHighlightedPolylines();
+		applyStickySegmentHighlight();
+		mapEditingPanel.repaint();
+	}
+
+	private void commitRoadEdit(Road line, List<Point> beforePath, List<RoadPathNode> newNodes)
+	{
+		if (newNodes.size() < 2)
+		{
+			mainWindow.edits.roads.remove(line);
+			if (stickyRoad == line)
+			{
+				clearStickySegment();
+			}
+		}
+		else
+		{
+			line.nodes = new java.util.concurrent.CopyOnWriteArrayList<>(newNodes);
+		}
+		List<Road> changed = newNodes.size() >= 2 ? Collections.singletonList(line) : Collections.emptyList();
+		commitRoadPostEdit(beforePath, changed);
+	}
+
+	private void commitRoadPostEdit(List<Point> beforePath, List<Road> changed)
+	{
+		List<List<Point>> centerPaths = new ArrayList<>();
+		centerPaths.add(beforePath);
+		for (Road r : changed)
+		{
+			centerPaths.add(PathOperations.toLocationList(r.nodes));
+		}
+		undoer.setUndoPoint(UpdateType.Incremental, this);
+		if (!changed.isEmpty())
+		{
+			updater.addRoadsToRedrawLowPriority(changed, mainWindow.displayQualityScale);
+		}
+		updater.createAndShowMapIncrementalUsingCenters(getCentersTouchingPoints(centerPaths));
+		updater.doWhenMapIsNotDrawing(() -> updater.createAndShowLowPriorityChanges());
+		mapEditingPanel.clearHighlightedPolylines();
+		applyStickySegmentHighlight();
+		mapEditingPanel.repaint();
 	}
 
 	@Override
 	protected void handleMouseReleasedOnMap(MouseEvent e)
 	{
 		regionIdToExpand = null;
+
+		if (dragInProgress)
+		{
+			boolean wasDrag = dragOccurred;
+			List<Point> snapshot = dragSnapshotPath;
+			dragInProgress = false;
+			dragOccurred = false;
+			dragSnapshotPath = null;
+			// Only commit when the user actually moved the cursor; a click-without-drag on a control
+			// point is just a select and shouldn't push an undo point.
+			if (wasDrag)
+			{
+				handleEditModeControlPointDragEnd(snapshot);
+			}
+			return;
+		}
 
 		if (riversButton.isSelected() && modeWidget.isDrawMode() && !isFreeHandRiverDrawMode() && riverStart != null)
 		{
@@ -1345,7 +2475,6 @@ public class LandWaterTool extends EditorTool
 			if (!newRivers.isEmpty())
 			{
 				List<List<Point>> pathsForCenters = newRivers.stream().map(r -> PathOperations.toLocationList(r.nodes)).collect(Collectors.toList());
-				updater.addRiversToRedrawLowPriority(newRivers, mainWindow.displayQualityScale);
 				updater.createAndShowMapIncrementalUsingCenters(getCentersTouchingPoints(pathsForCenters));
 			}
 		}
@@ -1504,6 +2633,14 @@ public class LandWaterTool extends EditorTool
 		{
 			updateControlPointDisplay(mouseLocation, LineType.RIVER);
 		}
+		else if ((riversButton.isSelected() || roadsButton.isSelected()) && modeWidget.isEditMode())
+		{
+			LineType activeType = riversButton.isSelected() ? LineType.RIVER : LineType.ROAD;
+			updateEditModeHoverDisplay(mouseLocation, activeType);
+			// Re-apply the sticky segment polyline after the polyline clear above so it persists
+			// across mouse moves.
+			applyStickySegmentHighlight();
+		}
 
 		mapEditingPanel.repaint();
 	}
@@ -1529,6 +2666,11 @@ public class LandWaterTool extends EditorTool
 	@Override
 	protected void handleMouseDraggedOnMap(MouseEvent e)
 	{
+		if (dragInProgress && modeWidget.isEditMode() && (riversButton.isSelected() || roadsButton.isSelected()))
+		{
+			handleEditModeControlPointDrag(e);
+			return;
+		}
 		if (riversButton.isSelected() && modeWidget.isDrawMode() && !isFreeHandRiverDrawMode())
 		{
 			if (riverStart != null)
@@ -1639,6 +2781,13 @@ public class LandWaterTool extends EditorTool
 			freeHandRiverSnapPoint = null;
 			mapEditingPanel.clearHoveredControlPoint();
 		}
+		if ((riversButton.isSelected() || roadsButton.isSelected()) && modeWidget.isEditMode())
+		{
+			// Clear hover state and the hover ring, but keep the sticky-line CPs and segment highlight
+			// visible so the user can see what they had selected even with the cursor off the map.
+			clearHoverState();
+			mapEditingPanel.clearHoveredControlPoint();
+		}
 		mapEditingPanel.hideBrush();
 		mapEditingPanel.repaint();
 	}
@@ -1687,6 +2836,8 @@ public class LandWaterTool extends EditorTool
 	{
 		cancelFreeHandDrawing(LineType.ROAD);
 		cancelFreeHandDrawing(LineType.RIVER);
+		clearStickySegment();
+		clearHoverState();
 		if (selectedRegion != null)
 		{
 			selectedRegion = null;
@@ -1699,9 +2850,13 @@ public class LandWaterTool extends EditorTool
 	{
 		cancelFreeHandDrawing(LineType.ROAD);
 		cancelFreeHandDrawing(LineType.RIVER);
+		// Sticky/hover may reference river/road instances that no longer exist after undo/redo.
+		clearStickySegment();
+		clearHoverState();
 		selectedRegion = null;
 		mapEditingPanel.clearSelectedCenters();
 		mapEditingPanel.clearHighlightedCenters();
+		mapEditingPanel.clearHighlightedPolylines();
 		mapEditingPanel.repaint();
 	}
 

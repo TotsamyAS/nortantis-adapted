@@ -549,15 +549,7 @@ public class RoadDrawer
 
 	public static void removeEmptyOrSinglePointRoads(List<Road> roadList)
 	{
-		Iterator<Road> iterator = roadList.iterator();
-		while (iterator.hasNext())
-		{
-			Road road = iterator.next();
-			if (road.nodes.size() < 2)
-			{
-				iterator.remove();
-			}
-		}
+		roadList.removeIf(road -> road.nodes.size() < 2);
 	}
 
 	private static Iterable<List<RoadPathNode>> roadNodesList(List<Road> roads)

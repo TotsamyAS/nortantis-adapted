@@ -330,11 +330,6 @@ public class OverlayTool extends EditorTool
 	}
 
 	@Override
-	protected void handleMouseClickOnMap(MouseEvent e)
-	{
-	}
-
-	@Override
 	protected void handleMousePressedOnMap(MouseEvent e)
 	{
 		isMoving = mapEditingPanel.isInMoveTool(e.getPoint());

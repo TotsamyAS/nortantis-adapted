@@ -175,33 +175,6 @@ public abstract class MapUpdater
 		}
 	}
 
-	public void addRiversToRedrawLowPriority(List<River> rivers, double resolutionScale)
-	{
-		if (mapParts != null && mapParts.graph != null)
-		{
-			for (River river : rivers)
-			{
-				if (river == null)
-				{
-					continue;
-				}
-
-				for (RiverPathNode node : river.nodes)
-				{
-					Center center = mapParts.graph.findClosestCenter(node.getLoc().mult(resolutionScale), true);
-					if (center != null)
-					{
-						centersToRedrawLowPriority.put(center.index, center);
-					}
-				}
-			}
-		}
-		else
-		{
-			assert false;
-		}
-	}
-
 	public void reprocessBooks()
 	{
 		createAndShowMap(UpdateType.ReprocessBooks, null, null, null, null, null, null);
@@ -252,15 +225,19 @@ public abstract class MapUpdater
 		Set<List<RiverPathNode>> changeNodes = edits.rivers.stream().map(river -> (List<RiverPathNode>) new ArrayList<>(river.nodes)).collect(Collectors.toSet());
 		Set<List<RiverPathNode>> currentNodes = getEdits().rivers.stream().map(river -> (List<RiverPathNode>) new ArrayList<>(river.nodes)).collect(Collectors.toSet());
 		Set<List<RiverPathNode>> diff = Helper.getElementsNotInIntersection(changeNodes, currentNodes);
-		Set<Point> diffPoints = new HashSet<>();
+		Set<Integer> result = new HashSet<>();
 		for (List<RiverPathNode> nodes : diff)
 		{
 			for (RiverPathNode node : nodes)
 			{
-				diffPoints.add(node.getLoc());
+				Center center = mapParts.graph.findClosestCenter(node.getLoc().mult(resolutionScale), true);
+				if (center != null)
+				{
+					result.add(center.index);
+				}
 			}
 		}
-		return getIdsOfCentersPointsAreOn(diffPoints, resolutionScale);
+		return result;
 	}
 
 	public static Set<Point> pointListsToPointSet(Set<List<Point>> listSet)
