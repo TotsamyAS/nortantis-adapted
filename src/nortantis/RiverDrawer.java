@@ -75,7 +75,7 @@ public class RiverDrawer
 			return;
 		}
 
-		double jaggedAmplitudeRI = graph.getMeanCenterWidth() / 2.0 / resolutionScale;
+		double jaggedAmplitudeRI = getJaggedAmplitudeRI(graph, resolutionScale);
 		double minLengthRI = 2.0 / resolutionScale;
 		Rectangle drawBoundsRI = drawBounds == null ? null
 				: new Rectangle(drawBounds.x / resolutionScale, drawBounds.y / resolutionScale, drawBounds.width / resolutionScale, drawBounds.height / resolutionScale);
@@ -101,9 +101,19 @@ public class RiverDrawer
 			return;
 		}
 
-		double jaggedAmplitudeRI = graph.getMeanCenterWidth() / 2.0 / resolutionScale;
+		double jaggedAmplitudeRI = getJaggedAmplitudeRI(graph, resolutionScale);
 		double minLengthRI = 2.0 / resolutionScale;
 		drawRiversWithPainter(p, null, jaggedAmplitudeRI, minLengthRI, colorOverride != null ? colorOverride : riverColor);
+	}
+
+	/**
+	 * Maximum perpendicular displacement (in resolution-invariant pixels) the jagged line style can introduce when subdividing a river
+	 * segment. Other code that needs to know how far the visible river can stray from the segment centerline — e.g. edit-mode right-click
+	 * hit-testing — should derive from this so the slack matches the drawing exactly.
+	 */
+	public static double getJaggedAmplitudeRI(WorldGraph graph, double resolutionScale)
+	{
+		return graph.getMeanCenterWidth() / 2.0 / resolutionScale;
 	}
 
 	private void drawRiversWithPainter(Painter p, Rectangle drawBoundsRI, double jaggedAmplitudeRI, double minLengthRI, Color color)
@@ -619,7 +629,7 @@ public class RiverDrawer
 	}
 
 	/**
-	 * Splits {@code pathRI} at segments whose both endpoints fall on ocean or lake centers, dropping those fully-submerged segments.
+	 * Splits {@code pathRI} at segments with both endpoints fall on ocean or lake centers, dropping those fully-submerged segments.
 	 * Segments with at least one endpoint on land are kept as-is, so a river that crosses water briefly without a user-placed point on
 	 * water is preserved. Each returned sub-path has at least 2 points.
 	 */

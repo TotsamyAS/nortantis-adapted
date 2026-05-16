@@ -112,6 +112,21 @@ public class LandWaterTool extends EditorTool
 	private Road dragRoad = null;
 	private int dragControlPointIndex = -1;
 
+	// At drag-start we record every OTHER line (same type) whose control point sits at the same
+	// location as the dragged one. During the drag they move in lockstep so Y-junctions don't tear
+	// apart. Each entry also carries the before-drag snapshot so the redraw at commit time covers
+	// the centers under the original path too.
+	private List<RiverDragShare> dragSharedRivers = null;
+	private List<RoadDragShare> dragSharedRoads = null;
+
+	private record RiverDragShare(River river, int cpIndex, List<Point> snapshot)
+	{
+	}
+
+	private record RoadDragShare(Road road, int cpIndex, List<Point> snapshot)
+	{
+	}
+
 	// Width-slider edit state. sliderEditWidthBeforeDrag is the selected segment's width level before
 	// the user grabs the slider thumb; on release we compare against the new width and only push an
 	// undo point if it actually changed. -1 means "no edit in progress".
@@ -429,14 +444,10 @@ public class LandWaterTool extends EditorTool
 	private void showOrHideRoadAndRiverOptions()
 	{
 		modeHider.setVisible(riversButton.isSelected() || roadsButton.isSelected());
-		// River width slider is also shown in edit mode for rivers, so it can retune the width of a
-		// selected segment (handled in Step 9 — slider listener applies to the selected segment).
-		riverOptionHider.setVisible(riversButton.isSelected() && (modeWidget.isDrawMode() || modeWidget.isEditMode()));
-		riverDrawStyleHider.setVisible(riversButton.isSelected() && modeWidget.isDrawMode());
-		drawStyleHider.setVisible(roadsButton.isSelected() && modeWidget.isDrawMode());
 		// Clear edit-mode sticky selection and hover state when leaving edit mode, leaving the rivers/roads
 		// brush family entirely, or switching between rivers and roads (sticky on one type would render
-		// stale highlights while editing the other type).
+		// stale highlights while editing the other type). Do this before computing slider visibility so
+		// the slider hides if the sticky was just cleared.
 		boolean leftEditMode = !modeWidget.isEditMode() || (!riversButton.isSelected() && !roadsButton.isSelected());
 		boolean stickyTypeMismatch = (stickyRiver != null && !riversButton.isSelected()) || (stickyRoad != null && !roadsButton.isSelected());
 		if (leftEditMode || stickyTypeMismatch)
@@ -451,6 +462,15 @@ public class LandWaterTool extends EditorTool
 				mapEditingPanel.repaint();
 			}
 		}
+		// River width slider is shown in draw mode (sets the width of new rivers) and in edit mode
+		// only when a sticky river segment is selected (slider then retunes that segment's width).
+		// Hidden in edit mode without a selection so the slider's value doesn't look meaningful when
+		// it has no effect.
+		boolean showSliderInDraw = riversButton.isSelected() && modeWidget.isDrawMode();
+		boolean showSliderInEdit = riversButton.isSelected() && modeWidget.isEditMode() && stickyRiver != null;
+		riverOptionHider.setVisible(showSliderInDraw || showSliderInEdit);
+		riverDrawStyleHider.setVisible(riversButton.isSelected() && modeWidget.isDrawMode());
+		drawStyleHider.setVisible(roadsButton.isSelected() && modeWidget.isDrawMode());
 		if (updater != null)
 		{
 			updater.doWhenMapIsReadyForInteractions(() ->
@@ -775,6 +795,17 @@ public class LandWaterTool extends EditorTool
 		double controlPointRadius = mapEditingPanel.getRoadControlPointHitRadiusInGraphPixels();
 		double segmentThreshold = controlPointRadius * 2.0;
 		double scale = mainWindow.displayQualityScale;
+		// Rivers can wander away from the segment centerline by up to one full jagged amplitude —
+		// jagged lines by design, and splines because the noisy-edge curve drifts the same way.
+		// Stretch the threshold to that amplitude so right-clicking on the visible drawn line — not
+		// just the underlying centerline — picks the segment. Use a max (not a sum) with the base
+		// threshold: the base is calibrated for an easy click on a thin line, but a wider visible
+		// line already provides plenty of slack on its own.
+		if (activeType == LineType.RIVER)
+		{
+			double riverDrawEnvelopePixels = RiverDrawer.getJaggedAmplitudeRI(updater.mapParts.graph, scale) * scale;
+			segmentThreshold = Math.max(segmentThreshold, riverDrawEnvelopePixels);
+		}
 
 		River bestCpRiver = null;
 		Road bestCpRoad = null;
@@ -892,23 +923,51 @@ public class LandWaterTool extends EditorTool
 
 	private void setStickyRiverSegment(River river, int segmentIndex)
 	{
+		boolean wasRiver = stickyRiver != null;
 		stickyRiver = river;
 		stickyRoad = null;
 		stickySegmentIndex = segmentIndex;
+		if (!wasRiver)
+		{
+			// Slider visibility depends on stickyRiver in edit mode — refresh so it appears.
+			refreshRiverWidthSliderVisibility();
+		}
 	}
 
 	private void setStickyRoadSegment(Road road, int segmentIndex)
 	{
+		boolean wasRiver = stickyRiver != null;
 		stickyRiver = null;
 		stickyRoad = road;
 		stickySegmentIndex = segmentIndex;
+		if (wasRiver)
+		{
+			refreshRiverWidthSliderVisibility();
+		}
 	}
 
 	private void clearStickySegment()
 	{
+		boolean wasRiver = stickyRiver != null;
 		stickyRiver = null;
 		stickyRoad = null;
 		stickySegmentIndex = -1;
+		if (wasRiver)
+		{
+			refreshRiverWidthSliderVisibility();
+		}
+	}
+
+	/** Refreshes the river-width slider's visibility based on the current mode and sticky state. */
+	private void refreshRiverWidthSliderVisibility()
+	{
+		if (riverOptionHider == null)
+		{
+			return;
+		}
+		boolean showSliderInDraw = riversButton.isSelected() && modeWidget.isDrawMode();
+		boolean showSliderInEdit = riversButton.isSelected() && modeWidget.isEditMode() && stickyRiver != null;
+		riverOptionHider.setVisible(showSliderInDraw || showSliderInEdit);
 	}
 
 	private boolean stickyLineActive()
@@ -1762,6 +1821,7 @@ public class LandWaterTool extends EditorTool
 				dragOccurred = false;
 				dragSnapshotPath = dragRiver != null ? PathOperations.toLocationList(dragRiver.nodes)
 						: PathOperations.toLocationList(dragRoad.nodes);
+				captureSharedControlPointsForDrag();
 			}
 			else if (hit != null && hit.isSegment())
 			{
@@ -1801,9 +1861,77 @@ public class LandWaterTool extends EditorTool
 	}
 
 	/**
+	 * Scans the active type's other lines for any control point sharing the dragged CP's location and records them so they can be moved
+	 * in lockstep. Run once at drag-start; the resulting list survives until {@link #clearDragSharedTargets()}. A river only matches other
+	 * rivers, and a road only matches other roads — we don't pull cross-type joints because the user's description was scoped to same-type
+	 * Y-junctions.
+	 */
+	private void captureSharedControlPointsForDrag()
+	{
+		dragSharedRivers = new ArrayList<>();
+		dragSharedRoads = new ArrayList<>();
+		Point primaryLoc;
+		if (dragRiver != null && dragControlPointIndex >= 0 && dragControlPointIndex < dragRiver.nodes.size())
+		{
+			primaryLoc = dragRiver.nodes.get(dragControlPointIndex).getLoc();
+		}
+		else if (dragRoad != null && dragControlPointIndex >= 0 && dragControlPointIndex < dragRoad.nodes.size())
+		{
+			primaryLoc = dragRoad.nodes.get(dragControlPointIndex).getLoc();
+		}
+		else
+		{
+			return;
+		}
+		if (dragRiver != null)
+		{
+			for (River other : mainWindow.edits.rivers)
+			{
+				if (other == dragRiver)
+				{
+					continue;
+				}
+				List<RiverPathNode> nodes = other.nodes;
+				for (int i = 0; i < nodes.size(); i++)
+				{
+					if (nodes.get(i).getLoc().isCloseEnough(primaryLoc))
+					{
+						dragSharedRivers.add(new RiverDragShare(other, i, PathOperations.toLocationList(nodes)));
+					}
+				}
+			}
+		}
+		else if (dragRoad != null)
+		{
+			for (Road other : mainWindow.edits.roads)
+			{
+				if (other == dragRoad)
+				{
+					continue;
+				}
+				List<RoadPathNode> nodes = other.nodes;
+				for (int i = 0; i < nodes.size(); i++)
+				{
+					if (nodes.get(i).getLoc().isCloseEnough(primaryLoc))
+					{
+						dragSharedRoads.add(new RoadDragShare(other, i, PathOperations.toLocationList(nodes)));
+					}
+				}
+			}
+		}
+	}
+
+	private void clearDragSharedTargets()
+	{
+		dragSharedRivers = null;
+		dragSharedRoads = null;
+	}
+
+	/**
 	 * Moves the in-progress dragged control point to follow the cursor. Updates {@code river.nodes} (or {@code road.nodes}) in place and
-	 * triggers an incremental redraw of the centers under the new path so the user sees the line follow the cursor live. The undo point
-	 * is set only on mouse release ({@link #handleEditModeControlPointDragEnd(java.util.List)}), not on each drag tick.
+	 * triggers an incremental redraw of the centers under the new path so the user sees the line follow the cursor live. Any other lines
+	 * sharing the original control-point location (recorded at drag-start) move with it so Y-junctions stay joined. The undo point is
+	 * set only on mouse release ({@link #handleEditModeControlPointDragEnd(java.util.List)}), not on each drag tick.
 	 */
 	private void handleEditModeControlPointDrag(MouseEvent e)
 	{
@@ -1819,18 +1947,26 @@ public class LandWaterTool extends EditorTool
 				return;
 			}
 			centersTouched.add(PathOperations.toLocationList(nodes));
-			RiverPathNode old = nodes.get(idx);
-			// Moving a polygon-mode control point breaks its alignment with the original Voronoi
-			// corner. Both adjacent segments lose their edge index — the node is no longer on a
-			// graph corner.
-			nodes.set(idx, new RiverPathNode(newLocRI, old.getWidthLevelToNext(), old.getSeedToNext(), RiverPathNode.EDGE_INDEX_NONE));
-			if (idx > 0)
-			{
-				RiverPathNode prev = nodes.get(idx - 1);
-				nodes.set(idx - 1, new RiverPathNode(prev.getLoc(), prev.getWidthLevelToNext(), prev.getSeedToNext(), RiverPathNode.EDGE_INDEX_NONE));
-			}
+			moveRiverControlPointTo(nodes, idx, newLocRI);
 			dragRiver.nodes = new java.util.concurrent.CopyOnWriteArrayList<>(nodes);
 			centersTouched.add(PathOperations.toLocationList(nodes));
+			// Move every shared CP in lockstep so joined Y-shape rivers stay joined.
+			if (dragSharedRivers != null)
+			{
+				for (RiverDragShare share : dragSharedRivers)
+				{
+					List<RiverPathNode> sharedNodes = new ArrayList<>(share.river().nodes);
+					int sharedIdx = share.cpIndex();
+					if (sharedIdx < 0 || sharedIdx >= sharedNodes.size())
+					{
+						continue;
+					}
+					centersTouched.add(PathOperations.toLocationList(sharedNodes));
+					moveRiverControlPointTo(sharedNodes, sharedIdx, newLocRI);
+					share.river().nodes = new java.util.concurrent.CopyOnWriteArrayList<>(sharedNodes);
+					centersTouched.add(PathOperations.toLocationList(sharedNodes));
+				}
+			}
 		}
 		else if (dragRoad != null)
 		{
@@ -1844,6 +1980,22 @@ public class LandWaterTool extends EditorTool
 			nodes.set(idx, new RoadPathNode(newLocRI));
 			dragRoad.nodes = new java.util.concurrent.CopyOnWriteArrayList<>(nodes);
 			centersTouched.add(PathOperations.toLocationList(nodes));
+			if (dragSharedRoads != null)
+			{
+				for (RoadDragShare share : dragSharedRoads)
+				{
+					List<RoadPathNode> sharedNodes = new ArrayList<>(share.road().nodes);
+					int sharedIdx = share.cpIndex();
+					if (sharedIdx < 0 || sharedIdx >= sharedNodes.size())
+					{
+						continue;
+					}
+					centersTouched.add(PathOperations.toLocationList(sharedNodes));
+					sharedNodes.set(sharedIdx, new RoadPathNode(newLocRI));
+					share.road().nodes = new java.util.concurrent.CopyOnWriteArrayList<>(sharedNodes);
+					centersTouched.add(PathOperations.toLocationList(sharedNodes));
+				}
+			}
 		}
 		else
 		{
@@ -1857,6 +2009,22 @@ public class LandWaterTool extends EditorTool
 		applyStickySegmentHighlight();
 		updater.createAndShowMapIncrementalUsingCenters(getCentersTouchingPoints(centersTouched));
 		mapEditingPanel.repaint();
+	}
+
+	/**
+	 * Moves the river control point at {@code idx} in {@code nodes} to {@code newLocRI}, clearing the edge index on the moved node and on
+	 * its predecessor (both adjacent segments no longer follow a single Voronoi edge). Mutates {@code nodes} in place; does not assign to
+	 * any River's {@code .nodes} field.
+	 */
+	private void moveRiverControlPointTo(List<RiverPathNode> nodes, int idx, Point newLocRI)
+	{
+		RiverPathNode old = nodes.get(idx);
+		nodes.set(idx, new RiverPathNode(newLocRI, old.getWidthLevelToNext(), old.getSeedToNext(), RiverPathNode.EDGE_INDEX_NONE));
+		if (idx > 0)
+		{
+			RiverPathNode prev = nodes.get(idx - 1);
+			nodes.set(idx - 1, new RiverPathNode(prev.getLoc(), prev.getWidthLevelToNext(), prev.getSeedToNext(), RiverPathNode.EDGE_INDEX_NONE));
+		}
 	}
 
 	/**
@@ -1874,6 +2042,14 @@ public class LandWaterTool extends EditorTool
 		if (dragRiver != null)
 		{
 			centerPaths.add(PathOperations.toLocationList(dragRiver.nodes));
+			if (dragSharedRivers != null)
+			{
+				for (RiverDragShare share : dragSharedRivers)
+				{
+					centerPaths.add(share.snapshot());
+					centerPaths.add(PathOperations.toLocationList(share.river().nodes));
+				}
+			}
 		}
 		else if (dragRoad != null)
 		{
@@ -1883,6 +2059,15 @@ public class LandWaterTool extends EditorTool
 			// already redrew (per-tick) the centers under the before+after node locations, so this catches
 			// the long-haul centers along the unchanged portions of the road.
 			updater.addRoadsToRedrawLowPriority(Collections.singletonList(dragRoad), mainWindow.displayQualityScale);
+			if (dragSharedRoads != null)
+			{
+				for (RoadDragShare share : dragSharedRoads)
+				{
+					centerPaths.add(share.snapshot());
+					centerPaths.add(PathOperations.toLocationList(share.road().nodes));
+					updater.addRoadsToRedrawLowPriority(Collections.singletonList(share.road()), mainWindow.displayQualityScale);
+				}
+			}
 		}
 		undoer.setUndoPoint(UpdateType.Incremental, this);
 		updater.createAndShowMapIncrementalUsingCenters(getCentersTouchingPoints(centerPaths));
@@ -1890,6 +2075,7 @@ public class LandWaterTool extends EditorTool
 		dragRiver = null;
 		dragRoad = null;
 		dragControlPointIndex = -1;
+		clearDragSharedTargets();
 	}
 
 	/**
@@ -2414,6 +2600,14 @@ public class LandWaterTool extends EditorTool
 			if (wasDrag)
 			{
 				handleEditModeControlPointDragEnd(snapshot);
+			}
+			else
+			{
+				// click-without-drag: discard the shared-target list captured at press time.
+				dragRiver = null;
+				dragRoad = null;
+				dragControlPointIndex = -1;
+				clearDragSharedTargets();
 			}
 			return;
 		}
