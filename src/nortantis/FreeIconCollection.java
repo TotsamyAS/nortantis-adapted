@@ -39,32 +39,7 @@ public class FreeIconCollection implements Iterable<FreeIcon>
 		nonAnchoredIcons = new CopyOnWriteArrayList<FreeIcon>(other.nonAnchoredIcons);
 	}
 
-	public synchronized boolean isEmpty()
-	{
-		if (!nonAnchoredIcons.isEmpty())
-		{
-			return false;
-		}
-
-		for (Entry<Integer, FreeIcon> entry : anchoredNonTreeIcons.entrySet())
-		{
-			if (entry.getValue() != null)
-			{
-				return false;
-			}
-		}
-
-		for (Entry<Integer, CopyOnWriteArrayList<FreeIcon>> entry : anchoredTreeIcons.entrySet())
-		{
-			if (entry.getValue() != null && entry.getValue().size() > 0)
-			{
-				return false;
-			}
-		}
-
-		return true;
-	}
-
+	@SuppressWarnings("unused")
 	public synchronized int calcSize()
 	{
 		int size = anchoredNonTreeIcons.size();

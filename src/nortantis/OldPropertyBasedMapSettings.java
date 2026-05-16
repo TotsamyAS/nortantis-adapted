@@ -93,11 +93,6 @@ public class OldPropertyBasedMapSettings implements Serializable
 	public double pointPrecision = defaultPointPrecision; // Not exposed for editing. Only for backwards compatibility so I can change it
 															// without braking older settings files that have edits.
 
-	/**
-	 * Default values for new settings
-	 */
-	private final Color defaultRoadColor = Color.black;
-
 	public OldPropertyBasedMapSettings(String propertiesFilename)
 	{
 		final Properties props;

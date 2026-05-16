@@ -23,6 +23,7 @@ public class ComparableList<T extends Comparable<T>> extends ArrayList<T> implem
 	{
 	}
 
+	@SuppressWarnings("unused")
 	public ComparableList(int initialCapacity)
 	{
 		super(initialCapacity);

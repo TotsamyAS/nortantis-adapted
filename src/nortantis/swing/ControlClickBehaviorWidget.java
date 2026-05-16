@@ -65,6 +65,7 @@ public class ControlClickBehaviorWidget
 		return selectModeButton.isSelected();
 	}
 
+	@SuppressWarnings("unused")
 	public boolean isUnselectMode()
 	{
 		return unselectModeButton.isSelected();

@@ -731,8 +731,6 @@ public class LandWaterTool extends EditorTool
 			oceanButton.setSelected(true);
 		}
 
-		brushTypeWidget.updateSegmentPositions();
-
 		brushActionListener.actionPerformed(null);
 
 		showOrHideNewRegionButton();

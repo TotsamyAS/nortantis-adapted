@@ -28,6 +28,7 @@ public class Logger
 		getInstance().target = target;
 	}
 
+	@SuppressWarnings("unused")
 	public static void println()
 	{
 		println("");
@@ -46,12 +47,6 @@ public class Logger
 			println("Unable to print the rest of the error message because the exception was null.", true);
 		}
 	}
-
-	public static void printError(String message)
-	{
-		println(message, true);
-	}
-
 
 	public static void println(final Object message)
 	{

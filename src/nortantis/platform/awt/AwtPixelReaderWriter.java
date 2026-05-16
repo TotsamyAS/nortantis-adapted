@@ -6,9 +6,9 @@ import nortantis.platform.PixelReaderWriter;
 
 public class AwtPixelReaderWriter extends AwtPixelReader implements PixelReaderWriter
 {
-	AwtPixelReaderWriter(AwtImage image, IntRectangle bounds)
+	AwtPixelReaderWriter(AwtImage image)
 	{
-		super(image, bounds);
+		super(image);
 	}
 
 	@Override

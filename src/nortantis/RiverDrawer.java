@@ -983,14 +983,9 @@ public class RiverDrawer
 			}
 
 			@Override
-			public List<RiverPathNode> get(int index)
+			public List<RiverPathNode> get()
 			{
 				return existing;
-			}
-
-			@Override
-			public void replace(int index, List<RiverPathNode> newNodes)
-			{
 			}
 		};
 		PathOperations.Match<RiverPathNode> match = PathOperations.tryConnectToExistingPath(toAdd, single, RIVER_OPS);

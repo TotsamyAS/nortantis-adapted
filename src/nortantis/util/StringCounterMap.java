@@ -36,6 +36,7 @@ public class StringCounterMap implements Serializable
 		counter.incrementCount(value);
 	}
 
+	@SuppressWarnings("unused")
 	public double getCount(String key, Character value)
 	{
 		Counter<Character> counter = map.get(key);

@@ -39,11 +39,13 @@ public class IntRectangle
 		return true;
 	}
 
+	@SuppressWarnings("unused")
 	public boolean contains(IntPoint p)
 	{
 		return contains(p.x, p.y);
 	}
 
+	@SuppressWarnings("unused")
 	public boolean contains(IntRectangle other)
 	{
 		return contains(other.x, other.y) && contains(other.x + other.width, other.y + other.height);
@@ -63,6 +65,7 @@ public class IntRectangle
 		return new IntRectangle(x - paddWidth / 2, y - paddHeight / 2, width + paddWidth, height + paddHeight);
 	}
 
+	@SuppressWarnings("unused")
 	public IntRectangle add(IntPoint point)
 	{
 		return add(point.x, point.y);
@@ -123,6 +126,7 @@ public class IntRectangle
 		}
 	}
 
+	@SuppressWarnings("unused")
 	public boolean isEmpty()
 	{
 		return width <= 0 || height <= 0;

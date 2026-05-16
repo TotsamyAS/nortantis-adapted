@@ -132,9 +132,7 @@ public final class PathOperations
 	{
 		int count();
 
-		List<T> get(int index);
-
-		void replace(int index, List<T> newNodes);
+		List<T> get();
 	}
 
 	/**
@@ -157,7 +155,7 @@ public final class PathOperations
 		}
 		for (int i = 0; i < existing.count(); i++)
 		{
-			List<T> other = existing.get(i);
+			List<T> other = existing.get();
 			if (other == null || other.isEmpty() || other == pathToAdd)
 			{
 				continue;
@@ -171,22 +169,22 @@ public final class PathOperations
 			if (otherStart.isCloseEnough(addStart))
 			{
 				List<T> merged = mergeReverseAndPrepend(other, pathToAdd, ops);
-				return new Match<>(i, merged);
+				return new Match<>(merged);
 			}
 			if (otherStart.isCloseEnough(addEnd))
 			{
 				List<T> merged = mergePrepend(other, pathToAdd);
-				return new Match<>(i, merged);
+				return new Match<>(merged);
 			}
 			if (otherEnd.isCloseEnough(addStart))
 			{
 				List<T> merged = mergeAppend(other, pathToAdd, ops);
-				return new Match<>(i, merged);
+				return new Match<>(merged);
 			}
 			if (otherEnd.isCloseEnough(addEnd))
 			{
 				List<T> merged = mergeReverseAndAppend(other, pathToAdd, ops);
-				return new Match<>(i, merged);
+				return new Match<>(merged);
 			}
 		}
 		return null;
@@ -195,12 +193,10 @@ public final class PathOperations
 	/** Result of {@link #tryConnectToExistingPath}: index of the matched existing path and the merged node list. */
 	public static final class Match<T extends PathNode>
 	{
-		public final int matchedExistingIndex;
 		public final List<T> mergedNodes;
 
-		public Match(int matchedExistingIndex, List<T> mergedNodes)
+		public Match(List<T> mergedNodes)
 		{
-			this.matchedExistingIndex = matchedExistingIndex;
 			this.mergedNodes = mergedNodes;
 		}
 	}

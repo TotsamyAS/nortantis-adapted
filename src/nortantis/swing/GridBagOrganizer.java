@@ -109,6 +109,7 @@ public class GridBagOrganizer
 		return addLabelAndComponents(label, BoxLayout.X_AXIS, components, componentLeftPadding, horizontalSpaceBetweenComponents, null);
 	}
 
+	@SuppressWarnings("unused")
 	public <T extends Component> RowHider addLabelAndComponentsHorizontal(String labelText, String tooltip, List<T> components, int componentLeftPadding, int horizontalSpaceBetweenComponents,
 			int topInset)
 	{
@@ -122,6 +123,7 @@ public class GridBagOrganizer
 		return addLabelAndComponents(label, BoxLayout.X_AXIS, components, 0, defaultHorizontalSpaceBetweenComponentsAddAsList, null, topInset);
 	}
 
+	@SuppressWarnings("unused")
 	public <T extends Component> RowHider addComponentsHorizontal(List<T> components)
 	{
 		return addComponentsHorizontal(components, 0);
@@ -177,11 +179,6 @@ public class GridBagOrganizer
 		updateComponentsPanel(boxLayoutDirection, components, componentLeftPadding, horizontalSpaceBetweenComponents, compPanel);
 
 		return addLabelAndComponent(label, compPanel, topInset);
-	}
-
-	public void resetGridY()
-	{
-		curY = 0;
 	}
 
 	public void addVerticalFillerRow()
@@ -246,6 +243,7 @@ public class GridBagOrganizer
 		return addLeftAlignedComponent(component, rowVerticalInset, rowVerticalInset);
 	}
 
+	@SuppressWarnings("unused")
 	public RowHider addLeftAlignedComponent(Component component, int topInset)
 	{
 		return addLeftAlignedComponent(component, topInset, rowVerticalInset);
@@ -316,6 +314,7 @@ public class GridBagOrganizer
 		return new RowHider(component);
 	}
 
+	@SuppressWarnings("unused")
 	public RowHider addExpandableRowComponent(Component component, int topInset, int bottomInset, double verticalWeight)
 	{
 		GridBagConstraints cc = new GridBagConstraints();
@@ -340,6 +339,7 @@ public class GridBagOrganizer
 		return addLeftAlignedComponentWithStackedLabel(labelText, toolTip, component, true, 1.0);
 	}
 
+	@SuppressWarnings("unused")
 	public RowHider addLeftAlignedComponentWithStackedLabel(String labelText, String toolTip, JComponent component, boolean allowToExpandVertically)
 	{
 		return addLeftAlignedComponentWithStackedLabel(labelText, toolTip, component, allowToExpandVertically, 1.0);

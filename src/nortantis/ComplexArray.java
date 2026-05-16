@@ -118,6 +118,7 @@ public class ComplexArray
 		}
 	}
 
+	@SuppressWarnings("unused")
 	public Tuple2<Float, Float> getContrast()
 	{
 		return getContrast(0, height, 0, width);

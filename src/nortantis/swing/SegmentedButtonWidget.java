@@ -6,7 +6,6 @@ import java.util.List;
 
 public class SegmentedButtonWidget
 {
-	private final List<JToggleButton> buttons;
 	private final JPanel container;
 	private final ButtonGroup group;
 	private final WrapLayout wrapLayout;
@@ -19,8 +18,6 @@ public class SegmentedButtonWidget
 	@SuppressWarnings("serial")
 	public SegmentedButtonWidget(List<JToggleButton> buttons, boolean multiSelect)
 	{
-		this.buttons = buttons;
-
 		if (multiSelect)
 		{
 			group = null;
@@ -128,10 +125,6 @@ public class SegmentedButtonWidget
 	public void setReserveScrollBarSpace(boolean reserveScrollBarSpace)
 	{
 		wrapLayout.setReserveScrollBarSpace(reserveScrollBarSpace);
-	}
-
-	public void updateSegmentPositions()
-	{
 	}
 
 	public RowHider addToOrganizer(GridBagOrganizer organizer, String label, String tooltip)

@@ -13,6 +13,7 @@ public class IntDimension
 		this.height = height;
 	}
 
+	@SuppressWarnings("unused")
 	public Dimension toDimension()
 	{
 		return new Dimension(width, height);

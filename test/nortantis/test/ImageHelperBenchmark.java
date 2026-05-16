@@ -193,7 +193,7 @@ public class ImageHelperBenchmark
 		// Warmup
 		for (int i = 0; i < 10; i++)
 		{
-			try (Image copy = sourceImage.copySubImage(bounds[i % numCopies]))
+			try (Image ignored = sourceImage.copySubImage(bounds[i % numCopies]))
 			{
 				// Just create and close
 			}
@@ -206,7 +206,7 @@ public class ImageHelperBenchmark
 			long start = System.nanoTime();
 			for (int i = 0; i < numCopies; i++)
 			{
-				try (Image copy = sourceImage.copySubImage(bounds[i]))
+				try (Image ignored = sourceImage.copySubImage(bounds[i]))
 				{
 					// Just create and close
 				}
@@ -303,7 +303,7 @@ public class ImageHelperBenchmark
 			// Warmup
 			for (int i = 0; i < 3; i++)
 			{
-				try (Image result = ImageHelper.getInstance().colorizeMulti(grayscale, colorMap, colorIndexes, ImageHelper.ColorizeAlgorithm.algorithm3, null))
+				try (Image ignored = ImageHelper.getInstance().colorizeMulti(grayscale, colorMap, colorIndexes, ImageHelper.ColorizeAlgorithm.algorithm3, null))
 				{
 					// Just create and close
 				}
@@ -317,7 +317,7 @@ public class ImageHelperBenchmark
 				long start = System.nanoTime();
 				for (int i = 0; i < iterations; i++)
 				{
-					try (Image result = ImageHelper.getInstance().colorizeMulti(grayscale, colorMap, colorIndexes, ImageHelper.ColorizeAlgorithm.algorithm3, null))
+					try (Image ignored = ImageHelper.getInstance().colorizeMulti(grayscale, colorMap, colorIndexes, ImageHelper.ColorizeAlgorithm.algorithm3, null))
 					{
 						// Just create and close
 					}
@@ -363,7 +363,7 @@ public class ImageHelperBenchmark
 			// Warmup
 			for (int i = 0; i < 3; i++)
 			{
-				try (Image result = ImageHelper.getInstance().maskWithMultipleColors(image, colorMap, colorIndexes, mask, false))
+				try (Image ignored = ImageHelper.getInstance().maskWithMultipleColors(image, colorMap, colorIndexes, mask, false))
 				{
 					// Just create and close
 				}
@@ -377,7 +377,7 @@ public class ImageHelperBenchmark
 				long start = System.nanoTime();
 				for (int i = 0; i < iterations; i++)
 				{
-					try (Image result = ImageHelper.getInstance().maskWithMultipleColors(image, colorMap, colorIndexes, mask, false))
+					try (Image ignored = ImageHelper.getInstance().maskWithMultipleColors(image, colorMap, colorIndexes, mask, false))
 					{
 						// Just create and close
 					}

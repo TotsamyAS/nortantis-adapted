@@ -14,11 +14,6 @@ public final class Polygon
 		_vertices = vertices;
 	}
 
-	public double area()
-	{
-		return Math.abs(signedDoubleArea() * 0.5);
-	}
-
 	public Winding winding()
 	{
 		double signedDoubleArea = signedDoubleArea();

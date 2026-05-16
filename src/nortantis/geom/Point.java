@@ -48,6 +48,7 @@ public class Point implements Comparable<Point>, Serializable
 		return new Point(x + other.x, y + other.y);
 	}
 
+	@SuppressWarnings("unused")
 	public Point add(IntPoint other)
 	{
 		return new Point(x + other.x, y + other.y);

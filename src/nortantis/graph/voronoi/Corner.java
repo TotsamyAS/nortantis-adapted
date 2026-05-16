@@ -89,18 +89,6 @@ public class Corner
 		return null;
 	}
 
-	public boolean protrudesContains(Edge e)
-	{
-		for (Edge p : protrudes)
-		{
-			if (p.index == e.index)
-			{
-				return true;
-			}
-		}
-		return false;
-	}
-
 	public void resetLocToOriginal()
 	{
 		loc = originalLoc;

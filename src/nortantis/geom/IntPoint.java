@@ -5,9 +5,9 @@ import java.util.Objects;
 public class IntPoint implements Comparable<IntPoint>
 {
 
-	public static double distance(IntPoint _coord, IntPoint _coord0)
+	public static double distance(IntPoint point1, IntPoint point2)
 	{
-		return Math.sqrt((_coord.x - _coord0.x) * (_coord.x - _coord0.x) + (_coord.y - _coord0.y) * (_coord.y - _coord0.y));
+		return Math.sqrt((point1.x - point2.x) * (point1.x - point2.x) + (point1.y - point2.y) * (point1.y - point2.y));
 	}
 
 	public final int x, y;
@@ -18,12 +18,14 @@ public class IntPoint implements Comparable<IntPoint>
 		this.y = y;
 	}
 
+	@SuppressWarnings("unused")
 	public IntPoint(IntPoint other)
 	{
 		this.x = other.x;
 		this.y = other.y;
 	}
 
+	@SuppressWarnings("unused")
 	public double distanceTo(IntPoint other)
 	{
 		return distance(this, other);
@@ -37,6 +39,7 @@ public class IntPoint implements Comparable<IntPoint>
 		return new IntPoint(x - other.x, y - other.y);
 	}
 
+	@SuppressWarnings("unused")
 	public IntPoint add(IntPoint other)
 	{
 		return new IntPoint(x + other.x, y + other.y);
@@ -46,11 +49,6 @@ public class IntPoint implements Comparable<IntPoint>
 	public String toString()
 	{
 		return "(" + x + ", " + y + ")";
-	}
-
-	public double length()
-	{
-		return Math.sqrt(x * x + y * y);
 	}
 
 	@Override

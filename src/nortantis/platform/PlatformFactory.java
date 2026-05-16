@@ -40,8 +40,9 @@ public abstract class PlatformFactory
 	 * Image.create(...)
 	 *
 	 * @param forceCPU
-	 *            If true, the image will not use GPU acceleration regardless of size.
+	 *            If true, the image will not use GPU acceleration regardless of size. Not used in AWT implementations.
 	 */
+	@SuppressWarnings("unused")
 	public abstract Image createImage(int width, int height, ImageType type, boolean forceCPU);
 
 	/**

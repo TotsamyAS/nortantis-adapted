@@ -7,20 +7,14 @@ public class PolarCoordinate
 	/**
 	 * In radians.
 	 */
-	public double angle;
+	public final double angle;
 
-	public double radius;
+	public final double radius;
 
 	public PolarCoordinate(double angleInRadians, double radius)
 	{
 		this.angle = angleInRadians;
 		this.radius = radius;
-	}
-
-	public PolarCoordinate(PolarCoordinate velocity)
-	{
-		this.angle = velocity.angle;
-		this.radius = velocity.radius;
 	}
 
 	public Point toCartesian()

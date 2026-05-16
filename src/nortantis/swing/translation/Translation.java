@@ -70,11 +70,6 @@ public class Translation
 		}
 	}
 
-	public static List<Locale> getSupportedLocales()
-	{
-		return supportedLocales;
-	}
-
 	public static Locale getEffectiveLocale()
 	{
 		return effectiveLocale;

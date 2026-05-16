@@ -41,16 +41,6 @@ public class GraphRiver implements Iterable<Edge>
 		Collections.reverse(edges);
 	}
 
-	public int size()
-	{
-		return edges.size();
-	}
-
-	public int getWidth()
-	{
-		return width;
-	}
-
 	public List<Edge> getEdges()
 	{
 		return Collections.unmodifiableList(edges);

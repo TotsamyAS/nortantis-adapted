@@ -22,11 +22,13 @@ public class ListMap<K, V> implements Serializable
 		map = new TreeMap<K, List<V>>();
 	}
 
+	@SuppressWarnings("unused")
 	public ListMap(Comparator<K> comparator)
 	{
 		map = new TreeMap<K, List<V>>(comparator);
 	}
 
+	@SuppressWarnings("unused")
 	public void add(K key, V value)
 	{
 		List<V> valueList = map.get(key);
@@ -38,6 +40,7 @@ public class ListMap<K, V> implements Serializable
 		valueList.add(value);
 	}
 
+	@SuppressWarnings("unused")
 	public void addAll(K key, Collection<V> values)
 	{
 		List<V> valueList = map.get(key);
@@ -59,6 +62,7 @@ public class ListMap<K, V> implements Serializable
 		return map.get(key);
 	}
 
+	@SuppressWarnings("unused")
 	public Set<Map.Entry<K, List<V>>> entrySet()
 	{
 		return map.entrySet();
@@ -74,6 +78,7 @@ public class ListMap<K, V> implements Serializable
 		return map.keySet().isEmpty();
 	}
 
+	@SuppressWarnings("unused")
 	public int size()
 	{
 		return map.keySet().size();
@@ -84,6 +89,7 @@ public class ListMap<K, V> implements Serializable
 		return map.containsKey(key);
 	}
 
+	@SuppressWarnings("unused")
 	public Collection<List<V>> values()
 	{
 		return map.values();

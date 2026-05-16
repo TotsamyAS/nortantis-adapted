@@ -10,8 +10,8 @@ import java.util.Objects;
 @SuppressWarnings("serial")
 public class OrderlessPair<T> implements Serializable
 {
-	private T f;
-	private T s;
+	private final T f;
+	private final T s;
 
 	public OrderlessPair(T f, T l)
 	{
@@ -24,19 +24,9 @@ public class OrderlessPair<T> implements Serializable
 		return f;
 	}
 
-	public void setFirst(T f)
-	{
-		this.f = f;
-	}
-
 	public T getSecond()
 	{
 		return s;
-	}
-
-	public void setSecond(T s)
-	{
-		this.s = s;
 	}
 
 	@Override

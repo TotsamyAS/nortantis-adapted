@@ -84,20 +84,6 @@ public class FileHelper
 		return file.exists() && !file.isDirectory();
 	}
 
-	public static String readFile(String path)
-	{
-		try
-		{
-			Charset encoding = Charset.defaultCharset();
-			byte[] encoded = Files.readAllBytes(Paths.get(path));
-			return encoding.decode(ByteBuffer.wrap(encoded)).toString();
-		}
-		catch (IOException e)
-		{
-			throw new RuntimeException(e);
-		}
-	}
-
 	public static boolean isDirectoryEmpty(String directory)
 	{
 		try (DirectoryStream<Path> dirStream = Files.newDirectoryStream(Paths.get(directory)))

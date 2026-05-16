@@ -17,12 +17,14 @@ public class FloatPoint implements Comparable<FloatPoint>
 		this.y = y;
 	}
 
+	@SuppressWarnings("unused")
 	public FloatPoint(FloatPoint other)
 	{
 		this.x = other.x;
 		this.y = other.y;
 	}
 
+	@SuppressWarnings("unused")
 	public float distanceTo(FloatPoint other)
 	{
 		return distance(this, other);
@@ -31,41 +33,49 @@ public class FloatPoint implements Comparable<FloatPoint>
 	/**
 	 * Returns a new FloatPoint whose value is this FloatPoint minus other.
 	 */
+	@SuppressWarnings("unused")
 	public FloatPoint subtract(FloatPoint other)
 	{
 		return new FloatPoint(x - other.x, y - other.y);
 	}
 
+	@SuppressWarnings("unused")
 	public FloatPoint add(FloatPoint other)
 	{
 		return new FloatPoint(x + other.x, y + other.y);
 	}
 
+	@SuppressWarnings("unused")
 	public FloatPoint add(IntPoint other)
 	{
 		return new FloatPoint(x + other.x, y + other.y);
 	}
 
+	@SuppressWarnings("unused")
 	public FloatPoint add(float x, float y)
 	{
 		return new FloatPoint(this.x + x, this.y + y);
 	}
 
+	@SuppressWarnings("unused")
 	public FloatPoint mult(float value)
 	{
 		return new FloatPoint(x * value, y * value);
 	}
 
+	@SuppressWarnings("unused")
 	public FloatPoint mult(float xScale, float yScale)
 	{
 		return new FloatPoint(x * xScale, y * yScale);
 	}
 
+	@SuppressWarnings("unused")
 	public IntPoint toIntPoint()
 	{
 		return new IntPoint((int) x, (int) y);
 	}
 
+	@SuppressWarnings("unused")
 	public IntPoint toIntPointRounded()
 	{
 		return new IntPoint((int) Math.round(x), (int) Math.round(y));
@@ -77,11 +87,13 @@ public class FloatPoint implements Comparable<FloatPoint>
 		return "(" + x + ", " + y + ")";
 	}
 
+	@SuppressWarnings("unused")
 	public String toJson()
 	{
 		return "(" + x + ", " + y + ")";
 	}
 
+	@SuppressWarnings("unused")
 	public static FloatPoint fromJSonValue(String value)
 	{
 		String[] pieces = value.replace("(", "").replace(")", "").split(",");
@@ -90,16 +102,13 @@ public class FloatPoint implements Comparable<FloatPoint>
 		return new FloatPoint(x, y);
 	}
 
-	public float length()
-	{
-		return (int) Math.sqrt(x * x + y * y);
-	}
-
+	@SuppressWarnings("unused")
 	public static FloatPoint interpolate(FloatPoint p1, FloatPoint p2, float c)
 	{
 		return new FloatPoint(c * (p1.x) + (1 - c) * p2.x, c * (p1.y) + (1 - c) * p2.y);
 	}
 
+	@SuppressWarnings("unused")
 	public FloatPoint rotate(FloatPoint pivot, float angle)
 	{
 		float dx = this.x - pivot.x;
@@ -127,6 +136,7 @@ public class FloatPoint implements Comparable<FloatPoint>
 		return 0;
 	}
 
+	@SuppressWarnings("unused")
 	public boolean isCloseEnough(FloatPoint other)
 	{
 		final float threshold = 0.00001f;

@@ -109,11 +109,6 @@ public final class Edge
 		}
 	}
 
-	public boolean isPartOfConvexHull()
-	{
-		return (_leftVertex == null || _rightVertex == null);
-	}
-
 	public double sitesDistance()
 	{
 		return Point.distance(get_leftSite().get_coord(), get_rightSite().get_coord());
@@ -133,12 +128,7 @@ public final class Edge
 		}
 		return 0;
 	}
-
-	public static double compareSitesDistances(Edge edge0, Edge edge1)
-	{
-		return -compareSitesDistances_MAX(edge0, edge1);
-	}
-
+	
 	// Once clipVertices() is called, this Dictionary will hold two Points
 	// representing the clipped coordinates of the left and right ends...
 	private HashMap<LR, Point> _clippedVertices;

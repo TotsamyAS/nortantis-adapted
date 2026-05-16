@@ -60,7 +60,7 @@ public final class Voronoi
 
 	private void addSite(Point p, int index)
 	{
-		Site site = Site.create(p, index, 0);
+		Site site = Site.create(p, index);
 		_sites.push(site);
 		_sitesIndexedByLocation.put(p, site);
 	}

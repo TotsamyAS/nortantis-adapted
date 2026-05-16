@@ -907,7 +907,7 @@ public class MapEditingPanel extends UnscaledImagePanel
 		{
 			if (edgeTypeToHighlight == EdgeType.Delaunay)
 			{
-				graph.drawEdgeDeluanay(AwtFactory.wrap((Graphics2D) g), e);
+				graph.drawEdgeDelaunay(AwtFactory.wrap((Graphics2D) g), e);
 			}
 			else
 			{

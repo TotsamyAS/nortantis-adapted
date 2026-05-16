@@ -178,11 +178,6 @@ public class Center implements Comparable<Center>
 		return false;
 	}
 
-	public boolean isOcean()
-	{
-		return isWater && !isLake;
-	}
-
 	public static double distanceBetween(Center c1, Center c2)
 	{
 		if (c1 == null || c2 == null)
@@ -401,21 +396,6 @@ public class Center implements Comparable<Center>
 			numLand += !center.isWater ? 1 : 0;
 		}
 		isCoast = numOcean > 0 && numLand > 0;
-	}
-
-	/**
-	 * Finds the edge shared between this center and the given center, or null if not found.
-	 */
-	public Edge findSharedEdge(Center other)
-	{
-		for (Edge e : borders)
-		{
-			if (e.d0 != null && e.d1 != null && ((e.d0 == this && e.d1 == other) || (e.d0 == other && e.d1 == this)))
-			{
-				return e;
-			}
-		}
-		return null;
 	}
 
 	@Override

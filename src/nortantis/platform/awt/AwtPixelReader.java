@@ -17,7 +17,7 @@ public class AwtPixelReader implements PixelReader
 	protected final float maxPixelLevelAsFloat;
 	protected final Image image;
 
-	AwtPixelReader(AwtImage image, IntRectangle bounds)
+	AwtPixelReader(AwtImage image)
 	{
 		this.image = image;
 		bufferedImage = AwtFactory.unwrap(image);

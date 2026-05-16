@@ -27,19 +27,19 @@ public class IconDrawTask implements Comparable<IconDrawTask>
 	final double resolutionScale;
 
 	public IconDrawTask(ImageAndMasks unScaledImageAndMasks, IconType type, Point centerLoc, IntDimension scaledSize, Color fillColor, HSBColor filterColor, boolean maximizeOpacity,
-			boolean fillWithColor, String groupId, double resolutionScale)
+			boolean fillWithColor, double resolutionScale)
 	{
-		this(unScaledImageAndMasks, null, type, centerLoc, scaledSize, null, fillColor, filterColor, maximizeOpacity, fillWithColor, groupId, resolutionScale);
+		this(unScaledImageAndMasks, null, type, centerLoc, scaledSize, null, fillColor, filterColor, maximizeOpacity, fillWithColor, resolutionScale);
 	}
 
 	public IconDrawTask(ImageAndMasks unScaledImageAndMasks, IconType type, Point centerLoc, IntDimension scaledSize, String fileName, Color fillColor, HSBColor filterColor, boolean maximizeOpacity,
-			boolean fillWithColor, String groupId, double resolutionScale)
+			boolean fillWithColor, double resolutionScale)
 	{
-		this(unScaledImageAndMasks, null, type, centerLoc, scaledSize, fileName, fillColor, filterColor, maximizeOpacity, fillWithColor, groupId, resolutionScale);
+		this(unScaledImageAndMasks, null, type, centerLoc, scaledSize, fileName, fillColor, filterColor, maximizeOpacity, fillWithColor, resolutionScale);
 	}
 
 	private IconDrawTask(ImageAndMasks unScaledImageAndMasks, ImageAndMasks scaledImageAndMasks, IconType type, Point centerLoc, IntDimension scaledSize, String fileName, Color fillColor,
-			HSBColor filterColor, boolean maximizeOpacity, boolean fillWithColor, String groupId, double resolutionScale)
+			HSBColor filterColor, boolean maximizeOpacity, boolean fillWithColor, double resolutionScale)
 	{
 		this.unScaledImageAndMasks = unScaledImageAndMasks;
 		this.scaledImageAndMasks = scaledImageAndMasks;

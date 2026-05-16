@@ -8,6 +8,7 @@ public interface PixelReader extends AutoCloseable
 	 * Refreshes the cached pixel data for the given region by re-reading from the source image. For implementations that maintain a live
 	 * view of the image data (like AWT), this is a no-op.
 	 */
+	@SuppressWarnings("unused")
 	void refreshRegion(IntRectangle bounds);
 
 	public int getGrayLevel(int x, int y);

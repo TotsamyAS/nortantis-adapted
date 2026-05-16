@@ -144,11 +144,11 @@ public abstract class Image implements AutoCloseable
 	 * Creates a pixel reader that is restricted to read from the given bounds of this image. For the Skia implementation, this is much more
 	 * efficient than creating a pixel reader for the entire image.
 	 */
-	protected abstract PixelReader innerCreateNewPixelReader(IntRectangle bounds);
+	protected abstract PixelReader innerCreateNewPixelReader(@SuppressWarnings("unused") IntRectangle bounds);
 
-	protected abstract PixelReaderWriter innerCreateNewPixelReaderWriter(IntRectangle bounds);
+	protected abstract PixelReaderWriter innerCreateNewPixelReaderWriter(@SuppressWarnings("unused") IntRectangle bounds);
 
-	protected abstract PixelWriter innerCreateNewPixelWriter(IntRectangle bounds);
+	protected abstract PixelWriter innerCreateNewPixelWriter(@SuppressWarnings("unused") IntRectangle bounds);
 
 
 	public PixelReader createPixelReader()

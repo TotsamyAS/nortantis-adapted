@@ -24,6 +24,7 @@ public class Assets
 	 * Interface for providing InputStreams on platforms where filesystem access doesn't work for bundled assets (e.g., Android, which
 	 * requires AssetManager).
 	 */
+	@SuppressWarnings("unused")
 	public interface AssetInputStreamProvider
 	{
 		InputStream open(String assetPath) throws IOException;
@@ -31,6 +32,7 @@ public class Assets
 
 	private static AssetInputStreamProvider assetInputStreamProvider;
 
+	@SuppressWarnings("unused")
 	public static void setAssetInputStreamProvider(AssetInputStreamProvider provider)
 	{
 		assetInputStreamProvider = provider;
@@ -265,11 +267,6 @@ public class Assets
 		List<Path> paths = fileNames.stream().map(name -> Paths.get(folderPath, name)).collect(Collectors.toList());
 
 		return paths;
-	}
-
-	private static boolean isJarAsset(String path)
-	{
-		return StringUtils.isNotEmpty(path) && isRunningFromJar() && path.startsWith(getAssetsPath());
 	}
 
 	/**
@@ -684,29 +681,6 @@ public class Assets
 		{
 			// Not an asset. Read from disk.
 			return Image.read(filePath);
-		}
-	}
-
-	private static Image readImageFromJar(String filePath)
-	{
-		try (InputStream inputStream = createInputStreamFromFileInJar(filePath))
-		{
-			if (inputStream == null)
-			{
-				throw new RuntimeException("Can't read the image resource '" + filePath + "' because either it doesn't or it's an unsupported format or corrupted.");
-			}
-
-			Image image = PlatformFactory.getInstance().readImage(inputStream);
-			if (image == null)
-			{
-				throw new RuntimeException("Can't read the image resource " + filePath + ". It might be in an unsupported format or corrupted.");
-			}
-
-			return image;
-		}
-		catch (IOException e)
-		{
-			throw new RuntimeException("Error while reading image from resource " + filePath, e);
 		}
 	}
 

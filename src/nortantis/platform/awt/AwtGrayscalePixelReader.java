@@ -11,9 +11,9 @@ public class AwtGrayscalePixelReader extends AwtPixelReader
 	protected final byte[] cachedByteArray;
 	protected final int imageSubType;
 
-	AwtGrayscalePixelReader(AwtImage image, IntRectangle bounds)
+	AwtGrayscalePixelReader(AwtImage image)
 	{
-		super(image, bounds);
+		super(image);
 		imageSubType = bufferedImage.getType();
 		if (imageSubType == BufferedImage.TYPE_BYTE_GRAY)
 		{
@@ -23,11 +23,6 @@ public class AwtGrayscalePixelReader extends AwtPixelReader
 		{
 			this.cachedByteArray = null;
 		}
-	}
-
-	AwtGrayscalePixelReader(AwtImage image)
-	{
-		this(image, null);
 	}
 
 	@Override

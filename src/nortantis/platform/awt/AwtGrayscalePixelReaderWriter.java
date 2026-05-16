@@ -10,12 +10,7 @@ public class AwtGrayscalePixelReaderWriter extends AwtGrayscalePixelReader imple
 {
 	AwtGrayscalePixelReaderWriter(AwtImage image)
 	{
-		this(image, null);
-	}
-
-	AwtGrayscalePixelReaderWriter(AwtImage image, IntRectangle bounds)
-	{
-		super(image, bounds);
+		super(image);
 	}
 
 	@Override

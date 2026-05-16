@@ -93,67 +93,6 @@ public class ThreadHelper
 	}
 
 	/**
-	 * Processes a list of jobs in parallel that return results. Warning: Never submit a job that will submit more jobs using the methods in
-	 * this class, as that can lead to a deadlock.
-	 * 
-	 * @param <T>
-	 *            Result type
-	 * @param jobs
-	 * @param useFixedThreadPool
-	 *            Whether to use the thread pool with a limited number of threads vs the one that grows as needed. Warning: Never submit a
-	 *            job that will submit more jobs to the fixed thread pool, as that can lead to a deadlock.
-	 * @return
-	 */
-	public <T> List<T> processInParallelAndGetResult(List<Callable<T>> jobs, boolean useFixedThreadPool)
-	{
-		List<Future<T>> futures = new ArrayList<>();
-		List<T> results = new ArrayList<>();
-		ExecutorService threadPool;
-		if (useFixedThreadPool)
-		{
-			threadPool = Executors.newFixedThreadPool(threadCount);
-		}
-		else
-		{
-			threadPool = cachedThreadPool;
-		}
-
-		try
-		{
-			for (Callable<T> job : jobs)
-			{
-				futures.add(threadPool.submit(job));
-			}
-
-			for (int i : new Range(jobs.size()))
-			{
-				try
-				{
-					T result = futures.get(i).get();
-					results.add(result);
-				}
-				catch (ExecutionException e)
-				{
-					throw new RuntimeException(e);
-				}
-				catch (InterruptedException e)
-				{
-					throw new RuntimeException(e);
-				}
-			}
-		}
-		finally
-		{
-			if (useFixedThreadPool)
-			{
-				threadPool.shutdown();
-			}
-		}
-
-		return results;
-	}
-
-	/**
 	 * Processes rows of data in parallel. Warning: Never submit a job that will submit more jobs using the methods in this class, as that
 	 * can lead to a deadlock.
 	 * 
@@ -193,6 +132,7 @@ public class ThreadHelper
 		return cachedThreadPool.submit(job);
 	}
 
+	@SuppressWarnings("unused")
 	public Future<?> submit(Runnable job)
 	{
 		return cachedThreadPool.submit(job);
@@ -220,11 +160,6 @@ public class ThreadHelper
 			}
 			throw new RuntimeException(e);
 		}
-	}
-
-	public void shutdown()
-	{
-		cachedThreadPool.shutdownNow();
 	}
 
 	public int getThreadCount()

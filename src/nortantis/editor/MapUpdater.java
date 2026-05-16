@@ -341,7 +341,6 @@ public abstract class MapUpdater
 				mapParts.frayedBorderBlur.close();
 			}
 			mapParts.frayedBorderBlur = null;
-			mapParts.frayedBorderColor = null;
 			if (mapParts.frayedBorderMask != null)
 			{
 				mapParts.frayedBorderMask.close();

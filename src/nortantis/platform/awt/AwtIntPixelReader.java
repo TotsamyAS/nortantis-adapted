@@ -8,15 +8,10 @@ public class AwtIntPixelReader extends AwtPixelReader
 {
 	protected final int[] cachedPixelArray;
 
-	AwtIntPixelReader(AwtImage image, IntRectangle bounds)
-	{
-		super(image, bounds);
-		this.cachedPixelArray = ((DataBufferInt) raster.getDataBuffer()).getData();
-	}
-
 	AwtIntPixelReader(AwtImage image)
 	{
-		this(image, null);
+		super(image);
+		this.cachedPixelArray = ((DataBufferInt) raster.getDataBuffer()).getData();
 	}
 
 	@Override

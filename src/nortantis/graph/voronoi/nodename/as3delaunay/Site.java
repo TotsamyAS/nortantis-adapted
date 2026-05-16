@@ -9,9 +9,9 @@ import java.util.Comparator;
 
 public final class Site implements ICoord
 {
-	public static Site create(Point p, int index, double weight)
+	public static Site create(Point p, int index)
 	{
-		return new Site(p, index, weight);
+		return new Site(p, index);
 	}
 
 	public static void sortSites(ArrayList<Site> sites)
@@ -86,7 +86,7 @@ public final class Site implements ICoord
 	// ordered list of points that define the region clipped to bounds:
 	private ArrayList<Point> _region;
 
-	public Site(Point p, int index, double weight)
+	public Site(Point p, int index)
 	{
 		init(p, index);
 	}
@@ -106,80 +106,9 @@ public final class Site implements ICoord
 		return "Site " + _siteIndex + ": " + get_coord();
 	}
 
-	@SuppressWarnings("unused")
-	private void move(Point p)
-	{
-		clear();
-		_coord = p;
-	}
-
-	private void clear()
-	{
-		if (_edges != null)
-		{
-			_edges.clear();
-			_edges = null;
-		}
-		if (_edgeOrientations != null)
-		{
-			_edgeOrientations.clear();
-			_edgeOrientations = null;
-		}
-		if (_region != null)
-		{
-			_region.clear();
-			_region = null;
-		}
-	}
-
 	void addEdge(Edge edge)
 	{
 		_edges.add(edge);
-	}
-
-	public Edge nearestEdge()
-	{
-		// _edges.sort(Edge.compareSitesDistances);
-		Collections.sort(_edges, new Comparator<Edge>()
-		{
-			@Override
-			public int compare(Edge o1, Edge o2)
-			{
-				return (int) Edge.compareSitesDistances(o1, o2);
-			}
-		});
-		return _edges.get(0);
-	}
-
-	ArrayList<Site> neighborSites()
-	{
-		if (_edges == null || _edges.isEmpty())
-		{
-			return new ArrayList<Site>();
-		}
-		if (_edgeOrientations == null)
-		{
-			reorderEdges();
-		}
-		ArrayList<Site> list = new ArrayList<Site>();
-		for (Edge edge : _edges)
-		{
-			list.add(neighborSite(edge));
-		}
-		return list;
-	}
-
-	private Site neighborSite(Edge edge)
-	{
-		if (this == edge.get_leftSite())
-		{
-			return edge.get_rightSite();
-		}
-		if (this == edge.get_rightSite())
-		{
-			return edge.get_leftSite();
-		}
-		return null;
 	}
 
 	ArrayList<Point> region(Rectangle clippingBounds)
@@ -441,10 +370,5 @@ final class BoundsCheck
 			value |= BOTTOM;
 		}
 		return value;
-	}
-
-	public BoundsCheck()
-	{
-		throw new Error("BoundsCheck constructor unused");
 	}
 }

@@ -311,7 +311,7 @@ public class MapCreator implements WarningLogger
 			checkForCancel();
 
 			List<IconDrawTask> iconsToDraw = mapParts.iconDrawer.getTasksInDrawBoundsSortedAndScaled(drawBounds);
-			mapParts.background.doSetupThatNeedsGraphAndIcons(settings, mapParts.graph, iconsToDraw, centersToDraw, drawBounds, replaceBounds);
+			mapParts.background.doSetupThatNeedsGraphAndIcons(mapParts.graph, iconsToDraw, centersToDraw, drawBounds, replaceBounds);
 
 			checkForCancel();
 
@@ -946,7 +946,6 @@ public class MapCreator implements WarningLogger
 			{
 				mapParts.frayedBorderMask = frayedBorderMask;
 				mapParts.frayedBorderBlur = frayedBorderBlur;
-				mapParts.frayedBorderColor = settings.frayedBorderColor;
 			}
 
 			if (frayedBorderBlur != null)
@@ -1107,7 +1106,7 @@ public class MapCreator implements WarningLogger
 		checkForCancel();
 
 		List<IconDrawTask> iconsToDraw = iconDrawer.getTasksInDrawBoundsSortedAndScaled(null);
-		background.doSetupThatNeedsGraphAndIcons(settings, graph, iconsToDraw, null, null, null);
+		background.doSetupThatNeedsGraphAndIcons(graph, iconsToDraw, null, null, null);
 		if (mapParts == null)
 		{
 			if (background.landBeforeRegionColoring != null && background.landBeforeRegionColoring != background.land)

@@ -8,12 +8,7 @@ public class AwtIntPixelReaderWriter extends AwtIntPixelReader implements PixelR
 {
 	AwtIntPixelReaderWriter(AwtImage image)
 	{
-		this(image, null);
-	}
-
-	AwtIntPixelReaderWriter(AwtImage image, IntRectangle bounds)
-	{
-		super(image, bounds);
+		super(image);
 	}
 
 	@Override

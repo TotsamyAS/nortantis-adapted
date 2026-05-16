@@ -49,11 +49,13 @@ public class RadioButtonWithImage extends JPanel
 		return radioButton;
 	}
 
+	@SuppressWarnings("unused")
 	public void addActionListener(ActionListener listener)
 	{
 		getRadioButton().addActionListener(listener);
 	}
 
+	@SuppressWarnings("unused")
 	public void removeActionListener(ActionListener listener)
 	{
 		getRadioButton().removeActionListener(listener);

@@ -1268,7 +1268,7 @@ public class TextDrawer
 		}
 	}
 
-	private Point getTextLocationWithRiseOffset(MapText text, String line1, String line2, double riseOffset, Painter p)
+	private Point getTextLocationWithRiseOffset(MapText text, @SuppressWarnings("unused") String line1, String line2, double riseOffset, Painter p)
 	{
 		if (line2 != null && line2.isEmpty())
 		{

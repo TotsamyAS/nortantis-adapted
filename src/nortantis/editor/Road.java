@@ -38,12 +38,6 @@ public class Road
 		return new Road(built);
 	}
 
-	/** Returns a snapshot list of just the locations along the path. */
-	public List<Point> getLocations()
-	{
-		return PathOperations.toLocationList(nodes);
-	}
-
 	@Override
 	public int hashCode()
 	{

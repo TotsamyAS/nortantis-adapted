@@ -145,6 +145,7 @@ public abstract class Painter implements AutoCloseable
 	 * @param manual
 	 *            true to enable manual batch mode
 	 */
+	@SuppressWarnings("unused")
 	public void setManualBatchMode(boolean manual)
 	{
 		// Default: no-op for synchronous painters

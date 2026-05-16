@@ -44,6 +44,7 @@ public class WrapLayout extends FlowLayout
 	 * @param vgap
 	 *            the vertical gap between components
 	 */
+	@SuppressWarnings("unused")
 	public WrapLayout(int align, int hgap, int vgap)
 	{
 		super(align, hgap, vgap);

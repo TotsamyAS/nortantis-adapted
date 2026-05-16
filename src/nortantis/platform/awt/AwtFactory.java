@@ -221,6 +221,7 @@ public class AwtFactory extends PlatformFactory
 		return ((AwtImage) image).image;
 	}
 
+	@SuppressWarnings("unused")
 	public static Graphics2D unwrap(Painter p)
 	{
 		if (p == null)
@@ -239,6 +240,7 @@ public class AwtFactory extends PlatformFactory
 		return new AwtImage(image);
 	}
 
+	@SuppressWarnings("unused")
 	public static Color wrap(java.awt.Color color)
 	{
 		if (color == null)
@@ -248,6 +250,7 @@ public class AwtFactory extends PlatformFactory
 		return new AwtColor(color);
 	}
 
+	@SuppressWarnings("unused")
 	public static java.awt.Color unwrap(Color color)
 	{
 		if (color == null)
@@ -257,6 +260,7 @@ public class AwtFactory extends PlatformFactory
 		return ((AwtColor) color).color;
 	}
 
+	@SuppressWarnings("unused")
 	public static Font wrap(java.awt.Font font)
 	{
 		if (font == null)
@@ -266,6 +270,7 @@ public class AwtFactory extends PlatformFactory
 		return new AwtFont(font);
 	}
 
+	@SuppressWarnings("unused")
 	public static java.awt.Font unwrap(Font font)
 	{
 		if (font == null)
@@ -281,6 +286,7 @@ public class AwtFactory extends PlatformFactory
 		return new java.awt.Rectangle(rectInt.x, rectInt.y, rectInt.width, rectInt.height);
 	}
 
+	@SuppressWarnings("unused")
 	public static java.awt.Rectangle toAwtRectangle(IntRectangle rect)
 	{
 		return new java.awt.Rectangle(rect.x, rect.y, rect.width, rect.height);

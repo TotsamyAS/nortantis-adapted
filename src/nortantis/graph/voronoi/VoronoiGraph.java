@@ -304,6 +304,7 @@ public abstract class VoronoiGraph
 	/**
 	 * Draw tectonic plates. For debugging
 	 */
+	@SuppressWarnings("unused")
 	public void drawPlates(Painter p)
 	{
 		for (Edge e : edges)
@@ -320,6 +321,7 @@ public abstract class VoronoiGraph
 	/**
 	 * For debugging
 	 */
+	@SuppressWarnings("unused")
 	public void drawDelaunay(Painter g)
 	{
 		g.setBasicStroke(1);
@@ -330,7 +332,7 @@ public abstract class VoronoiGraph
 		}
 	}
 
-	public void drawEdgeDeluanay(Painter g, Edge e)
+	public void drawEdgeDelaunay(Painter g, Edge e)
 	{
 		if (e.d0 == null || e.d1 == null)
 		{
@@ -382,6 +384,10 @@ public abstract class VoronoiGraph
 		}
 	}
 
+	@SuppressWarnings("unused")
+	/**
+	 * Debug code to show biomes
+	 */
 	public void drawBiomes(Painter g)
 	{
 		drawPolygons(g, (center) ->

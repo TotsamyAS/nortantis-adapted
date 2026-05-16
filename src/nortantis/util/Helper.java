@@ -30,6 +30,7 @@ public class Helper
 		return result;
 	}
 
+	@SuppressWarnings("unused")
 	public static <K, V extends Comparable<V>> K argmin(Map<K, V> map)
 	{
 		Map.Entry<K, V> minEntry = null;
@@ -72,6 +73,7 @@ public class Helper
 		return maxEntry.getKey();
 	}
 
+	@SuppressWarnings("unused")
 	public static <K, V extends Comparable<V>> V maxElement(Map<K, V> map)
 	{
 		Map.Entry<K, V> maxEntry = null;

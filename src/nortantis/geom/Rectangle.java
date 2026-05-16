@@ -153,12 +153,6 @@ public class Rectangle
 		return add(other.x, other.y).add(other.x, other.y + other.height).add(other.x + other.width, other.y).add(other.x + other.width, other.y + other.height);
 	}
 
-	public Rectangle addCircle(Point loc, Double radius)
-	{
-		Rectangle rect = new Rectangle(loc.x - radius, loc.y - radius, radius * 2, radius * 2);
-		return add(rect);
-	}
-
 	/**
 	 * Returns a new rectangle with the same centroid as this one but with the width and height expanded by the given width and height.
 	 */
@@ -177,44 +171,9 @@ public class Rectangle
 		return new Rectangle(x + xTranslation, y + yTranslation, width, height);
 	}
 
-	public Rectangle scaleAboutCenter(double scale)
-	{
-		// Calculate the new dimensions after scaling
-		double newWidth = width * scale;
-		double newHeight = height * scale;
-
-		// Calculate the new center coordinates
-		double centerX = x + width / 2.0;
-		double centerY = y + height / 2.0;
-
-		// Calculate the new top-left corner coordinates
-		double newX = centerX - newWidth / 2.0;
-		double newY = centerY - newHeight / 2.0;
-
-		// Create and return the scaled rectangle
-		return new Rectangle(newX, newY, newWidth, newHeight);
-	}
-
 	public Rectangle scaleAboutOrigin(double scale)
 	{
 		return new Rectangle(x * scale, y * scale, width * scale, height * scale);
-	}
-
-	public Rectangle findIntersection(Rectangle r2)
-	{
-		double x1 = Math.max(this.x, r2.x);
-		double y1 = Math.max(this.y, r2.y);
-		double x2 = Math.min(this.x + this.width, r2.x + r2.width);
-		double y2 = Math.min(this.y + this.height, r2.y + r2.height);
-
-		if (x1 < x2 && y1 < y2)
-		{
-			return new Rectangle(x1, y1, x2 - x1, y2 - y1);
-		}
-		else
-		{
-			return null;
-		}
 	}
 
 	/**

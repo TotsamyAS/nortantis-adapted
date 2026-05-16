@@ -342,7 +342,7 @@ public class Background
 		return image.copySubImage(new IntRectangle(borderWidthScaled, borderWidthScaled, (int) (image.getWidth() - borderWidthScaled * 2), (int) (image.getHeight() - borderWidthScaled * 2)));
 	}
 
-	public void doSetupThatNeedsGraphAndIcons(MapSettings settings, WorldGraph graph, List<IconDrawTask> tasks, Set<Center> centersToDraw, Rectangle drawBounds, Rectangle replaceBounds)
+	public void doSetupThatNeedsGraphAndIcons(WorldGraph graph, List<IconDrawTask> tasks, Set<Center> centersToDraw, Rectangle drawBounds, Rectangle replaceBounds)
 	{
 		if (shouldDrawRegionColors)
 		{
@@ -1038,11 +1038,6 @@ public class Background
 	public int getBorderPaddingScaledByResolution()
 	{
 		return isBorderOutsideMap ? borderWidthScaled : 0;
-	}
-
-	public boolean getIsBorderOutsideMap()
-	{
-		return isBorderOutsideMap;
 	}
 
 	public static int calcBorderWidthScaledByResolution(MapSettings settings)

@@ -134,26 +134,6 @@ public class Edge implements Comparable<Edge>
 		return false;
 	}
 
-	public boolean isRiverTouchingOcean()
-	{
-		if (!isRiver())
-		{
-			return false;
-		}
-
-		if (v0 != null && v0.isOcean)
-		{
-			return true;
-		}
-
-		if (v1 != null && v1.isOcean)
-		{
-			return true;
-		}
-
-		return false;
-	}
-
 	public boolean isRiver()
 	{
 		return river > GraphRiver.RIVERS_THIS_SIZE_OR_SMALLER_WILL_NOT_BE_DRAWN;

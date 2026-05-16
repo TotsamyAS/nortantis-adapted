@@ -42,6 +42,7 @@ public class Stopwatch
 		startTime = System.currentTimeMillis();
 	}
 
+	@SuppressWarnings("unused")
 	public void pause()
 	{
 		if (isRunning)

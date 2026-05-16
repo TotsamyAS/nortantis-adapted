@@ -55,11 +55,6 @@ public class MapParts
 	public Image frayedBorderMask;
 
 	/**
-	 * This is stored here because the editor needs it to re-draw frayed borders, and the editor doesn't keep the MapSettings object around.
-	 */
-	public Color frayedBorderColor;
-
-	/**
 	 * Input and output.
 	 */
 	public Image grunge;

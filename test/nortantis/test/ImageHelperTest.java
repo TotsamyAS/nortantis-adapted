@@ -280,7 +280,7 @@ public class ImageHelperTest
 	{
 		final int numberOfRuns = 2;
 		int successCount = 0;
-		for (int i : new Range(numberOfRuns))
+		for (int ignored : new Range(numberOfRuns))
 		{
 			Image image = createColorTestImage();
 			Image mask = createGradientMask();
@@ -906,30 +906,6 @@ public class ImageHelperTest
 		return image;
 	}
 
-	private Image createColorTestImageOfSize(int width, int height)
-	{
-		Image image = Image.create(width, height, ImageType.RGB);
-		image.withPainter(DrawQuality.High, (p) ->
-		{
-			int halfWidth = width / 2;
-			int halfHeight = height / 2;
-
-			// Create a pattern with different colors in each quadrant
-			p.setColor(Color.red);
-			p.fillRect(0, 0, halfWidth, halfHeight);
-
-			p.setColor(Color.green);
-			p.fillRect(halfWidth, 0, halfWidth, halfHeight);
-
-			p.setColor(Color.blue);
-			p.fillRect(0, halfHeight, halfWidth, halfHeight);
-
-			p.setColor(Color.yellow);
-			p.fillRect(halfWidth, halfHeight, halfWidth, halfHeight);
-		});
-		return image;
-	}
-
 	private Image createGradientMask()
 	{
 		Image mask = Image.create(testImageWidth, testImageHeight, ImageType.Grayscale8Bit);
@@ -1083,78 +1059,6 @@ public class ImageHelperTest
 			}
 		}
 		return image;
-	}
-
-	/**
-	 * Creates an RGB image of specified size where each quadrant encodes the specified region IDs.
-	 */
-	private Image createColorIndexesImageOfSize(int width, int height, int topLeftId, int topRightId, int bottomLeftId, int bottomRightId)
-	{
-		Image image = Image.create(width, height, ImageType.RGB);
-		try (PixelReaderWriter writer = image.createPixelReaderWriter())
-		{
-			for (int y = 0; y < height; y++)
-			{
-				for (int x = 0; x < width; x++)
-				{
-					int regionId;
-					if (x < width / 2 && y < height / 2)
-					{
-						regionId = topLeftId;
-					}
-					else if (x >= width / 2 && y < height / 2)
-					{
-						regionId = topRightId;
-					}
-					else if (x < width / 2 && y >= height / 2)
-					{
-						regionId = bottomLeftId;
-					}
-					else
-					{
-						regionId = bottomRightId;
-					}
-
-					Color encodedColor = WorldGraph.storeValueAsColor(regionId);
-					writer.setRGB(x, y, encodedColor.getRed(), encodedColor.getGreen(), encodedColor.getBlue());
-				}
-			}
-		}
-		return image;
-	}
-
-	private Image createGrayscaleTestImageOfSize(int width, int height)
-	{
-		Image image = Image.create(width, height, ImageType.Grayscale8Bit);
-		try (PixelReaderWriter writer = image.createPixelReaderWriter())
-		{
-			for (int y = 0; y < height; y++)
-			{
-				for (int x = 0; x < width; x++)
-				{
-					int level = (int) ((x + y) * 255.0 / (width + height - 2));
-					writer.setGrayLevel(x, y, level);
-				}
-			}
-		}
-		return image;
-	}
-
-	private Image createGradientMaskOfSize(int width, int height)
-	{
-		Image mask = Image.create(width, height, ImageType.Grayscale8Bit);
-		try (PixelReaderWriter writer = mask.createPixelReaderWriter())
-		{
-			for (int y = 0; y < height; y++)
-			{
-				for (int x = 0; x < width; x++)
-				{
-					int level = (x * 255) / width;
-					writer.setGrayLevel(x, y, level);
-				}
-			}
-		}
-		return mask;
 	}
 
 	private static String getExpectedFilePath(String testName)

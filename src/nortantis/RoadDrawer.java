@@ -17,7 +17,6 @@ import nortantis.util.Range;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Optional;
 import java.util.Random;
@@ -471,14 +470,9 @@ public class RoadDrawer
 			}
 
 			@Override
-			public List<RoadPathNode> get(int index)
+			public List<RoadPathNode> get()
 			{
 				return existing;
-			}
-
-			@Override
-			public void replace(int index, List<RoadPathNode> newNodes)
-			{
 			}
 		};
 		PathOperations.Match<RoadPathNode> match = PathOperations.tryConnectToExistingPath(toAdd, single, ROAD_OPS);

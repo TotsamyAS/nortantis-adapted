@@ -77,13 +77,13 @@ class AwtImage extends Image
 		assertNotClosed();
 		if (isCompatibleIntFormat())
 		{
-			return new AwtIntPixelReader(this, bounds);
+			return new AwtIntPixelReader(this);
 		}
 		if (isCompatibleByteFormat())
 		{
-			return new AwtGrayscalePixelReader(this, bounds);
+			return new AwtGrayscalePixelReader(this);
 		}
-		return new AwtPixelReader(this, bounds);
+		return new AwtPixelReader(this);
 	}
 
 	@Override
@@ -92,13 +92,13 @@ class AwtImage extends Image
 		assertNotClosed();
 		if (isCompatibleIntFormat())
 		{
-			return new AwtIntPixelReaderWriter(this, bounds);
+			return new AwtIntPixelReaderWriter(this);
 		}
 		if (isCompatibleByteFormat())
 		{
-			return new AwtGrayscalePixelReaderWriter(this, bounds);
+			return new AwtGrayscalePixelReaderWriter(this);
 		}
-		return new AwtPixelReaderWriter(this, bounds);
+		return new AwtPixelReaderWriter(this);
 	}
 
 	@Override
@@ -108,13 +108,13 @@ class AwtImage extends Image
 		// AWT uses a backing array reference, so no initial read is needed anyway
 		if (isCompatibleIntFormat())
 		{
-			return new AwtIntPixelReaderWriter(this, bounds);
+			return new AwtIntPixelReaderWriter(this);
 		}
 		if (isCompatibleByteFormat())
 		{
-			return new AwtGrayscalePixelReaderWriter(this, bounds);
+			return new AwtGrayscalePixelReaderWriter(this);
 		}
-		return new AwtPixelReaderWriter(this, bounds);
+		return new AwtPixelReaderWriter(this);
 	}
 
 	private int toBufferedImageType(ImageType type)

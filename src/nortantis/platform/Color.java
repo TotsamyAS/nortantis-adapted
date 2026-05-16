@@ -54,12 +54,17 @@ public abstract class Color implements Serializable
 	public static final Color white = create(255, 255, 255);
 	public static final Color green = create(0, 255, 0);
 	public static final Color yellow = create(255, 255, 0);
+	@SuppressWarnings("unused")
 	public static final Color lightGray = create(192, 192, 192);
+	@SuppressWarnings("unused")
 	public static final Color gray = create(128, 128, 128);
+	@SuppressWarnings("unused")
 	public static final Color darkGray = create(64, 64, 64);
 	public static final Color red = create(255, 0, 0);
 	public static final Color pink = create(255, 175, 175);
+	@SuppressWarnings("unused")
 	public static final Color orange = create(255, 200, 0);
+	@SuppressWarnings("unused")
 	public static final Color magenta = create(255, 0, 255);
 	public static final Color cyan = create(0, 255, 255);
 	public static final Color blue = create(0, 0, 255);
@@ -82,6 +87,7 @@ public abstract class Color implements Serializable
 		return PlatformFactory.getInstance().createColorFromHSB(hue, saturation, brightness);
 	}
 
+	@SuppressWarnings("unused")
 	public HSBColor toHSB()
 	{
 		float[] hsb = getHSB();

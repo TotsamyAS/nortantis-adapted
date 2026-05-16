@@ -88,41 +88,4 @@ public final class SiteList
 		}
 		return coords;
 	}
-
-	/**
-	 *
-	 * @return the largest circle centered at each site that fits in its region; if the region is infinite, return a circle of radius 0.
-	 *
-	 */
-	public ArrayList<Circle> circles()
-	{
-		ArrayList<Circle> circles = new ArrayList<Circle>();
-		for (Site site : _sites)
-		{
-			double radius = 0;
-			Edge nearestEdge = site.nearestEdge();
-
-			// !nearestEdge.isPartOfConvexHull() && (radius = nearestEdge.sitesDistance() * 0.5);
-			if (!nearestEdge.isPartOfConvexHull())
-			{
-				radius = nearestEdge.sitesDistance() * 0.5;
-			}
-			circles.add(new Circle(site.get_x(), site.get_y(), radius));
-		}
-		return circles;
-	}
-
-	/**
-	 *
-	 * @param proximityMap
-	 *            a BitmapData whose regions are filled with the site index values; see PlanePointsCanvas::fillRegions()
-	 * @param x
-	 * @param y
-	 * @return coordinates of nearest Site to (x, y)
-	 *
-	 */
-	/*
-	 * public Point nearestSitePoint(proximityMap:BitmapData, double x, double y) { var index:uint = proximityMap.getPixel(x, y); if (index
-	 * > _sites.length - 1) { return null; } return _sites[index].coord; }
-	 */
 }
