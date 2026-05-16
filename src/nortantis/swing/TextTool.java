@@ -710,18 +710,22 @@ public class TextTool extends EditorTool
 			return;
 		}
 
-		// Position the paste at the current mouse location (in graph pixel coordinates). When the mouse
+		// Position the paste at the current mouse location. MapText.location is stored in resolution-
+		// invariant pixels (graph pixels / displayQualityScale — see TextDrawer.createMapText), so we
+		// must divide the graph-pixel mouse location by displayQualityScale here. Without this, paste
+		// only lands at the cursor when displayQualityScale is 1.0 (Medium quality). When the mouse
 		// is off-map, fall back to a fixed offset from the source location so the new text is visible
 		// rather than landing exactly on top of the original.
 		nortantis.geom.Point pasteLoc;
 		java.awt.Point mouseOnPanel = mapEditingPanel.getMousePosition();
 		if (mouseOnPanel != null)
 		{
-			pasteLoc = getPointOnGraph(mouseOnPanel);
+			nortantis.geom.Point mouseGraph = getPointOnGraph(mouseOnPanel);
+			pasteLoc = new nortantis.geom.Point(mouseGraph.x / mainWindow.displayQualityScale, mouseGraph.y / mainWindow.displayQualityScale);
 		}
 		else
 		{
-			final double offset = 50.0 * mainWindow.displayQualityScale;
+			final double offset = 50.0;
 			pasteLoc = new nortantis.geom.Point(textClipboard.location.x + offset, textClipboard.location.y + offset);
 		}
 
@@ -747,6 +751,11 @@ public class TextTool extends EditorTool
 		// Match the erase-mode pattern: clear the value and let purgeEmptyText reap the entry once
 		// drawing is idle. Going through the same code path means undo/redo handling stays uniform.
 		toDelete.value = "";
+		// Sync the edit field to the cleared value BEFORE clearing the selection. Otherwise
+		// handleSelectingTextToEdit sees a "modification" (field still holds the original text vs.
+		// the now-empty MapText.value) and writes the field's contents back into MapText.value,
+		// undoing the delete.
+		editTextField.setText("");
 		handleSelectingTextToEdit(null, false);
 		undoer.setUndoPoint(UpdateType.Incremental, this);
 		triggerPurgeEmptyText();
@@ -979,6 +988,13 @@ public class TextTool extends EditorTool
 			if (!editTextField.hasFocus() && grabFocus)
 			{
 				editTextField.grabFocus();
+			}
+			else if (!grabFocus)
+			{
+				// Don't auto-focus the edit field (would hijack Ctrl+C/V/Delete keyboard shortcuts).
+				// Place focus on the mode widget instead — keeps it on a predictable component near the
+				// edit fields, and a single Tab press from here reaches the text edit field.
+				modeWidget.grabFocusOnSelectedButton();
 			}
 			// Prevent textTypeComboBox's action listener from doing anything on
 			// the next line.

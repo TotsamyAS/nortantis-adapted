@@ -10,8 +10,6 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.function.BiFunction;
-import java.util.function.Function;
 
 /**
  * Generic helpers shared by road and river path handling. All methods operate on {@code List<? extends PathNode>} — only
@@ -278,69 +276,6 @@ public final class PathOperations
 			result.add(node.getLoc());
 		}
 		return result;
-	}
-
-	/**
-	 * If {@code snapStart} differs from {@code naturalStartRI}, replaces the path endpoint whose location matches {@code naturalStartRI}
-	 * with a node at {@code snapStart} (preserving the old endpoint's "to-next" metadata via {@code withLoc}). Same logic for
-	 * {@code snapEnd} vs {@code naturalEndRI}. Returns a new list — the input is not modified.
-	 *
-	 * <p>
-	 * Mirrors the snap behavior used when polygon-mode drawing meets a freehand-drawn endpoint: the new road/river segment extends to the
-	 * snap point instead of stopping at the natural Voronoi corner / Delaunay center.
-	 *
-	 * @param withLoc
-	 *            Returns a node at the new location, carrying the original node's per-segment metadata (e.g. river width/seed). Roads pass
-	 *            an identity replacement.
-	 * @param newPlainNode
-	 *            Creates a fresh node at a location, used only in the rare case where the input path has fewer than 2 nodes and we need to
-	 *            grow it; metadata is best-effort.
-	 */
-	public static <T extends PathNode> List<T> applyPolygonSnapPoints(List<T> nodes, Point snapStart, Point naturalStartRI, Point snapEnd, Point naturalEndRI, BiFunction<T, Point, T> withLoc,
-			Function<Point, T> newPlainNode)
-	{
-		if (nodes.isEmpty())
-		{
-			return new ArrayList<>(nodes);
-		}
-		List<T> result = new ArrayList<>(nodes);
-		if (snapStart != null && !snapStart.isCloseEnough(naturalStartRI))
-		{
-			applyOneSnap(result, snapStart, naturalStartRI, withLoc, newPlainNode);
-		}
-		if (snapEnd != null && !snapEnd.isCloseEnough(naturalEndRI))
-		{
-			applyOneSnap(result, snapEnd, naturalEndRI, withLoc, newPlainNode);
-		}
-		return result;
-	}
-
-	private static <T extends PathNode> void applyOneSnap(List<T> result, Point snap, Point natural, BiFunction<T, Point, T> withLoc, Function<Point, T> newPlainNode)
-	{
-		T first = result.get(0);
-		T last = result.get(result.size() - 1);
-		if (first.getLoc().isCloseEnough(natural))
-		{
-			if (result.size() >= 2)
-			{
-				result.set(0, withLoc.apply(first, snap));
-			}
-			else
-			{
-				result.add(0, newPlainNode.apply(snap));
-			}
-		}
-		else if (last.getLoc().isCloseEnough(natural))
-		{
-			if (result.size() >= 2)
-			{
-				result.set(result.size() - 1, withLoc.apply(last, snap));
-			}
-			else
-			{
-				result.add(newPlainNode.apply(snap));
-			}
-		}
 	}
 
 	/** Deduplicates consecutive nodes whose locations are {@link Point#isCloseEnough}. */

@@ -103,4 +103,29 @@ public class DrawModeWidget
 	{
 		editModeButton.doClick();
 	}
+
+	/**
+	 * Moves keyboard focus to whichever mode button is currently selected. Use this when a tool selects an editable object (e.g. a text or
+	 * river segment) but doesn't want to auto-focus the value-edit fields — placing focus here keeps the Tab order predictable and puts the
+	 * user one Tab away from the edit fields.
+	 */
+	public void grabFocusOnSelectedButton()
+	{
+		if (drawModeButton.isSelected())
+		{
+			drawModeButton.grabFocus();
+		}
+		else if (editModeButton.isSelected())
+		{
+			editModeButton.grabFocus();
+		}
+		else if (replaceModeButton.isSelected())
+		{
+			replaceModeButton.grabFocus();
+		}
+		else if (eraseModeButton.isSelected())
+		{
+			eraseModeButton.grabFocus();
+		}
+	}
 }

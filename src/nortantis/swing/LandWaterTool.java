@@ -1650,20 +1650,133 @@ public class LandWaterTool extends EditorTool
 		updater.doWhenMapIsNotDrawing(() -> updater.createAndShowLowPriorityChanges());
 	}
 
+	/**
+	 * Bridges the river's natural endpoint(s) to {@code snapStart}/{@code snapEnd} by appending (or prepending) a new node, rather than
+	 * replacing the natural endpoint. This is what the drag preview shows — a polygon path that walks Voronoi corners then bridges from
+	 * the last/first corner to the snap point. Replacing the natural endpoint (the old behavior) made the polygon river end short of the
+	 * snap target when the target was a middle control point of another river (no merge possible, no bridge drawn).
+	 *
+	 * <p>
+	 * The bridge segment inherits the polygon path's width and gets a fresh seed; its edge index is cleared because the bridge doesn't
+	 * follow a single Voronoi edge.
+	 */
 	private static void applyRiverSnapPoints(River river, Point snapStart, Point naturalStartRI, Point snapEnd, Point naturalEndRI)
 	{
-		java.util.function.BiFunction<RiverPathNode, Point, RiverPathNode> withLoc = (node, loc) -> new RiverPathNode(loc, node.getWidthLevelToNext(), node.getSeedToNext());
-		java.util.function.Function<Point, RiverPathNode> newPlain = loc -> new RiverPathNode(loc, 0, 0L);
-		List<RiverPathNode> updated = PathOperations.applyPolygonSnapPoints(river.nodes, snapStart, naturalStartRI, snapEnd, naturalEndRI, withLoc, newPlain);
+		List<RiverPathNode> updated = new ArrayList<>(river.nodes);
+		if (updated.isEmpty())
+		{
+			return;
+		}
+		Random random = new Random();
+		if (snapEnd != null && !snapEnd.isCloseEnough(naturalEndRI))
+		{
+			appendRiverBridge(updated, snapEnd, naturalEndRI, random);
+		}
+		if (snapStart != null && !snapStart.isCloseEnough(naturalStartRI))
+		{
+			prependRiverBridge(updated, snapStart, naturalStartRI, random);
+		}
 		river.nodes = new java.util.concurrent.CopyOnWriteArrayList<>(updated);
+	}
+
+	private static void appendRiverBridge(List<RiverPathNode> nodes, Point snap, Point natural, Random random)
+	{
+		if (nodes.isEmpty())
+		{
+			return;
+		}
+		RiverPathNode last = nodes.get(nodes.size() - 1);
+		if (last.getLoc().isCloseEnough(natural))
+		{
+			int width = nodes.size() >= 2 ? nodes.get(nodes.size() - 2).getWidthLevelToNext() : 0;
+			long seed = random.nextLong();
+			// The old last node now has an outgoing segment (the bridge); set its to-next metadata
+			// so the bridge inherits the polygon path's width and gets a fresh seed.
+			nodes.set(nodes.size() - 1, new RiverPathNode(last.getLoc(), width, seed, RiverPathNode.EDGE_INDEX_NONE));
+			// New last node with cleared to-next (no outgoing segment).
+			nodes.add(new RiverPathNode(snap, 0, 0L, RiverPathNode.EDGE_INDEX_NONE));
+			return;
+		}
+		RiverPathNode first = nodes.get(0);
+		if (first.getLoc().isCloseEnough(natural))
+		{
+			// Path's "natural" location is actually the start — fall through to prepend semantics.
+			prependRiverBridge(nodes, snap, natural, random);
+		}
+	}
+
+	private static void prependRiverBridge(List<RiverPathNode> nodes, Point snap, Point natural, Random random)
+	{
+		if (nodes.isEmpty())
+		{
+			return;
+		}
+		RiverPathNode first = nodes.get(0);
+		if (first.getLoc().isCloseEnough(natural))
+		{
+			int width = first.getWidthLevelToNext() != 0 ? first.getWidthLevelToNext() : (nodes.size() >= 2 ? nodes.get(1).getWidthLevelToNext() : 0);
+			long seed = random.nextLong();
+			// New first node carries the bridge segment's to-next metadata so the bridge has consistent
+			// width with the rest of the polygon river.
+			nodes.add(0, new RiverPathNode(snap, width, seed, RiverPathNode.EDGE_INDEX_NONE));
+			return;
+		}
+		RiverPathNode last = nodes.get(nodes.size() - 1);
+		if (last.getLoc().isCloseEnough(natural))
+		{
+			// Path's "natural" location is actually the end — fall through to append semantics.
+			appendRiverBridge(nodes, snap, natural, random);
+		}
 	}
 
 	private static void applyRoadSnapPoints(Road road, Point snapStart, Point naturalStartRI, Point snapEnd, Point naturalEndRI)
 	{
-		java.util.function.BiFunction<RoadPathNode, Point, RoadPathNode> withLoc = (node, loc) -> new RoadPathNode(loc);
-		java.util.function.Function<Point, RoadPathNode> newPlain = RoadPathNode::new;
-		List<RoadPathNode> updated = PathOperations.applyPolygonSnapPoints(road.nodes, snapStart, naturalStartRI, snapEnd, naturalEndRI, withLoc, newPlain);
+		List<RoadPathNode> updated = new ArrayList<>(road.nodes);
+		if (updated.isEmpty())
+		{
+			return;
+		}
+		if (snapEnd != null && !snapEnd.isCloseEnough(naturalEndRI))
+		{
+			appendRoadBridge(updated, snapEnd, naturalEndRI);
+		}
+		if (snapStart != null && !snapStart.isCloseEnough(naturalStartRI))
+		{
+			prependRoadBridge(updated, snapStart, naturalStartRI);
+		}
 		road.nodes = new java.util.concurrent.CopyOnWriteArrayList<>(updated);
+	}
+
+	private static void appendRoadBridge(List<RoadPathNode> nodes, Point snap, Point natural)
+	{
+		if (nodes.isEmpty())
+		{
+			return;
+		}
+		if (nodes.get(nodes.size() - 1).getLoc().isCloseEnough(natural))
+		{
+			nodes.add(new RoadPathNode(snap));
+		}
+		else if (nodes.get(0).getLoc().isCloseEnough(natural))
+		{
+			prependRoadBridge(nodes, snap, natural);
+		}
+	}
+
+	private static void prependRoadBridge(List<RoadPathNode> nodes, Point snap, Point natural)
+	{
+		if (nodes.isEmpty())
+		{
+			return;
+		}
+		if (nodes.get(0).getLoc().isCloseEnough(natural))
+		{
+			nodes.add(0, new RoadPathNode(snap));
+		}
+		else if (nodes.get(nodes.size() - 1).getLoc().isCloseEnough(natural))
+		{
+			appendRoadBridge(nodes, snap, natural);
+		}
 	}
 
 	private void selectColorFromMap(MouseEvent e)
@@ -1823,17 +1936,12 @@ public class LandWaterTool extends EditorTool
 						: PathOperations.toLocationList(dragRoad.nodes);
 				captureSharedControlPointsForDrag();
 			}
-			else if (hit != null && hit.isSegment())
+			else if (hit != null && hit.isSegment() && hit.river() != null)
 			{
-				if (hit.river() != null)
-				{
-					setStickyRiverSegment(hit.river(), hit.segmentIndex());
-					syncSliderToSelectedSegment();
-				}
-				else
-				{
-					setStickyRoadSegment(hit.road(), hit.segmentIndex());
-				}
+				// Only rivers support sticky segment selection (the width slider needs a target).
+				// Road segments aren't selectable because there's no road-segment-level setting to tune.
+				setStickyRiverSegment(hit.river(), hit.segmentIndex());
+				syncSliderToSelectedSegment();
 				mapEditingPanel.clearHighlightedPolylines();
 				applyStickySegmentHighlight();
 				// Refresh hover so the sticky line's CPs are now the only ones drawn.
@@ -2147,11 +2255,11 @@ public class LandWaterTool extends EditorTool
 			insertCp.addActionListener(ev -> insertControlPointIntoSegment(hit, clickPanelPoint));
 			menu.add(insertCp);
 
-			// "Select Segment" makes the hit segment the sticky selection. Only meaningful in edit mode
-			// (where the slider applies to it) and when it isn't already the sticky selection.
-			boolean alreadySticky = (hit.river() != null && hit.river() == stickyRiver && hit.segmentIndex() == stickySegmentIndex)
-					|| (hit.road() != null && hit.road() == stickyRoad && hit.segmentIndex() == stickySegmentIndex);
-			if (modeWidget.isEditMode() && !alreadySticky)
+			// "Select Segment" makes the hit segment the sticky selection. Only rivers (the width slider
+			// needs a target); only in edit mode (where the slider applies); and only when not already
+			// the sticky one.
+			boolean alreadySticky = hit.river() != null && hit.river() == stickyRiver && hit.segmentIndex() == stickySegmentIndex;
+			if (modeWidget.isEditMode() && hit.river() != null && !alreadySticky)
 			{
 				JMenuItem selectSeg = new JMenuItem(Translation.get("landWaterTool.edit.selectSegment"));
 				selectSeg.addActionListener(ev -> selectSegmentFromHit(hit));
@@ -2166,15 +2274,14 @@ public class LandWaterTool extends EditorTool
 
 	private void selectSegmentFromHit(LineHit hit)
 	{
-		if (hit.river() != null)
+		// Only rivers can be sticky-selected (the width slider needs a target). The "Select Segment"
+		// menu item is gated to river hits, so we shouldn't reach here for a road.
+		if (hit.river() == null)
 		{
-			setStickyRiverSegment(hit.river(), hit.segmentIndex());
-			syncSliderToSelectedSegment();
+			return;
 		}
-		else if (hit.road() != null)
-		{
-			setStickyRoadSegment(hit.road(), hit.segmentIndex());
-		}
+		setStickyRiverSegment(hit.river(), hit.segmentIndex());
+		syncSliderToSelectedSegment();
 		mapEditingPanel.clearHighlightedPolylines();
 		applyStickySegmentHighlight();
 		mapEditingPanel.repaint();
@@ -2617,6 +2724,14 @@ public class LandWaterTool extends EditorTool
 			Corner end = updater.mapParts.graph.findClosestCorner(getPointOnGraph(e.getPoint()));
 			Point polygonRiverSnapEnd = computeSnapPointForType(e.getPoint(), LineType.RIVER);
 			Set<Edge> river = filterOutOceanAndCoastEdges(updater.mapParts.graph.findPathGreedy(riverStart, end));
+			if (DebugFlags.printRiverEdgeIndexes())
+			{
+				System.out.println("River edges (polygon mode):");
+				for (Edge edge : river)
+				{
+					System.out.println("  index=" + edge.index);
+				}
+			}
 			int base = (riverWidthSlider.getValue() - 1);
 			int riverLevel = base * base * 2 + GraphRiver.RIVERS_THIS_SIZE_OR_SMALLER_WILL_NOT_BE_DRAWN + 1;
 			List<River> newRivers = RiverDrawer.addRiversFromEdgesInEditor(river, riverStart, riverLevel, mainWindow.displayQualityScale, mainWindow.edits.rivers);
