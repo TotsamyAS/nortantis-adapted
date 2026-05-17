@@ -2918,6 +2918,18 @@ public class LandWaterTool extends EditorTool
 				mapEditingPanel.addPolylinesToHighlight(segment);
 			}
 		}
+		else if (riversButton.isSelected() && modeWidget.isDrawMode())
+		{
+			updateControlPointDisplay(mouseLocation, LineType.RIVER);
+		}
+		else if ((riversButton.isSelected() || roadsButton.isSelected()) && modeWidget.isEditMode())
+		{
+			LineType activeType = riversButton.isSelected() ? LineType.RIVER : LineType.ROAD;
+			updateEditModeHoverDisplay(mouseLocation, activeType);
+			// Re-apply the sticky segment polyline after the polyline clear above so it persists
+			// across mouse moves.
+			applyStickySegmentHighlight();
+		}
 		else if (roadsButton.isSelected() && modeWidget.isEraseMode())
 		{
 			int brushDiameter = brushSizes.get(brushSizeComboBox.getSelectedIndex());
@@ -2935,18 +2947,6 @@ public class LandWaterTool extends EditorTool
 		else if (roadsButton.isSelected() && modeWidget.isDrawMode())
 		{
 			updateControlPointDisplay(mouseLocation, LineType.ROAD);
-		}
-		else if (riversButton.isSelected() && modeWidget.isDrawMode())
-		{
-			updateControlPointDisplay(mouseLocation, LineType.RIVER);
-		}
-		else if ((riversButton.isSelected() || roadsButton.isSelected()) && modeWidget.isEditMode())
-		{
-			LineType activeType = riversButton.isSelected() ? LineType.RIVER : LineType.ROAD;
-			updateEditModeHoverDisplay(mouseLocation, activeType);
-			// Re-apply the sticky segment polyline after the polyline clear above so it persists
-			// across mouse moves.
-			applyStickySegmentHighlight();
 		}
 
 		mapEditingPanel.repaint();
