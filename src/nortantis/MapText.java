@@ -19,10 +19,19 @@ public class MapText implements Serializable
 {
 	public String value;
 	/**
-	 * The (possibly rotated) bounding boxes of the text. This is populated when text is drawn, and is not stored to disk.
+	 * The (possibly rotated) bounding boxes of the text. These are a rendering cache populated by
+	 * {@link nortantis.TextDrawer} during draws and depend on the current displayQualityScale —
+	 * not part of the persistent edit state. {@link #deepCopy()} preserves the references so that
+	 * a restored undo snapshot stays clickable during the brief window before the next draw fixes
+	 * up bounds at the current resolution; {@link nortantis.swing.MapEdits#textBoundsNeedRefresh}
+	 * tracks whether those preserved bounds can still be trusted.
+	 *
+	 * {@code volatile} because the background draw thread writes these while the EDT may be
+	 * reading them in hit-testing. {@code transient} so Java serialization (used by
+	 * {@link nortantis.util.Helper#deepCopy}) never persists them.
 	 */
-	public RotatedRectangle line1Bounds;
-	public RotatedRectangle line2Bounds;
+	public transient volatile RotatedRectangle line1Bounds;
+	public transient volatile RotatedRectangle line2Bounds;
 
 	public TextType type;
 

@@ -60,9 +60,19 @@ public class MapEdits implements Serializable
 	public boolean bakeGeneratedTextAsEdits;
 
 	/**
-	 * Not stored. A flag to ensure text bounds and areas are always present after drawing.
+	 * Not stored. True when the line1Bounds/line2Bounds on the MapText entries in {@link #text}
+	 * cannot be trusted to match the current rendering resolution — either because this MapEdits
+	 * was just constructed, just deep-copied (e.g. an undo snapshot being restored), or has not
+	 * yet been the subject of a full-bounds text draw. Set to false by {@link nortantis.TextDrawer}
+	 * after a full-bounds pass; reset to true by {@link #deepCopy()}.
+	 * {@link nortantis.TextDrawer#updateTextBoundsIfNeeded} consults this flag at the end of every
+	 * incremental draw to decide whether to recompute bounds. Excluded from {@link #equals(Object)}.
+	 *
+	 * Polarity note: defaults to true (Java's default for boolean is false, so we set it true in the
+	 * constructor and in deepCopy). That keeps "needs refresh" as the safe default — a freshly
+	 * constructed MapEdits has null bounds and must be refreshed before its bounds are trusted.
 	 */
-	public boolean hasCreatedTextBounds;
+	public boolean textBoundsNeedRefresh;
 
 	public MapEdits()
 	{
@@ -74,6 +84,7 @@ public class MapEdits implements Serializable
 		roads = new CopyOnWriteArrayList<Road>();
 		rivers = new CopyOnWriteArrayList<River>();
 		hasInitializedRivers = false;
+		textBoundsNeedRefresh = true;
 	}
 
 	public boolean isInitialized()
@@ -235,7 +246,14 @@ public class MapEdits implements Serializable
 		copy.freeIcons = new FreeIconCollection(freeIcons);
 
 		copy.bakeGeneratedTextAsEdits = bakeGeneratedTextAsEdits;
-		copy.hasCreatedTextBounds = hasCreatedTextBounds;
+		// Always reset to true on copy: the copy can't trust that its preserved line1Bounds/line2Bounds
+		// references match the current displayQualityScale (the source may have been drawn at a different
+		// resolution, or the source may itself be a snapshot with stale bounds). The next incremental
+		// draw will see this flag and call updateTextBoundsIfNeeded, which recomputes every text's
+		// bounds at the current resolution. The bounds references are still copied (see MapText.deepCopy)
+		// so that the brief window between an undo restoration and the redraw doesn't leave the user
+		// unable to click anything — they just may be slightly off until the redraw completes.
+		copy.textBoundsNeedRefresh = true;
 
 		List<Road> deepCopyOfRoads = roads.stream().map(road -> new Road(road)).toList();
 		copy.roads = new CopyOnWriteArrayList<Road>();
@@ -251,7 +269,7 @@ public class MapEdits implements Serializable
 	}
 
 	/**
-	 * Warning when re-creating this function: This must not include hasCreatedTextBounds.
+	 * Warning when re-creating this function: This must not include textBoundsNeedRefresh.
 	 */
 	@Override
 	public boolean equals(Object obj)

@@ -427,10 +427,11 @@ public class TextDrawer
 			}));
 		}
 
-		// Only mark this flag if we drew all text, not just an incremental update.
+		// Only clear this flag if we drew every text (drawBounds null or equal to graph bounds);
+		// an incremental update only refreshes bounds inside its draw region.
 		if (drawBounds == null || drawBounds.equals(graph.bounds))
 		{
-			settings.edits.hasCreatedTextBounds = true;
+			settings.edits.textBoundsNeedRefresh = false;
 		}
 	}
 
@@ -1341,14 +1342,17 @@ public class TextDrawer
 	}
 
 	/**
-	 * Sets the bounds of any texts for which those are null. This is needed because the editor allows making changes when a map is loaded
-	 * from a file before it draws the first time. Text bounds aren't set until the text is drawn the first time, and changing fields before
-	 * the first draw will set an undo point, which will copy the map settings, including edits. So this function must be called each draw
-	 * to make sure null bounds don't get perpetuated from those undo points.
+	 * Recomputes the bounds on every MapText in {@link MapEdits#text} if
+	 * {@link MapEdits#textBoundsNeedRefresh} is true. Called at the end of every incremental
+	 * draw (see {@link MapCreator#incrementalUpdateBounds}) so that:
+	 *  - texts on an edits-from-disk MapEdits get bounds before the first interactive click,
+	 *  - undo/redo restorations get fresh bounds at the current resolution (the just-restored
+	 *    bounds may have been computed at a different displayQualityScale, or may be null for
+	 *    a text that was pasted into a snapshot before its bounds were ever drawn).
 	 */
 	public void updateTextBoundsIfNeeded(WorldGraph graph)
 	{
-		if (settings.edits.hasCreatedTextBounds)
+		if (!settings.edits.textBoundsNeedRefresh)
 		{
 			return;
 		}
