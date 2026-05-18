@@ -430,11 +430,17 @@ public abstract class MapUpdater
 			return;
 		}
 
-		// Incremental updates require an existing rendered map to patch. If no draw is currently
-		// in progress and the map is not ready for interactions (e.g., cancel() was called while
-		// opening a new map), mapFromMapCreator will be null and the incremental update would crash.
-		// Drop it — the full draw that follows will redraw everything from scratch.
-		if (updateType == UpdateType.Incremental && !isMapBeingDrawn && !isMapReadyForInteractions)
+		// Incremental updates require an existing rendered map to patch — if there's no base map,
+		// the update would crash. The original concern was the "opening a new map" path, where
+		// cancel() sets isMapReadyForInteractions=false AND a later loadSettings nulls mapFromMapCreator.
+		// Using !isMapReadyForInteractions as the proxy is wrong though: it also fires false-positive
+		// in the success-path tail of a non-interactive draw — done() clears isMapBeingDrawn before
+		// recursively starting the next queued Incremental, but isMapReadyForInteractions is still
+		// false (set by the start of the just-finished non-interactive draw and only restored when
+		// the chain drains). Polling the next update out of the queue and then dropping it here
+		// strands the flag false forever and locks the editor out of all interactions. Check the
+		// actual base-map state instead, which is what the comment was describing all along.
+		if (updateType == UpdateType.Incremental && !isMapBeingDrawn && getCurrentMapForIncrementalUpdate() == null)
 		{
 			return;
 		}
