@@ -287,6 +287,87 @@ public class PathOperationsTest
 	}
 
 	@Test
+	public void findInnerNeighborsOfCutEndpoints_middleCutFindsBothInnerNeighbors()
+	{
+		Point a = new Point(0, 0);
+		Point b = new Point(1, 0);
+		Point c = new Point(2, 0);
+		Point d = new Point(3, 0);
+		Point e = new Point(4, 0);
+		// Simulate post-split state for [a,b,c,d,e] cut at c→d → [a,b,c] and [d,e].
+		List<List<RoadPathNode>> paths = Arrays.asList(road(a, b, c), road(d, e));
+		List<List<Point>> removed = Arrays.asList(Arrays.asList(c, d));
+		Set<Point> result = new HashSet<>(PathOperations.findInnerNeighborsOfCutEndpoints(paths, removed));
+		// Inner neighbor of c (new end of first sub-path) is b; inner neighbor of d (new end of second sub-path) is e.
+		assertEquals(new HashSet<>(Arrays.asList(b, e)), result);
+	}
+
+	@Test
+	public void findInnerNeighborsOfCutEndpoints_ignoresOriginalEndpoints()
+	{
+		Point a = new Point(0, 0);
+		Point b = new Point(1, 0);
+		Point c = new Point(2, 0);
+		// Original [a,b,c] cut at a→b → [b,c]. Only b is a new endpoint matching a cut point;
+		// the cut also names a (already an original endpoint), but a is no longer in the path.
+		List<List<RoadPathNode>> paths = Arrays.asList(road(b, c));
+		List<List<Point>> removed = Arrays.asList(Arrays.asList(a, b));
+		Set<Point> result = new HashSet<>(PathOperations.findInnerNeighborsOfCutEndpoints(paths, removed));
+		// b's inner neighbor is c. c is not a cut point, so its inner neighbor is not requested.
+		assertEquals(new HashSet<>(Arrays.asList(c)), result);
+	}
+
+	@Test
+	public void findInnerNeighborsOfCutEndpoints_handlesTwoNodeRemainder()
+	{
+		Point a = new Point(0, 0);
+		Point b = new Point(1, 0);
+		Point c = new Point(2, 0);
+		// Post-cut state: [a,b]. b is the new endpoint from removing b→c.
+		List<List<RoadPathNode>> paths = Arrays.asList(road(a, b));
+		List<List<Point>> removed = Arrays.asList(Arrays.asList(b, c));
+		Set<Point> result = new HashSet<>(PathOperations.findInnerNeighborsOfCutEndpoints(paths, removed));
+		assertEquals(new HashSet<>(Arrays.asList(a)), result);
+	}
+
+	@Test
+	public void findInnerNeighborsOfCutEndpoints_deduplicates()
+	{
+		Point a = new Point(0, 0);
+		Point b = new Point(1, 0);
+		Point c = new Point(2, 0);
+		// Two paths both ending at b — should report a only once.
+		List<List<RoadPathNode>> paths = Arrays.asList(road(a, b), road(a, b, c));
+		List<List<Point>> removed = Arrays.asList(Arrays.asList(b, new Point(99, 99)));
+		Set<Point> result = new HashSet<>(PathOperations.findInnerNeighborsOfCutEndpoints(paths, removed));
+		// First path: b at end → inner is a. Second path: c at end (not in cut points); b at index 1 (not endpoint).
+		assertEquals(new HashSet<>(Arrays.asList(a)), result);
+	}
+
+	@Test
+	public void findInnerNeighborsOfCutEndpoints_skipsShortPaths()
+	{
+		Point a = new Point(0, 0);
+		Point b = new Point(1, 0);
+		List<List<RoadPathNode>> paths = Arrays.asList(Collections.<RoadPathNode> emptyList(), road(a));
+		List<List<Point>> removed = Arrays.asList(Arrays.asList(a, b));
+		// Empty and single-node paths must be ignored rather than throwing on out-of-bounds access.
+		assertTrue(PathOperations.findInnerNeighborsOfCutEndpoints(paths, removed).isEmpty());
+	}
+
+	@Test
+	public void findInnerNeighborsOfCutEndpoints_emptyInputsReturnEmpty()
+	{
+		Point a = new Point(0, 0);
+		Point b = new Point(1, 0);
+		List<List<RoadPathNode>> paths = Arrays.asList(road(a, b));
+		List<List<Point>> removed = Arrays.asList(Arrays.asList(a, b));
+		assertTrue(PathOperations.findInnerNeighborsOfCutEndpoints(null, removed).isEmpty());
+		assertTrue(PathOperations.findInnerNeighborsOfCutEndpoints(paths, null).isEmpty());
+		assertTrue(PathOperations.findInnerNeighborsOfCutEndpoints(paths, Collections.emptyList()).isEmpty());
+	}
+
+	@Test
 	public void deduplicateConsecutive_returnsSameOnNoDuplicates()
 	{
 		Point a = new Point(0, 0);

@@ -192,4 +192,30 @@ public class RoadDrawerTest
 		assertEquals(1, roads.size());
 		assertSame(untouched, roads.get(0));
 	}
+
+	@Test
+	public void removeSegmentsAndSplitRoads_thenFindInnerNeighbors_handlesJunction()
+	{
+		// Two roads share a junction at b. Cutting the first road's a→b segment also splits the
+		// second road at b. The synthetic reflection endpoint used by CurveCreator.createCurve(List)
+		// for end nodes would otherwise shift the curve along each new end segment; the inner
+		// neighbors (c, x, y) need to be in the redraw bounds to avoid tearing.
+		Point a = new Point(0, 0);
+		Point b = new Point(1, 0);
+		Point c = new Point(2, 0);
+		Point x = new Point(1, 1);
+		Point y = new Point(1, -1);
+		Road first = road(a, b, c);
+		Road second = road(x, b, y);
+		List<Road> roads = new ArrayList<>(Arrays.asList(first, second));
+		List<List<Point>> segmentsToRemove = Arrays.asList(Arrays.asList(a, b));
+		RoadDrawer.removeSegmentsAndSplitRoads(roads, segmentsToRemove);
+		List<List<RoadPathNode>> nodeLists = new ArrayList<>();
+		for (Road r : roads)
+		{
+			nodeLists.add(r.nodes);
+		}
+		java.util.Set<Point> neighbors = new java.util.HashSet<>(PathOperations.findInnerNeighborsOfCutEndpoints(nodeLists, segmentsToRemove));
+		assertEquals(new java.util.HashSet<>(Arrays.asList(c, x, y)), neighbors);
+	}
 }

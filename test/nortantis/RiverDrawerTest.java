@@ -215,4 +215,31 @@ public class RiverDrawerTest
 		assertEquals(Arrays.asList(a, b), locs(untouched));
 	}
 
+	@Test
+	public void removeSegmentsAndSplitRivers_thenFindInnerNeighbors_handlesJunction()
+	{
+		// Two rivers share a junction at b. Cutting the first river's a→b segment also splits the
+		// second river at b — which exposes new end segments on each side of b in the second river.
+		// findInnerNeighborsOfCutEndpoints must walk the post-split state and report c (from the
+		// first river's new end at b) plus x and y (from the second river's two new ends at b).
+		// This guards the end-to-end River flow that feeds incremental redraw bounds in the editor.
+		Point a = new Point(0, 0);
+		Point b = new Point(1, 0);
+		Point c = new Point(2, 0);
+		Point x = new Point(1, 1);
+		Point y = new Point(1, -1);
+		River first = river(WIDTH, a, b, c);
+		River second = river(WIDTH, x, b, y);
+		List<River> rivers = new ArrayList<>(Arrays.asList(first, second));
+		List<List<Point>> segmentsToRemove = Arrays.asList(Arrays.asList(a, b));
+		RiverDrawer.removeSegmentsAndSplitRivers(rivers, segmentsToRemove);
+		List<List<RiverPathNode>> nodeLists = new ArrayList<>();
+		for (River r : rivers)
+		{
+			nodeLists.add(r.nodes);
+		}
+		Set<Point> neighbors = new HashSet<>(PathOperations.findInnerNeighborsOfCutEndpoints(nodeLists, segmentsToRemove));
+		assertEquals(new HashSet<>(Arrays.asList(c, x, y)), neighbors);
+	}
+
 }

@@ -148,6 +148,20 @@ public abstract class MapUpdater
 		}
 	}
 
+	/**
+	 * Queues every center under every node of {@code roads} for a later low-priority redraw. Used after a road edit (add, extend, or
+	 * erase) to make sure the road is re-rendered along its full length, not just inside the eager incremental update bounds.
+	 *
+	 * <p>
+	 * Why a full-length redraw is necessary: depending on settings, roads are drawn with a non-solid stroke (dashes, dots, etc.). The
+	 * dash pattern is laid out along the entire road, so editing one part of a road can shift the dash phase along the rest of it. A
+	 * tight eager incremental redraw is enough to fix curve-shape changes at the cut (see {@link nortantis.PathOperations#findInnerNeighborsOfCutEndpoints}),
+	 * but it won't update the dash phase on the parts of the road that fall outside those bounds. The low-priority pass picks those up.
+	 *
+	 * <p>
+	 * The pass is "low priority" because the dash-phase shift is subtle compared to changes to the road's shape, and
+	 * deferring it keeps the editor responsive during drags.
+	 */
 	public void addRoadsToRedrawLowPriority(List<Road> roads, double resolutionScale)
 	{
 		if (mapParts != null && mapParts.graph != null)

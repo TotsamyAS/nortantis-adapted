@@ -111,6 +111,55 @@ public final class PathOperations
 		return result;
 	}
 
+	/**
+	 * After {@link #splitAtLocations} has been applied (or after any other operation that cuts paths at given locations), returns the
+	 * locations of the "inner neighbor" (second-from-end) nodes of any path whose endpoint location matches one of the removed segments'
+	 * endpoints. Callers that build incremental redraw bounds from the removed segments should include these locations too.
+	 *
+	 * <p>
+	 * The reason: when a path is split, the segments that used to flank the cut become new end segments. End segments are typically
+	 * rendered with a synthetic reflection control point in place of the real neighbor (see {@code RiverDrawer.buildSegmentPathPixels}
+	 * and {@code CurveCreator.createCurve(List)}), which changes the Catmull-Rom curve shape along the whole new end segment. The redraw
+	 * bounds must therefore cover both endpoints of each new end segment — otherwise the curve drawn inside the bounds (new shape) tears
+	 * from the unchanged pixels outside (old shape from the previous full draw). Multi-path junctions are handled: a path that merely
+	 * happened to start/end at a cut point also gets split, so its inner neighbor needs to be reported too.
+	 *
+	 * @param pathsAfterSplit
+	 *            the node lists of all paths after the split has been applied
+	 * @param removedSegments
+	 *            the segments that were removed (each a 2-point list of endpoint locations)
+	 * @return locations of the inner-neighbor nodes, deduplicated
+	 */
+	public static List<Point> findInnerNeighborsOfCutEndpoints(Iterable<? extends List<? extends PathNode>> pathsAfterSplit, List<List<Point>> removedSegments)
+	{
+		if (pathsAfterSplit == null || removedSegments == null || removedSegments.isEmpty())
+		{
+			return Collections.emptyList();
+		}
+		Set<Point> cutPoints = new HashSet<>();
+		for (List<Point> seg : removedSegments)
+		{
+			cutPoints.addAll(seg);
+		}
+		Set<Point> result = new HashSet<>();
+		for (List<? extends PathNode> nodes : pathsAfterSplit)
+		{
+			if (nodes == null || nodes.size() < 2)
+			{
+				continue;
+			}
+			if (cutPoints.contains(nodes.get(0).getLoc()))
+			{
+				result.add(nodes.get(1).getLoc());
+			}
+			if (cutPoints.contains(nodes.get(nodes.size() - 1).getLoc()))
+			{
+				result.add(nodes.get(nodes.size() - 2).getLoc());
+			}
+		}
+		return new ArrayList<>(result);
+	}
+
 	/** Aggregates orderless pairs of consecutive node locations across a collection of paths. */
 	public static Set<OrderlessPair<Point>> collectAllConnections(Iterable<? extends List<? extends PathNode>> paths)
 	{

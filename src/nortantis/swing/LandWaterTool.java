@@ -1391,7 +1391,8 @@ public class LandWaterTool extends EditorTool
 
 				if (!riverSegmentsToRemove.isEmpty())
 				{
-					Set<Center> centersToRedraw = getCentersTouchingPoints(riverSegmentsToRemove);
+					Set<Center> centersToRedraw = getCentersTouchingPoints(
+							pointsToCoverInRedrawAfterPathCut(mainWindow.edits.rivers, r -> r.nodes, riverSegmentsToRemove));
 					if (!centersToRedraw.isEmpty())
 					{
 						updater.createAndShowMapIncrementalUsingCenters(centersToRedraw);
@@ -1409,7 +1410,8 @@ public class LandWaterTool extends EditorTool
 				List<Road> changed = RoadDrawer.removeSegmentsAndSplitRoads(mainWindow.edits.roads, roadSegmentsToRemove);
 				RoadDrawer.removeEmptyOrSinglePointRoads(mainWindow.edits.roads);
 				mapEditingPanel.clearHighlightedPolylines();
-				updater.createAndShowMapIncrementalUsingCenters(getCentersTouchingPoints(roadSegmentsToRemove));
+				updater.createAndShowMapIncrementalUsingCenters(
+						getCentersTouchingPoints(pointsToCoverInRedrawAfterPathCut(mainWindow.edits.roads, r -> r.nodes, roadSegmentsToRemove)));
 				updater.addRoadsToRedrawLowPriority(changed, mainWindow.displayQualityScale);
 			}
 		}
@@ -1436,6 +1438,30 @@ public class LandWaterTool extends EditorTool
 			}
 		}
 		return result;
+	}
+
+	/**
+	 * Bundles the removed-segment endpoint points together with the "inner neighbor" points needed to fully cover any new end segments
+	 * created by the cut. See {@link PathOperations#findInnerNeighborsOfCutEndpoints} for why the extra points are required to prevent
+	 * tearing at the incremental update boundary. Works for both rivers and roads via the {@code nodeAccessor} projection.
+	 */
+	private static <T> List<List<Point>> pointsToCoverInRedrawAfterPathCut(List<T> pathsAfterCut, java.util.function.Function<T, ? extends List<? extends PathNode>> nodeAccessor,
+			List<List<Point>> removedSegments)
+	{
+		List<List<? extends PathNode>> nodeLists = new ArrayList<>(pathsAfterCut.size());
+		for (T path : pathsAfterCut)
+		{
+			nodeLists.add(nodeAccessor.apply(path));
+		}
+		List<Point> innerNeighbors = PathOperations.findInnerNeighborsOfCutEndpoints(nodeLists, removedSegments);
+		if (innerNeighbors.isEmpty())
+		{
+			return removedSegments;
+		}
+		List<List<Point>> combined = new ArrayList<>(removedSegments.size() + 1);
+		combined.addAll(removedSegments);
+		combined.add(innerNeighbors);
+		return combined;
 	}
 
 	private final int singlePointRoadSelectionRadiusBeforeZoomAndScale = 10;
@@ -1642,7 +1668,7 @@ public class LandWaterTool extends EditorTool
 		RiverDrawer.removeEmptyOrShortRivers(mainWindow.edits.rivers);
 
 		// Redraw centers on the land side of removed segments too, so the river pixels there get cleared.
-		Set<Center> centersToRedraw = getCentersTouchingPoints(segmentsToRemove);
+		Set<Center> centersToRedraw = getCentersTouchingPoints(pointsToCoverInRedrawAfterPathCut(mainWindow.edits.rivers, r -> r.nodes, segmentsToRemove));
 		if (!centersToRedraw.isEmpty())
 		{
 			updater.createAndShowMapIncrementalUsingCenters(centersToRedraw);
