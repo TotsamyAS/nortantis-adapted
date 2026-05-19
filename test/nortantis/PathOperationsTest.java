@@ -379,4 +379,170 @@ public class PathOperationsTest
 		assertNotNull(result);
 		assertSame(result.get(0), path.get(0));
 	}
+
+	@Test
+	public void catmullRomPropagationRadius_isTwo()
+	{
+		// A change to a single uniform Catmull-Rom control point can shift the curve shape on at most the four segments whose endpoints
+		// lie within 2 CPs of the edit. If this constant ever changes, the redraw scoping in LandWaterTool needs to be re-derived.
+		assertEquals(2, PathOperations.CATMULL_ROM_PROPAGATION_RADIUS);
+	}
+
+	@Test
+	public void nodeLocationsAround_centeredSliceFullyInsidePath()
+	{
+		Point p0 = new Point(0, 0);
+		Point p1 = new Point(1, 0);
+		Point p2 = new Point(2, 0);
+		Point p3 = new Point(3, 0);
+		Point p4 = new Point(4, 0);
+		Point p5 = new Point(5, 0);
+		Point p6 = new Point(6, 0);
+		List<RoadPathNode> path = road(p0, p1, p2, p3, p4, p5, p6);
+
+		List<Point> result = PathOperations.nodeLocationsAround(path, 3, 2);
+
+		assertEquals(Arrays.asList(p1, p2, p3, p4, p5), result);
+	}
+
+	@Test
+	public void nodeLocationsAround_clampsAtStart()
+	{
+		Point p0 = new Point(0, 0);
+		Point p1 = new Point(1, 0);
+		Point p2 = new Point(2, 0);
+		Point p3 = new Point(3, 0);
+		List<RoadPathNode> path = road(p0, p1, p2, p3);
+
+		// Index 0 with radius 2: the window is [-2, 2] which clamps to [0, 2].
+		List<Point> result = PathOperations.nodeLocationsAround(path, 0, 2);
+
+		assertEquals(Arrays.asList(p0, p1, p2), result);
+	}
+
+	@Test
+	public void nodeLocationsAround_clampsAtEnd()
+	{
+		Point p0 = new Point(0, 0);
+		Point p1 = new Point(1, 0);
+		Point p2 = new Point(2, 0);
+		Point p3 = new Point(3, 0);
+		List<RoadPathNode> path = road(p0, p1, p2, p3);
+
+		// Last index (3) with radius 2: the window is [1, 5] which clamps to [1, 3].
+		List<Point> result = PathOperations.nodeLocationsAround(path, 3, 2);
+
+		assertEquals(Arrays.asList(p1, p2, p3), result);
+	}
+
+	@Test
+	public void nodeLocationsAround_radiusZeroReturnsSingleNode()
+	{
+		Point p0 = new Point(0, 0);
+		Point p1 = new Point(1, 0);
+		Point p2 = new Point(2, 0);
+		List<RoadPathNode> path = road(p0, p1, p2);
+
+		assertEquals(Collections.singletonList(p1), PathOperations.nodeLocationsAround(path, 1, 0));
+	}
+
+	@Test
+	public void nodeLocationsAround_radiusLargerThanPathReturnsWholePath()
+	{
+		Point p0 = new Point(0, 0);
+		Point p1 = new Point(1, 0);
+		Point p2 = new Point(2, 0);
+		List<RoadPathNode> path = road(p0, p1, p2);
+
+		// Radius 5 around index 1 in a 3-node path should fully clamp to the entire path.
+		assertEquals(Arrays.asList(p0, p1, p2), PathOperations.nodeLocationsAround(path, 1, 5));
+	}
+
+	@Test
+	public void nodeLocationsAround_indexOutOfRangeStillClampsToOverlap()
+	{
+		Point p0 = new Point(0, 0);
+		Point p1 = new Point(1, 0);
+		Point p2 = new Point(2, 0);
+		Point p3 = new Point(3, 0);
+		List<RoadPathNode> path = road(p0, p1, p2, p3);
+
+		// Index past the end but radius reaches back into the path: window [2, 6] ∩ [0, 3] = [2, 3].
+		assertEquals(Arrays.asList(p2, p3), PathOperations.nodeLocationsAround(path, 4, 2));
+		// Index before the start but radius reaches forward into the path: window [-3, 1] ∩ [0, 3] = [0, 1].
+		assertEquals(Arrays.asList(p0, p1), PathOperations.nodeLocationsAround(path, -1, 2));
+	}
+
+	@Test
+	public void nodeLocationsAround_indexFarOutsidePathReturnsEmpty()
+	{
+		Point p0 = new Point(0, 0);
+		Point p1 = new Point(1, 0);
+		List<RoadPathNode> path = road(p0, p1);
+
+		// Window [8, 12] doesn't overlap [0, 1].
+		assertTrue(PathOperations.nodeLocationsAround(path, 10, 2).isEmpty());
+		// Window [-12, -8] doesn't overlap [0, 1] either.
+		assertTrue(PathOperations.nodeLocationsAround(path, -10, 2).isEmpty());
+	}
+
+	@Test
+	public void nodeLocationsAround_emptyAndNullPathsReturnEmpty()
+	{
+		assertTrue(PathOperations.nodeLocationsAround(null, 0, 2).isEmpty());
+		assertTrue(PathOperations.nodeLocationsAround(Collections.<RoadPathNode>emptyList(), 0, 2).isEmpty());
+	}
+
+	@Test
+	public void pointsAround_centeredSliceFullyInsidePath()
+	{
+		Point p0 = new Point(0, 0);
+		Point p1 = new Point(1, 0);
+		Point p2 = new Point(2, 0);
+		Point p3 = new Point(3, 0);
+		Point p4 = new Point(4, 0);
+		Point p5 = new Point(5, 0);
+		List<Point> points = Arrays.asList(p0, p1, p2, p3, p4, p5);
+
+		assertEquals(Arrays.asList(p1, p2, p3, p4, p5), PathOperations.pointsAround(points, 3, 2));
+	}
+
+	@Test
+	public void pointsAround_clampsAtBothEnds()
+	{
+		Point p0 = new Point(0, 0);
+		Point p1 = new Point(1, 0);
+		Point p2 = new Point(2, 0);
+		List<Point> points = Arrays.asList(p0, p1, p2);
+
+		assertEquals(Arrays.asList(p0, p1, p2), PathOperations.pointsAround(points, 0, 5));
+		assertEquals(Arrays.asList(p0, p1, p2), PathOperations.pointsAround(points, 2, 5));
+	}
+
+	@Test
+	public void pointsAround_emptyAndNullReturnEmpty()
+	{
+		assertTrue(PathOperations.pointsAround(null, 0, 2).isEmpty());
+		assertTrue(PathOperations.pointsAround(Collections.<Point>emptyList(), 0, 2).isEmpty());
+	}
+
+	@Test
+	public void pointsAround_andNodeLocationsAround_agreeForSamePath()
+	{
+		// The two overloads serve the same purpose; they should produce identical slices for the same logical path and index.
+		Point p0 = new Point(0, 0);
+		Point p1 = new Point(1, 0);
+		Point p2 = new Point(2, 0);
+		Point p3 = new Point(3, 0);
+		Point p4 = new Point(4, 0);
+		List<RoadPathNode> nodes = road(p0, p1, p2, p3, p4);
+		List<Point> points = PathOperations.toLocationList(nodes);
+
+		for (int idx = -1; idx <= nodes.size(); idx++)
+		{
+			assertEquals(PathOperations.nodeLocationsAround(nodes, idx, PathOperations.CATMULL_ROM_PROPAGATION_RADIUS),
+					PathOperations.pointsAround(points, idx, PathOperations.CATMULL_ROM_PROPAGATION_RADIUS),
+					"slices differ at index " + idx);
+		}
+	}
 }

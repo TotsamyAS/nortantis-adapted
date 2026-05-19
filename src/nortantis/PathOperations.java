@@ -327,6 +327,64 @@ public final class PathOperations
 		return result;
 	}
 
+	/**
+	 * Catmull-Rom propagation radius: a single control-point move/insert/delete in a uniform Catmull-Rom spline changes the curve shape on
+	 * at most the 4 segments whose endpoints lie within 2 control-point steps of the edit (the moved CP is referenced as a tangent by
+	 * segments up to 2 steps away). Callers use this when scoping incremental redraws to "the affected segments and their immediate
+	 * neighbors".
+	 */
+	public static final int CATMULL_ROM_PROPAGATION_RADIUS = 2;
+
+	/**
+	 * Returns up to {@code 2*radius+1} node locations from {@code path}, centered on {@code centerIndex} and clamped to the path's bounds.
+	 * Returns an empty list for null/empty paths or when the clamped range is empty.
+	 *
+	 * <p>For incremental-redraw bounds covering one control-point edit, pass {@link #CATMULL_ROM_PROPAGATION_RADIUS} as {@code radius}.
+	 */
+	public static List<Point> nodeLocationsAround(List<? extends PathNode> path, int centerIndex, int radius)
+	{
+		if (path == null || path.isEmpty())
+		{
+			return Collections.emptyList();
+		}
+		int from = Math.max(0, centerIndex - radius);
+		int to = Math.min(path.size() - 1, centerIndex + radius);
+		if (from > to)
+		{
+			return Collections.emptyList();
+		}
+		List<Point> result = new ArrayList<>(to - from + 1);
+		for (int i = from; i <= to; i++)
+		{
+			result.add(path.get(i).getLoc());
+		}
+		return result;
+	}
+
+	/**
+	 * Same as {@link #nodeLocationsAround} but operates on a list of already-extracted point locations (e.g. a pre-edit snapshot captured
+	 * via {@link #toLocationList}).
+	 */
+	public static List<Point> pointsAround(List<Point> points, int centerIndex, int radius)
+	{
+		if (points == null || points.isEmpty())
+		{
+			return Collections.emptyList();
+		}
+		int from = Math.max(0, centerIndex - radius);
+		int to = Math.min(points.size() - 1, centerIndex + radius);
+		if (from > to)
+		{
+			return Collections.emptyList();
+		}
+		List<Point> result = new ArrayList<>(to - from + 1);
+		for (int i = from; i <= to; i++)
+		{
+			result.add(points.get(i));
+		}
+		return result;
+	}
+
 	/** Deduplicates consecutive nodes whose locations are {@link Point#isCloseEnough}. */
 	public static <T extends PathNode> List<T> deduplicateConsecutive(List<T> path)
 	{

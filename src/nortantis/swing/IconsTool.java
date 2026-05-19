@@ -2081,26 +2081,37 @@ public class IconsTool extends EditorTool
 			return;
 		}
 
+		// If the right-click landed inside the visible multi-icon selection bounding box, always act on the existing selection rather than
+		// switching to whatever icon happens to be under the cursor. The bounding box doesn't visually distinguish which icons inside it
+		// are selected vs. not, so swapping the selection here would surprise the user.
+		//
+		// Exception: when the modifier key is held, the per-icon highlight overlay replaces the box visually and the user is in
+		// "extend/modify selection" mode — they expect per-icon behavior, matching what Ctrl + left-click does.
+		boolean insideSelectionBox = !SwingHelper.isCommandKeyDown(e) && mapEditingPanel.isPointInsideMultiIconSelectionBox(e.getPoint());
+
 		// If the user right-clicks on an icon that isn't currently selected, treat the right-click
 		// as a selecting click first so the context menu acts on the icon the user pointed at. Holding
 		// the command key extends the existing selection (matches left-click extend semantics).
-		List<FreeIcon> underCursor = getSelectedIcons(e.getPoint());
-		if (underCursor != null && !underCursor.isEmpty())
+		if (!insideSelectionBox)
 		{
-			boolean alreadySelected = iconsToEdit != null && !iconsToEdit.isEmpty() && iconsToEdit.containsAll(underCursor);
-			if (!alreadySelected)
+			List<FreeIcon> underCursor = getSelectedIcons(e.getPoint());
+			if (underCursor != null && !underCursor.isEmpty())
 			{
-				if (iconsToEdit == null)
+				boolean alreadySelected = iconsToEdit != null && !iconsToEdit.isEmpty() && iconsToEdit.containsAll(underCursor);
+				if (!alreadySelected)
 				{
-					iconsToEdit = new HashSet<>();
+					if (iconsToEdit == null)
+					{
+						iconsToEdit = new HashSet<>();
+					}
+					if (!SwingHelper.isCommandKeyDown(e))
+					{
+						iconsToEdit.clear();
+					}
+					iconsToEdit.addAll(underCursor);
+					handleIconSelectionChange(true);
+					mapEditingPanel.repaint();
 				}
-				if (!SwingHelper.isCommandKeyDown(e))
-				{
-					iconsToEdit.clear();
-				}
-				iconsToEdit.addAll(underCursor);
-				handleIconSelectionChange(true);
-				mapEditingPanel.repaint();
 			}
 		}
 

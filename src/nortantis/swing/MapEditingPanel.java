@@ -1142,6 +1142,26 @@ public class MapEditingPanel extends UnscaledImagePanel
 	}
 
 	/**
+	 * Returns true if the given screen point falls inside the multi-icon selection bounding box currently drawn around the icons being
+	 * edited. Returns false when no such box is visible (e.g. nothing selected, or a single icon is selected — that case shows a small
+	 * tool overlay rather than a group bounding box).
+	 */
+	public boolean isPointInsideMultiIconSelectionBox(java.awt.Point screenPoint)
+	{
+		if (iconToEditBounds == null || !showEditBox)
+		{
+			return false;
+		}
+		// The bounding box rectangle is only actually drawn when more than one icon is highlighted (see drawIconEditBox).
+		if (highlightedAreas == null || highlightedAreas.size() == 1)
+		{
+			return false;
+		}
+		nortantis.geom.Point riPoint = screenToRI(screenPoint);
+		return iconToEditBounds.contains(riPoint.x, riPoint.y);
+	}
+
+	/**
 	 * Enables selection box mode. The listener is called whenever the selection box is created or modified by the user.
 	 */
 	public void enableSelectionBox(Runnable onChange)

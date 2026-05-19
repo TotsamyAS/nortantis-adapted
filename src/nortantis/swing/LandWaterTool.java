@@ -1441,6 +1441,44 @@ public class LandWaterTool extends EditorTool
 	}
 
 	/**
+	 * Appends a {@link PathOperations#CATMULL_ROM_PROPAGATION_RADIUS}-clipped slice of node locations to {@code sink}, one slice per
+	 * supplied {@code changedIndex}. Used to scope incremental redraws to "the segments whose Catmull-Rom curve shape can change as a
+	 * result of a control-point edit", instead of redrawing every center under the entire path.
+	 */
+	private static void appendControlPointEditScope(List<List<Point>> sink, List<? extends PathNode> path, int... changedIndices)
+	{
+		if (path == null || path.isEmpty())
+		{
+			return;
+		}
+		for (int idx : changedIndices)
+		{
+			List<Point> slice = PathOperations.nodeLocationsAround(path, idx, PathOperations.CATMULL_ROM_PROPAGATION_RADIUS);
+			if (!slice.isEmpty())
+			{
+				sink.add(slice);
+			}
+		}
+	}
+
+	/** Same as {@link #appendControlPointEditScope} but takes a pre-extracted snapshot of point locations (e.g. a drag's before-path). */
+	private static void appendControlPointEditScopeFromSnapshot(List<List<Point>> sink, List<Point> snapshot, int... changedIndices)
+	{
+		if (snapshot == null || snapshot.isEmpty())
+		{
+			return;
+		}
+		for (int idx : changedIndices)
+		{
+			List<Point> slice = PathOperations.pointsAround(snapshot, idx, PathOperations.CATMULL_ROM_PROPAGATION_RADIUS);
+			if (!slice.isEmpty())
+			{
+				sink.add(slice);
+			}
+		}
+	}
+
+	/**
 	 * Bundles the removed-segment endpoint points together with the "inner neighbor" points needed to fully cover any new end segments
 	 * created by the cut. See {@link PathOperations#findInnerNeighborsOfCutEndpoints} for why the extra points are required to prevent
 	 * tearing at the incremental update boundary. Works for both rivers and roads via the {@code nodeAccessor} projection.
@@ -2071,6 +2109,9 @@ public class LandWaterTool extends EditorTool
 	{
 		dragOccurred = true;
 		Point newLocRI = getPointOnGraph(e.getPoint()).mult(1.0 / mainWindow.displayQualityScale);
+		// Only the segments adjacent to the moved CP (within Catmull-Rom propagation range) need redrawing; long paths used to redraw end
+		// to end on every drag tick, which made manipulating long roads or rivers chug. The unaffected portions of the road's dashed
+		// pattern are caught later by the low-priority redraw queued in handleEditModeControlPointDragEnd.
 		List<List<Point>> centersTouched = new ArrayList<>();
 		if (dragRiver != null)
 		{
@@ -2080,10 +2121,10 @@ public class LandWaterTool extends EditorTool
 			{
 				return;
 			}
-			centersTouched.add(PathOperations.toLocationList(nodes));
+			appendControlPointEditScope(centersTouched, nodes, idx);
 			moveRiverControlPointTo(nodes, idx, newLocRI);
 			dragRiver.nodes = new java.util.concurrent.CopyOnWriteArrayList<>(nodes);
-			centersTouched.add(PathOperations.toLocationList(nodes));
+			appendControlPointEditScope(centersTouched, nodes, idx);
 			// Move every shared CP in lockstep so joined Y-shape rivers stay joined.
 			if (dragSharedRivers != null)
 			{
@@ -2095,10 +2136,10 @@ public class LandWaterTool extends EditorTool
 					{
 						continue;
 					}
-					centersTouched.add(PathOperations.toLocationList(sharedNodes));
+					appendControlPointEditScope(centersTouched, sharedNodes, sharedIdx);
 					moveRiverControlPointTo(sharedNodes, sharedIdx, newLocRI);
 					share.river().nodes = new java.util.concurrent.CopyOnWriteArrayList<>(sharedNodes);
-					centersTouched.add(PathOperations.toLocationList(sharedNodes));
+					appendControlPointEditScope(centersTouched, sharedNodes, sharedIdx);
 				}
 			}
 		}
@@ -2110,10 +2151,10 @@ public class LandWaterTool extends EditorTool
 			{
 				return;
 			}
-			centersTouched.add(PathOperations.toLocationList(nodes));
+			appendControlPointEditScope(centersTouched, nodes, idx);
 			nodes.set(idx, new RoadPathNode(newLocRI));
 			dragRoad.nodes = new java.util.concurrent.CopyOnWriteArrayList<>(nodes);
-			centersTouched.add(PathOperations.toLocationList(nodes));
+			appendControlPointEditScope(centersTouched, nodes, idx);
 			if (dragSharedRoads != null)
 			{
 				for (RoadDragShare share : dragSharedRoads)
@@ -2124,10 +2165,10 @@ public class LandWaterTool extends EditorTool
 					{
 						continue;
 					}
-					centersTouched.add(PathOperations.toLocationList(sharedNodes));
+					appendControlPointEditScope(centersTouched, sharedNodes, sharedIdx);
 					sharedNodes.set(sharedIdx, new RoadPathNode(newLocRI));
 					share.road().nodes = new java.util.concurrent.CopyOnWriteArrayList<>(sharedNodes);
-					centersTouched.add(PathOperations.toLocationList(sharedNodes));
+					appendControlPointEditScope(centersTouched, sharedNodes, sharedIdx);
 				}
 			}
 		}
@@ -2168,37 +2209,37 @@ public class LandWaterTool extends EditorTool
 	 */
 	private void handleEditModeControlPointDragEnd(List<Point> beforePath)
 	{
+		// Same scoping rationale as handleEditModeControlPointDrag: only the segments within Catmull-Rom propagation range of the moved
+		// control point need a normal-priority redraw. For roads, the rest of the line is picked up by the low-priority queue below so
+		// the dashed pattern is rephased across the whole line.
 		List<List<Point>> centerPaths = new ArrayList<>();
-		if (beforePath != null)
-		{
-			centerPaths.add(beforePath);
-		}
+		int draggedIdx = dragControlPointIndex;
+		appendControlPointEditScopeFromSnapshot(centerPaths, beforePath, draggedIdx);
 		if (dragRiver != null)
 		{
-			centerPaths.add(PathOperations.toLocationList(dragRiver.nodes));
+			appendControlPointEditScope(centerPaths, dragRiver.nodes, draggedIdx);
 			if (dragSharedRivers != null)
 			{
 				for (RiverDragShare share : dragSharedRivers)
 				{
-					centerPaths.add(share.snapshot());
-					centerPaths.add(PathOperations.toLocationList(share.river().nodes));
+					appendControlPointEditScopeFromSnapshot(centerPaths, share.snapshot(), share.cpIndex());
+					appendControlPointEditScope(centerPaths, share.river().nodes, share.cpIndex());
 				}
 			}
 		}
 		else if (dragRoad != null)
 		{
-			centerPaths.add(PathOperations.toLocationList(dragRoad.nodes));
+			appendControlPointEditScope(centerPaths, dragRoad.nodes, draggedIdx);
 			// Queue a low-priority redraw of the entire road so the dotted pattern is recomputed across
-			// any centers the drag pulled the road onto but that aren't a node location. The drag itself
-			// already redrew (per-tick) the centers under the before+after node locations, so this catches
-			// the long-haul centers along the unchanged portions of the road.
+			// any centers the drag pulled the road onto but that aren't covered by the eager scope. The eager pass above only redrew
+			// centers near the moved control point; this catches the long-haul centers along the unchanged portions of the road.
 			updater.addRoadsToRedrawLowPriority(Collections.singletonList(dragRoad), mainWindow.displayQualityScale);
 			if (dragSharedRoads != null)
 			{
 				for (RoadDragShare share : dragSharedRoads)
 				{
-					centerPaths.add(share.snapshot());
-					centerPaths.add(PathOperations.toLocationList(share.road().nodes));
+					appendControlPointEditScopeFromSnapshot(centerPaths, share.snapshot(), share.cpIndex());
+					appendControlPointEditScope(centerPaths, share.road().nodes, share.cpIndex());
 					updater.addRoadsToRedrawLowPriority(Collections.singletonList(share.road()), mainWindow.displayQualityScale);
 				}
 			}
@@ -2341,7 +2382,10 @@ public class LandWaterTool extends EditorTool
 			}
 			nodes.remove(idx);
 			adjustStickyAfterControlPointDelete(line, null, idx, nodes.size());
-			commitRiverEdit(line, beforePath, nodes);
+			// After delete: the post-delete index closest to where the change happened is min(idx, lastIndex). The redraw slice around
+			// it (radius = CATMULL_ROM_PROPAGATION_RADIUS) covers the new bridging segment plus its tangent-reference neighbors.
+			int afterIdx = Math.max(0, Math.min(idx, nodes.size() - 1));
+			commitRiverEdit(line, beforePath, nodes, idx, afterIdx);
 		}
 		else if (hit.road() != null)
 		{
@@ -2354,7 +2398,8 @@ public class LandWaterTool extends EditorTool
 			List<Point> beforePath = PathOperations.toLocationList(nodes);
 			nodes.remove(idx);
 			adjustStickyAfterControlPointDelete(null, line, idx, nodes.size());
-			commitRoadEdit(line, beforePath, nodes);
+			int afterIdx = Math.max(0, Math.min(idx, nodes.size() - 1));
+			commitRoadEdit(line, beforePath, nodes, idx, afterIdx);
 		}
 	}
 
@@ -2375,7 +2420,6 @@ public class LandWaterTool extends EditorTool
 			{
 				return;
 			}
-			List<Point> beforePath = PathOperations.toLocationList(nodes);
 			List<RiverPathNode> firstHalf = new ArrayList<>(nodes.subList(0, idx + 1));
 			List<RiverPathNode> secondHalf = new ArrayList<>(nodes.subList(idx + 1, nodes.size()));
 			// The last node of the first half no longer has an outgoing segment; clear its "to-next"
@@ -2403,7 +2447,8 @@ public class LandWaterTool extends EditorTool
 				changed.add(newRiver);
 			}
 			adjustStickyAfterRiverSegmentDelete(line, newRiver, idx, firstHalf.size());
-			commitRiverPostEdit(beforePath, changed);
+			List<List<Point>> removedSegments = Collections.singletonList(Arrays.asList(nodes.get(idx).getLoc(), nodes.get(idx + 1).getLoc()));
+			commitRiverCut(removedSegments);
 		}
 		else if (hit.road() != null)
 		{
@@ -2413,7 +2458,6 @@ public class LandWaterTool extends EditorTool
 			{
 				return;
 			}
-			List<Point> beforePath = PathOperations.toLocationList(nodes);
 			List<RoadPathNode> firstHalf = new ArrayList<>(nodes.subList(0, idx + 1));
 			List<RoadPathNode> secondHalf = new ArrayList<>(nodes.subList(idx + 1, nodes.size()));
 			List<Road> changed = new ArrayList<>();
@@ -2434,7 +2478,8 @@ public class LandWaterTool extends EditorTool
 				changed.add(newRoad);
 			}
 			adjustStickyAfterRoadSegmentDelete(line, newRoad, idx, firstHalf.size());
-			commitRoadPostEdit(beforePath, changed);
+			List<List<Point>> removedSegments = Collections.singletonList(Arrays.asList(nodes.get(idx).getLoc(), nodes.get(idx + 1).getLoc()));
+			commitRoadCut(removedSegments, changed);
 		}
 	}
 
@@ -2466,7 +2511,10 @@ public class LandWaterTool extends EditorTool
 			RiverPathNode newNode = new RiverPathNode(clickRI, width, random.nextLong(), RiverPathNode.EDGE_INDEX_NONE);
 			nodes.add(idx + 1, newNode);
 			adjustStickyAfterControlPointInsert(line, null, idx);
-			commitRiverEdit(line, beforePath, nodes);
+			// The split segment ran from idx to idx+1 in beforePath; the new node lands at idx+1 in the post-insert path. Slicing
+			// around those indices (radius = CATMULL_ROM_PROPAGATION_RADIUS) covers every segment whose tangent-reference position
+			// shifted because of the insert.
+			commitRiverEdit(line, beforePath, nodes, idx, idx + 1);
 		}
 		else if (hit.road() != null)
 		{
@@ -2479,7 +2527,7 @@ public class LandWaterTool extends EditorTool
 			List<Point> beforePath = PathOperations.toLocationList(nodes);
 			nodes.add(idx + 1, new RoadPathNode(clickRI));
 			adjustStickyAfterControlPointInsert(null, line, idx);
-			commitRoadEdit(line, beforePath, nodes);
+			commitRoadEdit(line, beforePath, nodes, idx, idx + 1);
 		}
 	}
 
@@ -2644,10 +2692,16 @@ public class LandWaterTool extends EditorTool
 		// K <= splitSegmentIdx: unchanged (the first half keeps the same index as the original segment).
 	}
 
-	/** Commits a modified river's node list in place and triggers the redraw + undo, preserving sticky selection. */
-	private void commitRiverEdit(River line, List<Point> beforePath, List<RiverPathNode> newNodes)
+	/**
+	 * Commits a modified river's node list in place and triggers a redraw scoped to the segments affected by changing a single control
+	 * point. Pass the deleted/inserted/moved index in {@code beforeChangedIndex} (relative to {@code beforePath}) and the corresponding
+	 * index in the new node list in {@code afterChangedIndex}. The slice radius is {@link PathOperations#CATMULL_ROM_PROPAGATION_RADIUS}
+	 * so the visible curve-shape change is fully covered. Preserves sticky selection.
+	 */
+	private void commitRiverEdit(River line, List<Point> beforePath, List<RiverPathNode> newNodes, int beforeChangedIndex, int afterChangedIndex)
 	{
-		if (newNodes.size() < 2)
+		boolean removed = newNodes.size() < 2;
+		if (removed)
 		{
 			mainWindow.edits.rivers.remove(line);
 			if (stickyRiver == line)
@@ -2659,28 +2713,41 @@ public class LandWaterTool extends EditorTool
 		{
 			line.nodes = new java.util.concurrent.CopyOnWriteArrayList<>(newNodes);
 		}
-		List<River> changed = newNodes.size() >= 2 ? Collections.singletonList(line) : Collections.emptyList();
-		commitRiverPostEdit(beforePath, changed);
+		List<List<Point>> centerPaths = new ArrayList<>();
+		appendControlPointEditScopeFromSnapshot(centerPaths, beforePath, beforeChangedIndex);
+		if (!removed)
+		{
+			appendControlPointEditScope(centerPaths, line.nodes, afterChangedIndex);
+		}
+		finishRiverPostEdit(getCentersTouchingPoints(centerPaths));
 	}
 
-	private void commitRiverPostEdit(List<Point> beforePath, List<River> changed)
+	/**
+	 * Used by the segment-delete (cut) path: redraws the removed-segment area plus the inner neighbors of the new end segments. See
+	 * {@link PathOperations#findInnerNeighborsOfCutEndpoints} for why the inner neighbors are required (Catmull-Rom end segments use a
+	 * synthetic reflection control point, so the curve shape on the new end segments changes and the redraw bounds must cover them).
+	 */
+	private void commitRiverCut(List<List<Point>> removedSegments)
 	{
-		List<List<Point>> centerPaths = new ArrayList<>();
-		centerPaths.add(beforePath);
-		for (River r : changed)
-		{
-			centerPaths.add(PathOperations.toLocationList(r.nodes));
-		}
+		Set<Center> centersToRedraw = getCentersTouchingPoints(
+				pointsToCoverInRedrawAfterPathCut(mainWindow.edits.rivers, r -> r.nodes, removedSegments));
+		finishRiverPostEdit(centersToRedraw);
+	}
+
+	private void finishRiverPostEdit(Set<Center> centersToRedraw)
+	{
 		undoer.setUndoPoint(UpdateType.Incremental, this);
-		updater.createAndShowMapIncrementalUsingCenters(getCentersTouchingPoints(centerPaths));
+		updater.createAndShowMapIncrementalUsingCenters(centersToRedraw);
 		mapEditingPanel.clearHighlightedPolylines();
 		applyStickySegmentHighlight();
 		mapEditingPanel.repaint();
 	}
 
-	private void commitRoadEdit(Road line, List<Point> beforePath, List<RoadPathNode> newNodes)
+	/** Road counterpart of {@link #commitRiverEdit}. */
+	private void commitRoadEdit(Road line, List<Point> beforePath, List<RoadPathNode> newNodes, int beforeChangedIndex, int afterChangedIndex)
 	{
-		if (newNodes.size() < 2)
+		boolean removed = newNodes.size() < 2;
+		if (removed)
 		{
 			mainWindow.edits.roads.remove(line);
 			if (stickyRoad == line)
@@ -2692,24 +2759,32 @@ public class LandWaterTool extends EditorTool
 		{
 			line.nodes = new java.util.concurrent.CopyOnWriteArrayList<>(newNodes);
 		}
-		List<Road> changed = newNodes.size() >= 2 ? Collections.singletonList(line) : Collections.emptyList();
-		commitRoadPostEdit(beforePath, changed);
+		List<List<Point>> centerPaths = new ArrayList<>();
+		appendControlPointEditScopeFromSnapshot(centerPaths, beforePath, beforeChangedIndex);
+		List<Road> changed = removed ? Collections.emptyList() : Collections.singletonList(line);
+		if (!removed)
+		{
+			appendControlPointEditScope(centerPaths, line.nodes, afterChangedIndex);
+		}
+		finishRoadPostEdit(getCentersTouchingPoints(centerPaths), changed);
 	}
 
-	private void commitRoadPostEdit(List<Point> beforePath, List<Road> changed)
+	/** Road counterpart of {@link #commitRiverCut}. */
+	private void commitRoadCut(List<List<Point>> removedSegments, List<Road> changed)
 	{
-		List<List<Point>> centerPaths = new ArrayList<>();
-		centerPaths.add(beforePath);
-		for (Road r : changed)
-		{
-			centerPaths.add(PathOperations.toLocationList(r.nodes));
-		}
+		Set<Center> centersToRedraw = getCentersTouchingPoints(
+				pointsToCoverInRedrawAfterPathCut(mainWindow.edits.roads, r -> r.nodes, removedSegments));
+		finishRoadPostEdit(centersToRedraw, changed);
+	}
+
+	private void finishRoadPostEdit(Set<Center> centersToRedraw, List<Road> changed)
+	{
 		undoer.setUndoPoint(UpdateType.Incremental, this);
 		if (!changed.isEmpty())
 		{
 			updater.addRoadsToRedrawLowPriority(changed, mainWindow.displayQualityScale);
 		}
-		updater.createAndShowMapIncrementalUsingCenters(getCentersTouchingPoints(centerPaths));
+		updater.createAndShowMapIncrementalUsingCenters(centersToRedraw);
 		updater.doWhenMapIsNotDrawing(() -> updater.createAndShowLowPriorityChanges());
 		mapEditingPanel.clearHighlightedPolylines();
 		applyStickySegmentHighlight();
