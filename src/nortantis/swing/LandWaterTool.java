@@ -523,6 +523,20 @@ public class LandWaterTool extends EditorTool
 		return mapEditingPanel.getRoadControlPointHitRadiusInGraphPixels() / mainWindow.displayQualityScale;
 	}
 
+	/**
+	 * Distance threshold (in graph pixels) for showing the hover highlight on a river/road. The right-click context-menu hit-test uses
+	 * the same threshold so the menu becomes available exactly when the line is visually highlighted.
+	 */
+	private double getHoverHighlightThresholdInGraphPixels()
+	{
+		return updater.mapParts.graph.getMeanCenterWidth();
+	}
+
+	private double getHoverHighlightThresholdInRI()
+	{
+		return getHoverHighlightThresholdInGraphPixels() / mainWindow.displayQualityScale;
+	}
+
 	private Point computeSnapPointForType(java.awt.Point mouseLocation, LineType type)
 	{
 		if (updater.mapParts == null)
@@ -579,7 +593,7 @@ public class LandWaterTool extends EditorTool
 
 		List<Point> circlesGraphPixels = new ArrayList<>();
 		Point mouseRI = mouseLocation != null ? getPointOnGraph(mouseLocation).mult(1.0 / mainWindow.displayQualityScale) : null;
-		double highlightThresholdRI = updater.mapParts.graph.getMeanCenterWidth() / mainWindow.displayQualityScale;
+		double highlightThresholdRI = getHoverHighlightThresholdInRI();
 		for (List<Point> path : getAllLinePaths(type))
 		{
 			if (mouseRI != null && isPathNearPoint(path, mouseRI, highlightThresholdRI))
@@ -775,17 +789,13 @@ public class LandWaterTool extends EditorTool
 	}
 
 	/**
-	 * Hit-tests {@code panelPoint} against rivers or roads (whichever brush is active) and returns the closest control point or segment in
-	 * range, or {@code null} if nothing is close enough. Control points take precedence over segments when both are in range, since the
-	 * user is more likely to want to grab a control point. Control-point threshold matches the road control-point hit radius; segment
-	 * threshold is twice that, so thick lines are easy to grab.
-	 *
-	 * @param scopeRiver
-	 *            if non-null, only this river is considered (used in edit mode while a sticky segment is locked).
-	 * @param scopeRoad
-	 *            if non-null, only this road is considered (used in edit mode while a sticky segment is locked).
+	 * @param customSegmentThresholdGraphPixels
+	 *            When non-negative, overrides the default {@code controlPointRadius * 2.0} segment hit threshold. Used by the
+	 *            right-click context-menu hit-test, which wants to match the on-screen hover highlight range so the menu is available
+	 *            whenever the line is visually highlighted (avoiding the confusing case where the highlight is shown but right-click
+	 *            does nothing because the cursor isn't close enough to the centerline). Pass {@code -1} for the default threshold.
 	 */
-	private LineHit editModeHitTest(java.awt.Point panelPoint, LineType activeType, River scopeRiver, Road scopeRoad)
+	private LineHit editModeHitTest(java.awt.Point panelPoint, LineType activeType, River scopeRiver, Road scopeRoad, double customSegmentThresholdGraphPixels)
 	{
 		if (updater.mapParts == null || updater.mapParts.graph == null || panelPoint == null)
 		{
@@ -793,7 +803,7 @@ public class LandWaterTool extends EditorTool
 		}
 		Point clickGraph = getPointOnGraph(panelPoint);
 		double controlPointRadius = mapEditingPanel.getRoadControlPointHitRadiusInGraphPixels();
-		double segmentThreshold = controlPointRadius * 2.0;
+		double segmentThreshold = customSegmentThresholdGraphPixels >= 0 ? customSegmentThresholdGraphPixels : controlPointRadius * 2.0;
 		double scale = mainWindow.displayQualityScale;
 		// Rivers can wander away from the segment centerline by up to one full jagged amplitude —
 		// jagged lines by design, and splines because the noisy-edge curve drifts the same way.
@@ -904,15 +914,21 @@ public class LandWaterTool extends EditorTool
 	 */
 	private LineHit editModeHitTestScopedToStickyIfAny(java.awt.Point panelPoint, LineType activeType)
 	{
+		return editModeHitTestScopedToStickyIfAny(panelPoint, activeType, -1);
+	}
+
+	/** Overload that forwards a custom segment hit threshold (see {@link #editModeHitTest(java.awt.Point, LineType, River, Road, double)}). */
+	private LineHit editModeHitTestScopedToStickyIfAny(java.awt.Point panelPoint, LineType activeType, double customSegmentThresholdGraphPixels)
+	{
 		if (stickyRiver != null && activeType == LineType.RIVER)
 		{
-			return editModeHitTest(panelPoint, activeType, stickyRiver, null);
+			return editModeHitTest(panelPoint, activeType, stickyRiver, null, customSegmentThresholdGraphPixels);
 		}
 		if (stickyRoad != null && activeType == LineType.ROAD)
 		{
-			return editModeHitTest(panelPoint, activeType, null, stickyRoad);
+			return editModeHitTest(panelPoint, activeType, null, stickyRoad, customSegmentThresholdGraphPixels);
 		}
-		return editModeHitTest(panelPoint, activeType, null, null);
+		return editModeHitTest(panelPoint, activeType, null, null, customSegmentThresholdGraphPixels);
 	}
 
 	private void clearHoverState()
@@ -1009,7 +1025,7 @@ public class LandWaterTool extends EditorTool
 		}
 		else
 		{
-			double highlightThresholdRI = updater.mapParts.graph.getMeanCenterWidth() / scale;
+			double highlightThresholdRI = getHoverHighlightThresholdInRI();
 			for (List<Point> path : getAllLinePaths(type))
 			{
 				if (mouseRI != null && isPathNearPoint(path, mouseRI, highlightThresholdRI))
@@ -2297,9 +2313,12 @@ public class LandWaterTool extends EditorTool
 	private void showRiverRoadContextMenu(MouseEvent e)
 	{
 		LineType activeType = riversButton.isSelected() ? LineType.RIVER : LineType.ROAD;
+		// Use the same threshold the hover highlight uses so the menu becomes available as soon as the river/road is visually highlighted
+		// — otherwise the highlight appears before the right-click range starts, which is confusing.
+		double rightClickSegmentThreshold = getHoverHighlightThresholdInGraphPixels();
 		// While a sticky segment is locked in edit mode, the menu only targets that line.
-		final LineHit hit = modeWidget.isEditMode() ? editModeHitTestScopedToStickyIfAny(e.getPoint(), activeType)
-				: editModeHitTest(e.getPoint(), activeType, null, null);
+		final LineHit hit = modeWidget.isEditMode() ? editModeHitTestScopedToStickyIfAny(e.getPoint(), activeType, rightClickSegmentThreshold)
+				: editModeHitTest(e.getPoint(), activeType, null, null, rightClickSegmentThreshold);
 		if (hit == null)
 		{
 			return;
