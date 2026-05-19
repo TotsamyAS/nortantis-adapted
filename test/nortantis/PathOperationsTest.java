@@ -104,52 +104,89 @@ public class PathOperationsTest
 	}
 
 	@Test
-	public void splitAtLocations_noSplitPoints()
+	public void splitAtSegments_noRemovedSegmentsReturnsWholePath()
 	{
 		Point a = new Point(0, 0);
 		Point b = new Point(1, 0);
 		Point c = new Point(2, 0);
-		List<List<RoadPathNode>> result = PathOperations.splitAtLocations(road(a, b, c), new HashSet<>());
+		List<List<RoadPathNode>> result = PathOperations.splitAtSegments(road(a, b, c), new HashSet<>());
 		assertEquals(1, result.size());
 		assertEquals(Arrays.asList(a, b, c), PathOperations.toLocationList(result.get(0)));
 	}
 
 	@Test
-	public void splitAtLocations_middleSplit()
+	public void splitAtSegments_middleSegmentRemovedSplitsPath()
 	{
 		Point a = new Point(0, 0);
 		Point b = new Point(1, 0);
 		Point c = new Point(2, 0);
 		Point d = new Point(3, 0);
-		Set<Point> splits = new HashSet<>();
-		splits.add(c);
-		List<List<RoadPathNode>> result = PathOperations.splitAtLocations(road(a, b, c, d), splits);
-		// Split point c terminates the first sub-path AND starts the second (segments touching c are preserved).
-		assertEquals(2, result.size());
-		assertEquals(Arrays.asList(a, b, c), PathOperations.toLocationList(result.get(0)));
-		assertEquals(Arrays.asList(c, d), PathOperations.toLocationList(result.get(1)));
-	}
-
-	@Test
-	public void splitAtLocations_adjacentSplitPointsDropSegmentBetween()
-	{
-		Point a = new Point(0, 0);
-		Point b = new Point(1, 0);
-		Point c = new Point(2, 0);
-		Point d = new Point(3, 0);
-		Set<Point> splits = new HashSet<>(Arrays.asList(b, c));
-		List<List<RoadPathNode>> result = PathOperations.splitAtLocations(road(a, b, c, d), splits);
-		// b→c is removed (both endpoints are split points). a→b and c→d are preserved.
+		Set<OrderlessPair<Point>> removed = new HashSet<>();
+		removed.add(new OrderlessPair<>(b, c));
+		List<List<RoadPathNode>> result = PathOperations.splitAtSegments(road(a, b, c, d), removed);
+		// b→c is removed; both endpoints stay with their preserved neighbor segments.
 		assertEquals(2, result.size());
 		assertEquals(Arrays.asList(a, b), PathOperations.toLocationList(result.get(0)));
 		assertEquals(Arrays.asList(c, d), PathOperations.toLocationList(result.get(1)));
 	}
 
 	@Test
-	public void splitAtLocations_singleNodePathReturnsEmpty()
+	public void splitAtSegments_adjacentSegmentsRemovedDropDegenerateMiddle()
 	{
-		List<List<RoadPathNode>> result = PathOperations.splitAtLocations(road(new Point(0, 0)), new HashSet<>());
+		Point a = new Point(0, 0);
+		Point b = new Point(1, 0);
+		Point c = new Point(2, 0);
+		Point d = new Point(3, 0);
+		Set<OrderlessPair<Point>> removed = new HashSet<>();
+		removed.add(new OrderlessPair<>(a, b));
+		removed.add(new OrderlessPair<>(b, c));
+		List<List<RoadPathNode>> result = PathOperations.splitAtSegments(road(a, b, c, d), removed);
+		// a→b and b→c both removed — the in-between b becomes a single-node fragment and is dropped. Only c→d survives.
+		assertEquals(1, result.size());
+		assertEquals(Arrays.asList(c, d), PathOperations.toLocationList(result.get(0)));
+	}
+
+	@Test
+	public void splitAtSegments_singleNodePathReturnsEmpty()
+	{
+		List<List<RoadPathNode>> result = PathOperations.splitAtSegments(road(new Point(0, 0)), new HashSet<>());
 		assertEquals(0, result.size());
+	}
+
+	@Test
+	public void splitAtSegments_sharedJunctionLocationDoesNotSplitOtherPath()
+	{
+		// Regression: erasing a segment of one river/road must not split another river/road that merely shares an endpoint location.
+		// Repro: River A = [P0,P1,P2]; River B = [P1,Q0,Q1] branches off P1; erasing (P1,Q0) used to split River A at P1 too because
+		// splitAtLocations matched any node whose location appeared in the removed-segment endpoints.
+		Point p0 = new Point(0, 0);
+		Point p1 = new Point(1, 0);
+		Point p2 = new Point(2, 0);
+		Point q0 = new Point(1, 1);
+
+		Set<OrderlessPair<Point>> removed = new HashSet<>();
+		removed.add(new OrderlessPair<>(p1, q0));
+
+		List<List<RoadPathNode>> result = PathOperations.splitAtSegments(road(p0, p1, p2), removed);
+		assertEquals(1, result.size());
+		assertEquals(Arrays.asList(p0, p1, p2), PathOperations.toLocationList(result.get(0)));
+	}
+
+	@Test
+	public void splitAtSegments_matchesReverseDirection()
+	{
+		// Segment matching is orderless so a removed (a,b) erases the path's b→a step just as it erases a→b.
+		Point a = new Point(0, 0);
+		Point b = new Point(1, 0);
+		Point c = new Point(2, 0);
+
+		Set<OrderlessPair<Point>> removed = new HashSet<>();
+		removed.add(new OrderlessPair<>(b, a));
+
+		List<List<RoadPathNode>> result = PathOperations.splitAtSegments(road(a, b, c), removed);
+		// a→b removed; b is the new start of the surviving sub-path.
+		assertEquals(1, result.size());
+		assertEquals(Arrays.asList(b, c), PathOperations.toLocationList(result.get(0)));
 	}
 
 	@Test
@@ -265,15 +302,18 @@ public class PathOperationsTest
 	}
 
 	@Test
-	public void splitAtLocations_endpointsAreSplitPointsNoSubdivide()
+	public void splitAtSegments_segmentNotInPathLeavesPathUnchanged()
 	{
+		// A removed segment whose endpoints don't form a consecutive pair in the path has no effect.
 		Point a = new Point(0, 0);
 		Point b = new Point(1, 0);
 		Point c = new Point(2, 0);
-		Set<Point> splits = new HashSet<>(Arrays.asList(a, c));
-		List<List<RoadPathNode>> result = PathOperations.splitAtLocations(road(a, b, c), splits);
-		// Endpoint splits don't actually split — no preceding or following segment exists to cut from.
-		// Result is the original sub-path as a single piece.
+		Point d = new Point(9, 9);
+
+		Set<OrderlessPair<Point>> removed = new HashSet<>();
+		removed.add(new OrderlessPair<>(a, d));
+
+		List<List<RoadPathNode>> result = PathOperations.splitAtSegments(road(a, b, c), removed);
 		assertEquals(1, result.size());
 		assertEquals(Arrays.asList(a, b, c), PathOperations.toLocationList(result.get(0)));
 	}

@@ -68,15 +68,15 @@ public final class PathOperations
 	}
 
 	/**
-	 * Splits {@code path} at any node whose location is in {@code splitLocs}, dropping segments where both endpoints are split locations
-	 * and keeping every other adjacent segment intact. Returned sub-paths each contain at least 2 nodes.
+	 * Removes every segment in {@code removedSegments} from {@code path}, returning the remaining sub-paths (each with at least 2 nodes).
+	 * A segment matches by its unordered endpoint-location pair, so paths drawn in either direction are handled.
 	 *
 	 * <p>
-	 * Mirrors the existing road/river erase semantics: a split point ends one sub-path and starts the next, so the segments touching a
-	 * single split point are preserved on both sides; only a segment whose <em>both</em> endpoints are in {@code splitLocs} is actually
-	 * removed.
+	 * Paths that share only a node <em>location</em> with a removed segment (e.g. another river branching off a junction whose segment
+	 * happens to start at the same point as a removed segment) are returned unchanged — only paths that actually contain a matching
+	 * consecutive segment are split.
 	 */
-	public static <T extends PathNode> List<List<T>> splitAtLocations(List<T> path, Set<Point> splitLocs)
+	public static <T extends PathNode> List<List<T>> splitAtSegments(List<T> path, Set<OrderlessPair<Point>> removedSegments)
 	{
 		List<List<T>> result = new ArrayList<>();
 		if (path.size() < 2)
@@ -85,26 +85,27 @@ public final class PathOperations
 		}
 
 		List<T> current = new ArrayList<>();
-		for (int i = 0; i < path.size(); i++)
+		current.add(path.get(0));
+		for (int i = 0; i < path.size() - 1; i++)
 		{
-			T node = path.get(i);
-			current.add(node);
-			if (splitLocs.contains(node.getLoc()))
+			T from = path.get(i);
+			T to = path.get(i + 1);
+			boolean segmentRemoved = removedSegments.contains(new OrderlessPair<>(from.getLoc(), to.getLoc()));
+			if (segmentRemoved)
 			{
-				if (current.size() > 1)
+				if (current.size() >= 2)
 				{
 					result.add(current);
 				}
 				current = new ArrayList<>();
-				// Only start the next sub-path at this node if the segment leaving it is kept
-				// (i.e. the next node is not also a split point — otherwise that whole segment goes).
-				if (i + 1 < path.size() && !splitLocs.contains(path.get(i + 1).getLoc()))
-				{
-					current.add(node);
-				}
+				current.add(to);
+			}
+			else
+			{
+				current.add(to);
 			}
 		}
-		if (current.size() > 1)
+		if (current.size() >= 2)
 		{
 			result.add(current);
 		}
@@ -112,7 +113,7 @@ public final class PathOperations
 	}
 
 	/**
-	 * After {@link #splitAtLocations} has been applied (or after any other operation that cuts paths at given locations), returns the
+	 * After {@link #splitAtSegments} has been applied (or after any other operation that cuts paths at given locations), returns the
 	 * locations of the "inner neighbor" (second-from-end) nodes of any path whose endpoint location matches one of the removed segments'
 	 * endpoints. Callers that build incremental redraw bounds from the removed segments should include these locations too.
 	 *

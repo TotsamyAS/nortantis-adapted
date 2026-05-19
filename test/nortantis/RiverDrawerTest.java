@@ -216,13 +216,12 @@ public class RiverDrawerTest
 	}
 
 	@Test
-	public void removeSegmentsAndSplitRivers_thenFindInnerNeighbors_handlesJunction()
+	public void removeSegmentsAndSplitRivers_junctionRiverNotSplit()
 	{
-		// Two rivers share a junction at b. Cutting the first river's a→b segment also splits the
-		// second river at b — which exposes new end segments on each side of b in the second river.
-		// findInnerNeighborsOfCutEndpoints must walk the post-split state and report c (from the
-		// first river's new end at b) plus x and y (from the second river's two new ends at b).
-		// This guards the end-to-end River flow that feeds incremental redraw bounds in the editor.
+		// Two rivers share a junction at b. Cutting the first river's a→b segment must NOT split the second river at b —
+		// only the first river actually contains the removed segment. The second river stays whole. findInnerNeighborsOfCutEndpoints
+		// then reports just c (the inner neighbor of the first river's new end at b). Regression test for the bug where erasing one
+		// river's segment flattened a branching river by splitting it at the shared junction.
 		Point a = new Point(0, 0);
 		Point b = new Point(1, 0);
 		Point c = new Point(2, 0);
@@ -233,13 +232,19 @@ public class RiverDrawerTest
 		List<River> rivers = new ArrayList<>(Arrays.asList(first, second));
 		List<List<Point>> segmentsToRemove = Arrays.asList(Arrays.asList(a, b));
 		RiverDrawer.removeSegmentsAndSplitRivers(rivers, segmentsToRemove);
+
+		// first river lost its a→b segment and now starts at b; second river is unchanged.
+		assertEquals(2, rivers.size());
+		assertEquals(Arrays.asList(b, c), locs(rivers.get(0)));
+		assertEquals(Arrays.asList(x, b, y), locs(rivers.get(1)));
+
 		List<List<RiverPathNode>> nodeLists = new ArrayList<>();
 		for (River r : rivers)
 		{
 			nodeLists.add(r.nodes);
 		}
 		Set<Point> neighbors = new HashSet<>(PathOperations.findInnerNeighborsOfCutEndpoints(nodeLists, segmentsToRemove));
-		assertEquals(new HashSet<>(Arrays.asList(c, x, y)), neighbors);
+		assertEquals(new HashSet<>(Arrays.asList(c)), neighbors);
 	}
 
 }

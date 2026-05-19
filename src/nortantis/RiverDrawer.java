@@ -873,10 +873,13 @@ public class RiverDrawer
 	 */
 	public static List<River> removeSegmentsAndSplitRivers(List<River> rivers, List<List<Point>> segmentsToRemove)
 	{
-		Set<Point> splitLocs = new HashSet<>();
+		Set<OrderlessPair<Point>> removedSegments = new HashSet<>();
 		for (List<Point> seg : segmentsToRemove)
 		{
-			splitLocs.addAll(seg);
+			if (seg.size() >= 2)
+			{
+				removedSegments.add(new OrderlessPair<>(seg.get(0), seg.get(1)));
+			}
 		}
 
 		List<River> changed = new ArrayList<>();
@@ -884,7 +887,7 @@ public class RiverDrawer
 		for (River river : rivers)
 		{
 			List<RiverPathNode> nodes = river.nodes;
-			List<List<RiverPathNode>> splits = PathOperations.splitAtLocations(nodes, splitLocs);
+			List<List<RiverPathNode>> splits = PathOperations.splitAtSegments(nodes, removedSegments);
 			boolean unchanged = splits.size() == 1 && splits.get(0).size() == nodes.size();
 			if (unchanged)
 			{

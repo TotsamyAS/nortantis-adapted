@@ -503,10 +503,13 @@ public class RoadDrawer
 	 */
 	public static List<Road> removeSegmentsAndSplitRoads(List<Road> roads, List<List<Point>> segmentsToRemove)
 	{
-		Set<Point> splitLocs = new HashSet<>();
+		Set<OrderlessPair<Point>> removedSegments = new HashSet<>();
 		for (List<Point> seg : segmentsToRemove)
 		{
-			splitLocs.addAll(seg);
+			if (seg.size() >= 2)
+			{
+				removedSegments.add(new OrderlessPair<>(seg.get(0), seg.get(1)));
+			}
 		}
 
 		List<Road> changed = new ArrayList<>();
@@ -514,7 +517,7 @@ public class RoadDrawer
 		for (Road road : roads)
 		{
 			List<RoadPathNode> nodes = road.nodes;
-			List<List<RoadPathNode>> splits = PathOperations.splitAtLocations(nodes, splitLocs);
+			List<List<RoadPathNode>> splits = PathOperations.splitAtSegments(nodes, removedSegments);
 			boolean unchanged = splits.size() == 1 && splits.get(0).size() == nodes.size();
 			if (unchanged)
 			{
