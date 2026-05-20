@@ -47,6 +47,7 @@ public class MapEditingPanel extends UnscaledImagePanel
 	private HighlightMode highlightMode;
 	private Collection<Edge> highlightedEdges;
 	private List<List<Point>> polylinesToHighlight;
+	private List<List<Point>> hoverPolylinesToHighlight;
 	private EdgeType edgeTypeToHighlight;
 	private List<Point> roadControlPointCircles = null;
 	private List<Point> selectedRoadControlPointCircles = null;
@@ -126,6 +127,7 @@ public class MapEditingPanel extends UnscaledImagePanel
 		zoom = 1.0;
 		resolution = 0.0;
 		polylinesToHighlight = new ArrayList<>();
+		hoverPolylinesToHighlight = new ArrayList<>();
 
 		addMouseListener(new MouseAdapter()
 		{
@@ -197,6 +199,21 @@ public class MapEditingPanel extends UnscaledImagePanel
 	public void clearHighlightedPolylines()
 	{
 		polylinesToHighlight.clear();
+	}
+
+	/**
+	 * "Hover" polylines, drawn in the control-point outline color (orange) rather than the brighter selection color. Used to visualize
+	 * the straight inter-CP segments of a river/road as the mouse approaches them, so the user can see the click target geometry
+	 * without confusing it with an actual selection.
+	 */
+	public void addHoverPolyline(List<Point> line)
+	{
+		hoverPolylinesToHighlight.add(line);
+	}
+
+	public void clearHoverPolylines()
+	{
+		hoverPolylinesToHighlight.clear();
 	}
 
 	public void setControlPointCircles(List<Point> circles)
@@ -619,6 +636,10 @@ public class MapEditingPanel extends UnscaledImagePanel
 
 			g.setColor(highlightEditColor);
 			drawCenterOutlines(g, highlightedCenters);
+			// Hover polylines (orange) go below selected polylines (yellow) so a selected segment that also happens to be near the cursor
+			// shows the brighter selected color.
+			g.setColor(processingColor);
+			drawHoverPolylines(g);
 			g.setColor(getHighlightColor());
 			drawEdges(g, highlightedEdges);
 			drawPolylines(g);
@@ -931,6 +952,14 @@ public class MapEditingPanel extends UnscaledImagePanel
 	private void drawPolylines(Graphics g)
 	{
 		for (List<Point> line : polylinesToHighlight)
+		{
+			drawPolyline(g, line);
+		}
+	}
+
+	private void drawHoverPolylines(Graphics g)
+	{
+		for (List<Point> line : hoverPolylinesToHighlight)
 		{
 			drawPolyline(g, line);
 		}

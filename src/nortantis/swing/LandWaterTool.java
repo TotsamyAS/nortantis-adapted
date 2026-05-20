@@ -123,8 +123,11 @@ public class LandWaterTool extends EditorTool
 	private RowHider editButtonsHider;
 
 	// Clipboard for copy/paste in edit mode: contiguous runs of CP locations from the active line type at the time copy was pressed.
+	// For rivers, copiedRiverWidthLevels runs in parallel — same outer/inner index — and stores each node's widthLevelToNext so the
+	// paste preserves the segment widths the user authored. Null for roads (RoadPathNode has no per-segment metadata).
 	private LineType copiedLineType = null;
 	private List<List<Point>> copiedCPRuns = null;
+	private List<List<Integer>> copiedRiverWidthLevels = null;
 
 	// Width-slider edit state. sliderEditWidthBeforeDrag holds the per-segment widths captured before the user grabbed the slider
 	// thumb; on release we push an undo point if any width actually changed. Null means "no edit in progress".
@@ -784,6 +787,7 @@ public class LandWaterTool extends EditorTool
 			return;
 		}
 		List<List<Point>> runs = new ArrayList<>();
+		List<List<Integer>> widthRuns = new ArrayList<>();
 		LineType type = !selectedRiverCPs.isEmpty() ? LineType.RIVER : LineType.ROAD;
 		if (type == LineType.RIVER)
 		{
@@ -792,24 +796,29 @@ public class LandWaterTool extends EditorTool
 				List<RiverPathNode> nodes = entry.getKey().nodes;
 				Set<Integer> sel = entry.getValue();
 				List<Point> run = new ArrayList<>();
+				List<Integer> widths = new ArrayList<>();
 				for (int i = 0; i < nodes.size(); i++)
 				{
 					if (sel.contains(i))
 					{
 						run.add(nodes.get(i).getLoc());
+						widths.add(nodes.get(i).getWidthLevelToNext());
 					}
 					else if (!run.isEmpty())
 					{
 						if (run.size() >= 2)
 						{
 							runs.add(run);
+							widthRuns.add(widths);
 						}
 						run = new ArrayList<>();
+						widths = new ArrayList<>();
 					}
 				}
 				if (run.size() >= 2)
 				{
 					runs.add(run);
+					widthRuns.add(widths);
 				}
 			}
 		}
@@ -846,12 +855,14 @@ public class LandWaterTool extends EditorTool
 			return;
 		}
 		copiedCPRuns = runs;
+		copiedRiverWidthLevels = type == LineType.RIVER ? widthRuns : null;
 		copiedLineType = type;
 	}
 
 	/**
-	 * Pastes the clipboard as new lines of the same type, translated so that the first run's first CP lands at the current cursor
-	 * position. Selects the pasted CPs. Requires the active line type to match the clipboard's type (silently no-ops otherwise).
+	 * Pastes the clipboard as new lines of the same type. When the mouse is over the map, the bounding box of the copied CPs is centered
+	 * on the cursor. When the mouse isn't over the map (e.g. the user clicked the Paste button), the copies are translated by a small
+	 * fixed offset so they don't land exactly on top of the originals — matches IconsTool's paste behavior.
 	 */
 	private void pasteCopiedCPs()
 	{
@@ -865,19 +876,39 @@ public class LandWaterTool extends EditorTool
 			return;
 		}
 		java.awt.Point mouse = mapEditingPanel.getMousePosition();
-		if (mouse == null)
+		Point delta;
+		if (mouse != null)
 		{
-			return;
+			Point mouseRI = getPointOnGraph(mouse).mult(1.0 / mainWindow.displayQualityScale);
+			// Centroid of the bounding box of every copied CP — gives the paste a natural "drop the group here" feel for multi-run pastes.
+			double minX = Double.POSITIVE_INFINITY, minY = Double.POSITIVE_INFINITY;
+			double maxX = Double.NEGATIVE_INFINITY, maxY = Double.NEGATIVE_INFINITY;
+			for (List<Point> run : copiedCPRuns)
+			{
+				for (Point p : run)
+				{
+					if (p.x < minX) minX = p.x;
+					if (p.x > maxX) maxX = p.x;
+					if (p.y < minY) minY = p.y;
+					if (p.y > maxY) maxY = p.y;
+				}
+			}
+			Point center = new Point((minX + maxX) / 2.0, (minY + maxY) / 2.0);
+			delta = new Point(mouseRI.x - center.x, mouseRI.y - center.y);
 		}
-		Point mouseRI = getPointOnGraph(mouse).mult(1.0 / mainWindow.displayQualityScale);
-		Point origin = copiedCPRuns.get(0).get(0);
-		Point delta = new Point(mouseRI.x - origin.x, mouseRI.y - origin.y);
+		else
+		{
+			// Same fallback offset that IconsTool uses when its paste button is clicked while the mouse isn't over the map.
+			final double offset = 50.0;
+			delta = new Point(offset, offset);
+		}
 
 		clearSelection();
 		List<List<Point>> centersTouched = new ArrayList<>();
 		Set<Road> roadsToRephaseDashes = new HashSet<>();
-		for (List<Point> run : copiedCPRuns)
+		for (int runIdx = 0; runIdx < copiedCPRuns.size(); runIdx++)
 		{
+			List<Point> run = copiedCPRuns.get(runIdx);
 			List<Point> translated = new ArrayList<>(run.size());
 			for (Point p : run)
 			{
@@ -885,12 +916,14 @@ public class LandWaterTool extends EditorTool
 			}
 			if (activeType == LineType.RIVER)
 			{
+				List<Integer> widthLevels = copiedRiverWidthLevels != null && runIdx < copiedRiverWidthLevels.size() ? copiedRiverWidthLevels.get(runIdx) : null;
+				int defaultWidthLevel = GraphRiver.RIVERS_THIS_SIZE_OR_SMALLER_WILL_NOT_BE_DRAWN + 1;
 				List<RiverPathNode> newNodes = new ArrayList<>(translated.size());
 				Random random = new Random();
 				for (int i = 0; i < translated.size(); i++)
 				{
-					newNodes.add(new RiverPathNode(translated.get(i), GraphRiver.RIVERS_THIS_SIZE_OR_SMALLER_WILL_NOT_BE_DRAWN + 1, random.nextLong(),
-							RiverPathNode.EDGE_INDEX_NONE));
+					int widthLevel = widthLevels != null && i < widthLevels.size() ? widthLevels.get(i) : defaultWidthLevel;
+					newNodes.add(new RiverPathNode(translated.get(i), widthLevel, random.nextLong(), RiverPathNode.EDGE_INDEX_NONE));
 				}
 				River newRiver = new River(newNodes);
 				mainWindow.edits.rivers.add(newRiver);
@@ -943,6 +976,28 @@ public class LandWaterTool extends EditorTool
 	private double getHoverHighlightThresholdInRI()
 	{
 		return getHoverHighlightThresholdInGraphPixels() / mainWindow.displayQualityScale;
+	}
+
+	/**
+	 * Distance threshold (in graph pixels) for resolving a segment click in edit mode. Mirrors Erase mode: for brush&nbsp;=&nbsp;1 the
+	 * threshold is the same small "single-point" radius Erase mode uses (so clicks feel the same in both modes); for brush&nbsp;&gt;&nbsp;1
+	 * it's the brush radius (so the user explicitly chose how wide the hit is). Used by both click resolution and the segment
+	 * hover-highlight so the visualization always matches what a click would actually pick.
+	 */
+	private double getEditSegmentHitThresholdInGraphPixels()
+	{
+		int brushDiameter = getEditBrushDiameter();
+		if (brushDiameter <= 1)
+		{
+			// Erase mode's brush=1 radius is in RI; convert to graph pixels here.
+			return ((double) singlePointRoadSelectionRadiusBeforeZoomAndScale / mainWindow.zoom) * mapEditingPanel.osScale * mainWindow.displayQualityScale;
+		}
+		return ((double) brushDiameter / mainWindow.zoom) * mapEditingPanel.osScale / 2.0;
+	}
+
+	private double getEditSegmentHitThresholdInRI()
+	{
+		return getEditSegmentHitThresholdInGraphPixels() / mainWindow.displayQualityScale;
 	}
 
 	private Point computeSnapPointForType(java.awt.Point mouseLocation, LineType type)
@@ -1203,6 +1258,11 @@ public class LandWaterTool extends EditorTool
 	 *            whenever the line is visually highlighted (avoiding the confusing case where the highlight is shown but right-click
 	 *            does nothing because the cursor isn't close enough to the centerline). Pass {@code -1} for the default threshold.
 	 */
+	private LineHit editModeHitTest(java.awt.Point panelPoint, LineType activeType, River scopeRiver, Road scopeRoad)
+	{
+		return editModeHitTest(panelPoint, activeType, scopeRiver, scopeRoad, -1);
+	}
+
 	private LineHit editModeHitTest(java.awt.Point panelPoint, LineType activeType, River scopeRiver, Road scopeRoad, double customSegmentThresholdGraphPixels)
 	{
 		if (updater.mapParts == null || updater.mapParts.graph == null || panelPoint == null)
@@ -1211,19 +1271,10 @@ public class LandWaterTool extends EditorTool
 		}
 		Point clickGraph = getPointOnGraph(panelPoint);
 		double controlPointRadius = mapEditingPanel.getRoadControlPointHitRadiusInGraphPixels();
-		double segmentThreshold = customSegmentThresholdGraphPixels >= 0 ? customSegmentThresholdGraphPixels : controlPointRadius * 2.0;
+		// Default segment threshold mirrors Erase mode (see getEditSegmentHitThresholdInGraphPixels). Callers can pass a custom override
+		// (e.g. when they want to ignore brush size).
+		double segmentThreshold = customSegmentThresholdGraphPixels >= 0 ? customSegmentThresholdGraphPixels : getEditSegmentHitThresholdInGraphPixels();
 		double scale = mainWindow.displayQualityScale;
-		// Rivers can wander away from the segment centerline by up to one full jagged amplitude —
-		// jagged lines by design, and splines because the noisy-edge curve drifts the same way.
-		// Stretch the threshold to that amplitude so right-clicking on the visible drawn line — not
-		// just the underlying centerline — picks the segment. Use a max (not a sum) with the base
-		// threshold: the base is calibrated for an easy click on a thin line, but a wider visible
-		// line already provides plenty of slack on its own.
-		if (activeType == LineType.RIVER)
-		{
-			double riverDrawEnvelopePixels = RiverDrawer.getJaggedAmplitudeRI(updater.mapParts.graph, scale) * scale;
-			segmentThreshold = Math.max(segmentThreshold, riverDrawEnvelopePixels);
-		}
 
 		River bestCpRiver = null;
 		Road bestCpRoad = null;
@@ -1383,14 +1434,25 @@ public class LandWaterTool extends EditorTool
 			}
 		}
 
-		// Lines near the cursor get outlined circles drawn on every CP that isn't already in the selection.
-		double highlightThresholdRI = getHoverHighlightThresholdInRI();
+		// CP-highlight threshold (used to decide whether a line's CPs appear at all) stays at the wide hover threshold — the orange dots
+		// are a "this line is near the cursor" cue, not a click target. The segment-highlight threshold is narrower (matches Erase
+		// mode's brush=1 leeway / brush radius for brush>1) so the highlighted segments correspond exactly to what a click would pick.
+		int brushDiameter = getEditBrushDiameter();
+		double brushRadiusRI = brushDiameter <= 1 ? 0 : ((double) brushDiameter / mainWindow.zoom) * mapEditingPanel.osScale / 2.0 / scale;
+		double lineCpHighlightThresholdRI = Math.max(getHoverHighlightThresholdInRI(), brushRadiusRI);
+		double segmentHighlightThresholdRI = getEditSegmentHitThresholdInRI();
+
+		mapEditingPanel.clearHoverPolylines();
 		Set<Point> selectedLocations = new HashSet<>(selectedCirclesGraphPixels);
-		for (List<Point> path : getAllLinePaths(type))
+		if (mouseRI != null)
 		{
-			if (mouseRI != null && isPathNearPoint(path, mouseRI, highlightThresholdRI))
+			for (LineHoverPaths paths : getAllLinePathsWithNodeRefs(type))
 			{
-				for (Point riPoint : path)
+				if (!isPathNearPoint(paths.locations, mouseRI, lineCpHighlightThresholdRI))
+				{
+					continue;
+				}
+				for (Point riPoint : paths.locations)
 				{
 					Point graphPoint = riPoint.mult(scale);
 					if (!selectedLocations.contains(graphPoint))
@@ -1398,16 +1460,50 @@ public class LandWaterTool extends EditorTool
 						outlinedCirclesGraphPixels.add(graphPoint);
 					}
 				}
+				// Highlight individual segments whose centerline is within the (narrow) segment hit threshold so the visual matches
+				// what a click would actually pick. Skip segments whose endpoints are both selected — those are already drawn in the
+				// brighter selected-segment color.
+				Set<Integer> selectedIdxsForThisLine = paths.selectedIndices;
+				for (int i = 0; i < paths.locations.size() - 1; i++)
+				{
+					if (selectedIdxsForThisLine.contains(i) && selectedIdxsForThisLine.contains(i + 1))
+					{
+						continue;
+					}
+					Point a = paths.locations.get(i);
+					Point b = paths.locations.get(i + 1);
+					double d = GeometryHelper.distanceFromPointToSegment(mouseRI, a, b);
+					if (d <= segmentHighlightThresholdRI)
+					{
+						mapEditingPanel.addHoverPolyline(List.of(a.mult(scale), b.mult(scale)));
+					}
+				}
 			}
 		}
 		mapEditingPanel.setControlPointCircles(outlinedCirclesGraphPixels);
 		mapEditingPanel.setSelectedControlPointCircles(selectedCirclesGraphPixels);
 
-		// Hover ring on the single CP directly under the cursor (if any), considering all lines of the active type.
+		// Hover ring on the single CP closest to the cursor (if any). Snap radius widens with the brush so brush>1 can grab CPs from
+		// further away — matches the click-to-move grab radius used by the press handler.
 		Point snapPointRI = null;
 		if (mouseLocation != null && mouseRI != null)
 		{
-			snapPointRI = computeSnapPointForType(mouseLocation, type);
+			double snapRadiusRI = Math.max(getSnapRadiusRI(), brushRadiusRI);
+			Point nearest = null;
+			double bestDist = snapRadiusRI;
+			for (LineHoverPaths paths : getAllLinePathsWithNodeRefs(type))
+			{
+				for (Point p : paths.locations)
+				{
+					double d = p.distanceTo(mouseRI);
+					if (d < bestDist)
+					{
+						bestDist = d;
+						nearest = p;
+					}
+				}
+			}
+			snapPointRI = nearest;
 		}
 		if (snapPointRI != null)
 		{
@@ -1417,6 +1513,33 @@ public class LandWaterTool extends EditorTool
 		{
 			mapEditingPanel.clearHoveredControlPoint();
 		}
+	}
+
+	/** Pair-up of a line's CP locations with the indices that are in the current selection (used when iterating hovered lines). */
+	private record LineHoverPaths(List<Point> locations, Set<Integer> selectedIndices)
+	{
+	}
+
+	private List<LineHoverPaths> getAllLinePathsWithNodeRefs(LineType type)
+	{
+		List<LineHoverPaths> result = new ArrayList<>();
+		if (type == LineType.RIVER)
+		{
+			for (River river : mainWindow.edits.rivers)
+			{
+				Set<Integer> sel = selectedRiverCPs == null ? Collections.emptySet() : selectedRiverCPs.getOrDefault(river, Collections.emptySet());
+				result.add(new LineHoverPaths(PathOperations.toLocationList(river.nodes), sel));
+			}
+		}
+		else
+		{
+			for (Road road : mainWindow.edits.roads)
+			{
+				Set<Integer> sel = selectedRoadCPs == null ? Collections.emptySet() : selectedRoadCPs.getOrDefault(road, Collections.emptySet());
+				result.add(new LineHoverPaths(PathOperations.toLocationList(road.nodes), sel));
+			}
+		}
+		return result;
 	}
 
 	/**
@@ -2442,6 +2565,7 @@ public class LandWaterTool extends EditorTool
 		boolean deselectMode = controlClickBehavior != null && controlClickBehavior.isUnselectMode();
 		int brushDiameter = getEditBrushDiameter();
 		boolean brushIsSinglePoint = brushDiameter <= 1;
+		double brushRadiusGraphPixels = brushIsSinglePoint ? 0 : ((double) brushDiameter / mainWindow.zoom) * mapEditingPanel.osScale / 2.0;
 
 		// Reset transient drag state. We'll re-arm below if the press starts a drag.
 		dragInProgress = false;
@@ -2451,32 +2575,48 @@ public class LandWaterTool extends EditorTool
 		dragBeforeSnapshots = null;
 		dragStartLocRI = getPointOnGraph(e.getPoint()).mult(1.0 / mainWindow.displayQualityScale);
 
-		// A precise CP hit-test always runs first — even with brush > 1 — so we can detect "press lands on a CP that's already in the
-		// selection." That case is special: it should start a move-drag of the whole selection, regardless of brush size or Ctrl state,
-		// since the user clearly intends to grab the existing group. Without this branch, brush > 1 would always paint-clear, and a
-		// no-Ctrl click would reset the selection to just the clicked CP — both of which lose the user's existing multi-selection.
-		LineHit preciseHit = editModeHitTest(e.getPoint(), activeType, null, null, getHoverHighlightThresholdInGraphPixels());
-		if (preciseHit != null && preciseHit.isControlPoint())
+		// PRIORITY: a plain (no-Ctrl) press that lands on the current selection arms a move-drag of the whole selection. "On the current
+		// selection" means either (a) within CP-hit-radius (extended by brush) of a selected CP, or (b) within segment-hit-threshold
+		// (extended by brush) of a segment whose two endpoints are both selected. Without (b), clicking on a visibly-selected segment
+		// near but not on its CPs would resolve to the segment-hit branch and wipe the selection.
+		//
+		// When the brush is wide (>1) and the press grabs the selection, any additional CPs that happen to lie under the brush get
+		// folded into the selection before the move starts — that way the user's "the brush is my action zone" mental model holds:
+		// everything in the zone moves together, even if it wasn't selected before the press.
+		if (!ctrlDown)
 		{
-			Object hitLine = preciseHit.river() != null ? preciseHit.river() : preciseHit.road();
-			int hitIdx = preciseHit.controlPointIndex();
-			if (isCPSelected(hitLine, hitIdx))
+			double cpGrabRadius = Math.max(mapEditingPanel.getRoadControlPointHitRadiusInGraphPixels(), brushRadiusGraphPixels);
+			double segGrabRadius = Math.max(getEditSegmentHitThresholdInGraphPixels(), brushRadiusGraphPixels);
+			SelectedCPRef grab = findNearestSelectedCP(e.getPoint(), activeType, cpGrabRadius);
+			if (grab == null)
 			{
-				armMoveDragIfApplicable(hitLine, hitIdx);
+				grab = findNearestSelectedSegmentEndpoint(e.getPoint(), activeType, segGrabRadius);
+			}
+			if (grab != null)
+			{
+				if (brushDiameter > 1)
+				{
+					addCPsUnderBrushToSelection(e.getPoint(), activeType, brushRadiusGraphPixels);
+				}
+				armMoveDragIfApplicable(grab.line, grab.index);
 				refreshSelectionVisuals(e.getPoint(), activeType);
 				return;
 			}
 		}
 
-		LineHit hit = brushIsSinglePoint ? preciseHit : null;
+		// Non-paint hit-test path: brush=1 uses a single click — precise CP at tight radius, segment at hover radius. Brush>1 always
+		// falls through to paint, even for unselected CPs, since the user has explicitly chosen a wide brush.
+		LineHit hit = brushIsSinglePoint ? editModeHitTest(e.getPoint(), activeType, null, null) : null;
 
 		if (brushIsSinglePoint && hit != null && hit.isControlPoint())
 		{
-			// Move-drag from an unselected CP (the selected-CP case was handled above).
+			// CP hit on an unselected CP (the selected-CP case was handled by the priority check above).
 			Object line = hit.river() != null ? hit.river() : hit.road();
 			int idx = hit.controlPointIndex();
 			if (ctrlDown)
 			{
+				// Toggle behavior. Doesn't arm a move-drag — Ctrl+click+drag should paint-extend, not move. paint-tick uses the same
+				// tight thresholds as click resolution, so a tiny accidental drag won't sweep in nearby segments.
 				if (deselectMode)
 				{
 					removeFromSelection(line, idx);
@@ -2485,19 +2625,21 @@ public class LandWaterTool extends EditorTool
 				{
 					addToSelection(line, idx);
 				}
+				dragInProgress = true;
+				dragIsPaint = true;
 			}
 			else
 			{
+				// Replace selection with the clicked CP and arm a move-drag.
 				clearSelection();
 				addToSelection(line, idx);
+				armMoveDragIfApplicable(line, idx);
 			}
-			armMoveDragIfApplicable(line, idx);
 			refreshSelectionVisuals(e.getPoint(), activeType);
 		}
 		else if (brushIsSinglePoint && hit != null && hit.isSegment())
 		{
-			// Single click on a segment: selects both its endpoint CPs. The drag becomes paint-extend (does NOT move the line on
-			// accidental drag — segments aren't grab handles).
+			// Single click on a segment: selects both its endpoint CPs. Drag becomes paint-extend (segments aren't grab handles).
 			Object line = hit.river() != null ? hit.river() : hit.road();
 			int segIdx = hit.segmentIndex();
 			if (!ctrlDown)
@@ -2520,8 +2662,8 @@ public class LandWaterTool extends EditorTool
 		}
 		else
 		{
-			// Press on empty space, or with a multi-CP brush. Paint-select under the brush. Without Ctrl, the press immediately replaces
-			// any prior selection (including the empty-click case, which clears it).
+			// Press on empty space (brush=1) or anywhere with brush>1: paint-select under the brush. Without Ctrl, the press
+			// immediately replaces any prior selection (including the empty-click case, which clears it).
 			List<LineHit> brushHits = brushIsSinglePoint ? Collections.emptyList() : multiBrushHitTest(e.getPoint(), activeType, brushDiameter);
 			if (!ctrlDown)
 			{
@@ -2543,6 +2685,184 @@ public class LandWaterTool extends EditorTool
 			dragInProgress = true;
 			dragIsPaint = true;
 			refreshSelectionVisuals(e.getPoint(), activeType);
+		}
+	}
+
+	private record SelectedCPRef(Object line, int index, double distance)
+	{
+	}
+
+	/**
+	 * Returns the currently-selected CP closest to {@code panelPoint} (of the active type) within {@code maxDistanceGraphPixels}, or
+	 * null if none is within range. Used by the press handler to decide whether a click should grab the existing multi-selection.
+	 */
+	private SelectedCPRef findNearestSelectedCP(java.awt.Point panelPoint, LineType activeType, double maxDistanceGraphPixels)
+	{
+		if (updater.mapParts == null || updater.mapParts.graph == null || panelPoint == null)
+		{
+			return null;
+		}
+		Point clickGraph = getPointOnGraph(panelPoint);
+		double scale = mainWindow.displayQualityScale;
+		SelectedCPRef best = null;
+		if (activeType == LineType.RIVER && selectedRiverCPs != null)
+		{
+			for (Map.Entry<River, Set<Integer>> entry : selectedRiverCPs.entrySet())
+			{
+				List<RiverPathNode> nodes = entry.getKey().nodes;
+				for (int idx : entry.getValue())
+				{
+					if (idx < 0 || idx >= nodes.size())
+					{
+						continue;
+					}
+					double d = clickGraph.distanceTo(nodes.get(idx).getLoc().mult(scale));
+					if (d <= maxDistanceGraphPixels && (best == null || d < best.distance))
+					{
+						best = new SelectedCPRef(entry.getKey(), idx, d);
+					}
+				}
+			}
+		}
+		else if (activeType == LineType.ROAD && selectedRoadCPs != null)
+		{
+			for (Map.Entry<Road, Set<Integer>> entry : selectedRoadCPs.entrySet())
+			{
+				List<RoadPathNode> nodes = entry.getKey().nodes;
+				for (int idx : entry.getValue())
+				{
+					if (idx < 0 || idx >= nodes.size())
+					{
+						continue;
+					}
+					double d = clickGraph.distanceTo(nodes.get(idx).getLoc().mult(scale));
+					if (d <= maxDistanceGraphPixels && (best == null || d < best.distance))
+					{
+						best = new SelectedCPRef(entry.getKey(), idx, d);
+					}
+				}
+			}
+		}
+		return best;
+	}
+
+	/**
+	 * Returns a reference to either endpoint of the implicitly-selected segment (both endpoint CPs in the selection) closest to
+	 * {@code panelPoint} within {@code maxDistanceGraphPixels}, or null if none qualify. Used as a secondary press-priority check so
+	 * clicking on a selected segment (not just a selected CP) grabs the existing multi-selection rather than wiping it.
+	 */
+	private SelectedCPRef findNearestSelectedSegmentEndpoint(java.awt.Point panelPoint, LineType activeType, double maxDistanceGraphPixels)
+	{
+		if (updater.mapParts == null || updater.mapParts.graph == null || panelPoint == null)
+		{
+			return null;
+		}
+		Point clickGraph = getPointOnGraph(panelPoint);
+		double scale = mainWindow.displayQualityScale;
+		SelectedCPRef best = null;
+		if (activeType == LineType.RIVER && selectedRiverCPs != null)
+		{
+			for (Map.Entry<River, Set<Integer>> entry : selectedRiverCPs.entrySet())
+			{
+				Set<Integer> sel = entry.getValue();
+				if (sel.size() < 2)
+				{
+					continue;
+				}
+				List<RiverPathNode> nodes = entry.getKey().nodes;
+				for (int i = 0; i < nodes.size() - 1; i++)
+				{
+					if (!sel.contains(i) || !sel.contains(i + 1))
+					{
+						continue;
+					}
+					Point a = nodes.get(i).getLoc().mult(scale);
+					Point b = nodes.get(i + 1).getLoc().mult(scale);
+					double d = GeometryHelper.distanceFromPointToSegment(clickGraph, a, b);
+					if (d <= maxDistanceGraphPixels && (best == null || d < best.distance))
+					{
+						best = new SelectedCPRef(entry.getKey(), i, d);
+					}
+				}
+			}
+		}
+		else if (activeType == LineType.ROAD && selectedRoadCPs != null)
+		{
+			for (Map.Entry<Road, Set<Integer>> entry : selectedRoadCPs.entrySet())
+			{
+				Set<Integer> sel = entry.getValue();
+				if (sel.size() < 2)
+				{
+					continue;
+				}
+				List<RoadPathNode> nodes = entry.getKey().nodes;
+				for (int i = 0; i < nodes.size() - 1; i++)
+				{
+					if (!sel.contains(i) || !sel.contains(i + 1))
+					{
+						continue;
+					}
+					Point a = nodes.get(i).getLoc().mult(scale);
+					Point b = nodes.get(i + 1).getLoc().mult(scale);
+					double d = GeometryHelper.distanceFromPointToSegment(clickGraph, a, b);
+					if (d <= maxDistanceGraphPixels && (best == null || d < best.distance))
+					{
+						best = new SelectedCPRef(entry.getKey(), i, d);
+					}
+				}
+			}
+		}
+		return best;
+	}
+
+	/**
+	 * Folds any control points within {@code brushRadiusGraphPixels} of {@code panelPoint} into the current selection (of the active
+	 * line type). Used by the press handler when a brush-radius press grabs the existing selection — any unselected CPs under the brush
+	 * should travel along with the move.
+	 */
+	private void addCPsUnderBrushToSelection(java.awt.Point panelPoint, LineType activeType, double brushRadiusGraphPixels)
+	{
+		if (updater.mapParts == null || updater.mapParts.graph == null || panelPoint == null)
+		{
+			return;
+		}
+		Point clickGraph = getPointOnGraph(panelPoint);
+		double scale = mainWindow.displayQualityScale;
+		if (activeType == LineType.RIVER)
+		{
+			for (River river : mainWindow.edits.rivers)
+			{
+				List<RiverPathNode> nodes = river.nodes;
+				for (int i = 0; i < nodes.size(); i++)
+				{
+					if (isCPSelected(river, i))
+					{
+						continue;
+					}
+					if (clickGraph.distanceTo(nodes.get(i).getLoc().mult(scale)) <= brushRadiusGraphPixels)
+					{
+						addToSelection(river, i);
+					}
+				}
+			}
+		}
+		else
+		{
+			for (Road road : mainWindow.edits.roads)
+			{
+				List<RoadPathNode> nodes = road.nodes;
+				for (int i = 0; i < nodes.size(); i++)
+				{
+					if (isCPSelected(road, i))
+					{
+						continue;
+					}
+					if (clickGraph.distanceTo(nodes.get(i).getLoc().mult(scale)) <= brushRadiusGraphPixels)
+					{
+						addToSelection(road, i);
+					}
+				}
+			}
 		}
 	}
 
@@ -2652,10 +2972,21 @@ public class LandWaterTool extends EditorTool
 		}
 		Point clickGraph = getPointOnGraph(panelPoint);
 		double scale = mainWindow.displayQualityScale;
-		double brushRadius = ((double) brushDiameter / mainWindow.zoom) * mapEditingPanel.osScale / 2.0;
 		double controlPointRadius = mapEditingPanel.getRoadControlPointHitRadiusInGraphPixels();
-		double cpThreshold = Math.max(controlPointRadius, brushRadius);
-		double segmentThreshold = Math.max(getHoverHighlightThresholdInGraphPixels(), brushRadius);
+		// Segment hit threshold matches Erase mode (see getEditSegmentHitThresholdInGraphPixels): small for brush=1, exact brush radius
+		// for brush>1. CP hits stay at the precise radius (brush=1) or widen to the brush (brush>1) so CPs can be grabbed within the
+		// painted area.
+		double segmentThreshold = getEditSegmentHitThresholdInGraphPixels();
+		double cpThreshold;
+		if (brushDiameter <= 1)
+		{
+			cpThreshold = controlPointRadius;
+		}
+		else
+		{
+			double brushRadius = ((double) brushDiameter / mainWindow.zoom) * mapEditingPanel.osScale / 2.0;
+			cpThreshold = Math.max(controlPointRadius, brushRadius);
+		}
 
 		if (activeType == LineType.RIVER)
 		{
@@ -2745,6 +3076,13 @@ public class LandWaterTool extends EditorTool
 	{
 		dragOccurred = true;
 		LineType activeType = riversButton.isSelected() ? LineType.RIVER : LineType.ROAD;
+		// Keep the brush circle following the cursor during a drag — handleMouseDraggedOnMap fires on drag, but the brush position is
+		// normally updated by the mouse-MOVED handler which doesn't fire during a drag.
+		int brushDiameter = getEditBrushDiameter();
+		if (brushDiameter > 1)
+		{
+			mapEditingPanel.showBrush(e.getPoint(), brushDiameter);
+		}
 		if (dragIsPaint)
 		{
 			handleEditModePaintDragTick(e, activeType);
@@ -2955,10 +3293,9 @@ public class LandWaterTool extends EditorTool
 	private void showRiverRoadContextMenu(MouseEvent e)
 	{
 		LineType activeType = riversButton.isSelected() ? LineType.RIVER : LineType.ROAD;
-		// Use the same threshold the hover highlight uses so the menu becomes available as soon as the river/road is visually highlighted
-		// — otherwise the highlight appears before the right-click range starts, which is confusing.
-		double rightClickSegmentThreshold = getHoverHighlightThresholdInGraphPixels();
-		final LineHit hit = editModeHitTest(e.getPoint(), activeType, null, null, rightClickSegmentThreshold);
+		// Right-click is a single-point gesture, so it uses the default segment hit threshold — same one a single left-click would. The
+		// segment hover-highlight visualizes that same range, so what the user sees lit up is what right-click can act on.
+		final LineHit hit = editModeHitTest(e.getPoint(), activeType, null, null);
 		boolean haveSelectionMenuItems = modeWidget.isEditMode() && hasAnySelection();
 		if (hit == null && !haveSelectionMenuItems)
 		{
@@ -3591,6 +3928,7 @@ public class LandWaterTool extends EditorTool
 		mapEditingPanel.clearHighlightedCenters();
 		mapEditingPanel.clearHighlightedEdges();
 		mapEditingPanel.clearHighlightedPolylines();
+		mapEditingPanel.clearHoverPolylines();
 		mapEditingPanel.hideBrush();
 
 		boolean isSelectingColorFromMap = selectColorFromMapButton.isVisible() && selectColorFromMapButton.isSelected();

@@ -394,71 +394,13 @@ public class IconsTool extends EditorTool
 		brushAndEditOptionsSeparatorHider = organizer.addSeparator();
 
 		{
-			JButton deleteButton;
-			{
-				deleteButton = new JButton(Translation.get("iconsTool.delete"));
-				deleteButton.setToolTipText(Translation.get("iconsTool.delete.tooltip"));
-				SwingHelper.bindButtonShortcut(deleteButton, KeyStroke.getKeyStroke("DELETE"), "deleteAction");
+			JButton clearScaleButton = new JButton(Translation.get("iconsTool.resetScale"));
+			clearScaleButton.setToolTipText(Translation.get("iconsTool.resetScale.tooltip"));
+			clearScaleButton.addActionListener(ev -> clearScaleOnSelectedIcons());
 
-				deleteButton.addActionListener(new ActionListener()
-				{
-					@Override
-					public void actionPerformed(ActionEvent e)
-					{
-						deleteSelectedIcons();
-					}
-				});
-
-			}
-
-			JButton copyButton;
-			{
-				copyButton = new JButton(Translation.get("iconsTool.copy"));
-				copyButton.setToolTipText(Translation.get("iconsTool.copy.tooltip", SwingHelper.getCommandKeyName()));
-				SwingHelper.bindButtonShortcut(copyButton, KeyStroke.getKeyStroke(KeyEvent.VK_C, SwingHelper.getMenuShortcutKeyMask()), "copyAction");
-
-				copyButton.addActionListener(new ActionListener()
-				{
-					@Override
-					public void actionPerformed(ActionEvent e)
-					{
-						copySelectedIcons();
-					}
-				});
-			}
-
-			JButton pasteButton;
-			{
-				pasteButton = new JButton(Translation.get("iconsTool.paste"));
-				pasteButton.setToolTipText(Translation.get("iconsTool.paste.tooltip", SwingHelper.getCommandKeyName()));
-				SwingHelper.bindButtonShortcut(pasteButton, KeyStroke.getKeyStroke(KeyEvent.VK_V, SwingHelper.getMenuShortcutKeyMask()), "pasteAction");
-
-				pasteButton.addActionListener(new ActionListener()
-				{
-					@Override
-					public void actionPerformed(ActionEvent e)
-					{
-						pasteSelectedIcons();
-					}
-				});
-			}
-
-			JButton clearScaleButton;
-			{
-				clearScaleButton = new JButton(Translation.get("iconsTool.resetScale"));
-				clearScaleButton.setToolTipText(Translation.get("iconsTool.resetScale.tooltip"));
-				clearScaleButton.addActionListener(new ActionListener()
-				{
-
-					@Override
-					public void actionPerformed(ActionEvent e)
-					{
-						clearScaleOnSelectedIcons();
-					}
-				});
-			}
-
-			deleteCopyPasteIconButtonsHider = organizer.addLeftAlignedComponents(Arrays.asList(copyButton, pasteButton, deleteButton, clearScaleButton));
+			EditClipboardButtonsWidget editButtons = new EditClipboardButtonsWidget(this::copySelectedIcons, this::pasteSelectedIcons,
+					this::deleteSelectedIcons, Translation.get("iconsTool.delete.tooltip"));
+			deleteCopyPasteIconButtonsHider = editButtons.addToOrganizer(organizer, Arrays.asList(clearScaleButton));
 		}
 
 		{
