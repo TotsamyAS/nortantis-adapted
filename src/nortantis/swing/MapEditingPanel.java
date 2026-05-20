@@ -49,6 +49,7 @@ public class MapEditingPanel extends UnscaledImagePanel
 	private List<List<Point>> polylinesToHighlight;
 	private EdgeType edgeTypeToHighlight;
 	private List<Point> roadControlPointCircles = null;
+	private List<Point> selectedRoadControlPointCircles = null;
 	private Point hoveredRoadControlPoint = null;
 	private List<Point> freeHandPreviewPath = null;
 	private boolean highlightLakes;
@@ -206,6 +207,16 @@ public class MapEditingPanel extends UnscaledImagePanel
 	public void clearRoadControlPointCircles()
 	{
 		this.roadControlPointCircles = null;
+	}
+
+	/**
+	 * Sets the control-point locations that should be drawn as filled (rather than outlined) circles to indicate selection. These are
+	 * the road/river CPs the user has actively selected in edit mode for multi-select operations (move, width change, delete). Pass null
+	 * or empty to clear the selected visual.
+	 */
+	public void setSelectedControlPointCircles(List<Point> circles)
+	{
+		this.selectedRoadControlPointCircles = circles;
 	}
 
 	public void setHoveredRoadControlPoint(Point point)
@@ -973,7 +984,9 @@ public class MapEditingPanel extends UnscaledImagePanel
 
 	private void drawRoadControlPoints(Graphics2D g2)
 	{
-		if ((roadControlPointCircles == null || roadControlPointCircles.isEmpty()) && hoveredRoadControlPoint == null && freeHandPreviewPath == null)
+		boolean hasSelected = selectedRoadControlPointCircles != null && !selectedRoadControlPointCircles.isEmpty();
+		if ((roadControlPointCircles == null || roadControlPointCircles.isEmpty()) && !hasSelected && hoveredRoadControlPoint == null
+				&& freeHandPreviewPath == null)
 		{
 			return;
 		}
@@ -984,12 +997,23 @@ public class MapEditingPanel extends UnscaledImagePanel
 		int r = getRoadControlPointRadiusInGraphPixels();
 		g2.setStroke(new BasicStroke(getRoadControlPointStrokeWidth()));
 
+		// Unselected visible CPs are drawn first (outlined), then selected CPs on top (filled) so a selected CP at the same location
+		// shows the filled visual rather than the outline.
 		if (roadControlPointCircles != null)
 		{
 			g2.setColor(processingColor);
 			for (Point p : roadControlPointCircles)
 			{
 				g2.drawOval((int) p.x - r, (int) p.y - r, r * 2, r * 2);
+			}
+		}
+
+		if (hasSelected)
+		{
+			g2.setColor(highlightEditColor);
+			for (Point p : selectedRoadControlPointCircles)
+			{
+				g2.fillOval((int) p.x - r, (int) p.y - r, r * 2, r * 2);
 			}
 		}
 

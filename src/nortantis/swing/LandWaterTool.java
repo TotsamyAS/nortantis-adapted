@@ -85,14 +85,15 @@ public class LandWaterTool extends EditorTool
 	private JToggleButton riverFreeHandDrawStyleButton;
 	private RowHider riverDrawStyleHider;
 
-	// Sticky segment selection. Persists across mouse moves until cleared by an action (e.g. line
-	// removed by an edit, or user clicks empty space). Used so the river width slider has a fixed
-	// target segment to retune, and so the segment stays visibly highlighted while the user moves
-	// the mouse. At most one of {stickyRiver, stickyRoad} is non-null. stickySegmentIndex points
-	// at the segment from nodes[stickySegmentIndex] to nodes[stickySegmentIndex + 1].
-	private River stickyRiver = null;
-	private Road stickyRoad = null;
-	private int stickySegmentIndex = -1;
+	// Multi-select edit state. The set of currently-selected control points, keyed by line. At most one of these maps is non-empty at a
+	// time — selection is per-active-type, and switching between Rivers and Roads clears it. A segment is implicitly "selected" iff
+	// both of its endpoint CPs are in the map; that drives the width-slider visibility and the highlighted-polyline visual.
+	//
+	// Note: the super constructor calls back into virtual methods on this subclass (e.g. createToolOptionsPanel → showOrHideBrushOptions
+	// → showOrHideRoadAndRiverOptions) BEFORE our instance-field initializers run, so these references are null for a brief window.
+	// Methods reachable during that window must tolerate that.
+	private Map<River, Set<Integer>> selectedRiverCPs = new HashMap<>();
+	private Map<Road, Set<Integer>> selectedRoadCPs = new HashMap<>();
 
 	// Hover state — what's under the cursor right now, refreshed on every mouse-moved. Drives the
 	// hover ring on a control point and the right-click context menu's target. Cleared when the
@@ -100,39 +101,36 @@ public class LandWaterTool extends EditorTool
 	private River hoveredRiver = null;
 	private Road hoveredRoad = null;
 
-	// In-progress control-point drag (edit mode). Captures which line/control-point was grabbed
-	// independent of sticky/hover state, since neither concept reflects "currently being dragged".
-	// dragSnapshotPath is the line's nodes-as-locations before the drag started, used to determine
-	// which centers need redraw at commit time. dragOccurred distinguishes a true drag from a
-	// single click that happens to land on a control point.
+	// In-progress drag state. Two flavors:
+	// 1. Move-drag: started from a CP — translates every CP in {@link #dragMovingCPs} by the cursor delta.
+	// 2. Paint-drag: started from a segment or empty area — accumulates CPs under the brush into the selection.
 	private boolean dragInProgress = false;
 	private boolean dragOccurred = false;
-	private List<Point> dragSnapshotPath = null;
-	private River dragRiver = null;
-	private Road dragRoad = null;
-	private int dragControlPointIndex = -1;
-
-	// At drag-start we record every OTHER line (same type) whose control point sits at the same
-	// location as the dragged one. During the drag they move in lockstep so Y-junctions don't tear
-	// apart. Each entry also carries the before-drag snapshot so the redraw at commit time covers
-	// the centers under the original path too.
-	private List<RiverDragShare> dragSharedRivers = null;
-	private List<RoadDragShare> dragSharedRoads = null;
-
-	private record RiverDragShare(River river, int cpIndex, List<Point> snapshot)
+	private boolean dragIsPaint = false;
+	private Point dragStartLocRI = null;
+	private List<MovingCP> dragMovingCPs = null;
+	// Before-drag snapshots of every line that has any moving CP. Used to compute redraw bounds covering the pre-drag curve shape.
+	private Map<Object, List<Point>> dragBeforeSnapshots = null;
+	/** A control point participating in a move-drag — line + index, plus its position at drag-start so we can apply the cursor delta. */
+	private record MovingCP(Object line, int nodeIndex, Point startLocRI)
 	{
 	}
 
-	private record RoadDragShare(Road road, int cpIndex, List<Point> snapshot)
-	{
-	}
+	// UI widget that exposes "Select" vs "Unselect" behavior for Ctrl-click. Shared pattern with IconsTool.
+	private ControlClickBehaviorWidget controlClickBehavior;
+	private RowHider controlClickBehaviorHider;
+	private RowHider editButtonsSeparatorHider;
+	private RowHider editButtonsHider;
 
-	// Width-slider edit state. sliderEditWidthBeforeDrag is the selected segment's width level before
-	// the user grabs the slider thumb; on release we compare against the new width and only push an
-	// undo point if it actually changed. -1 means "no edit in progress".
-	private int sliderEditWidthBeforeDrag = -1;
-	// True while we're applying the slider's value to the selected segment programmatically, so the
-	// change listener doesn't recurse or attempt to re-tune the segment.
+	// Clipboard for copy/paste in edit mode: contiguous runs of CP locations from the active line type at the time copy was pressed.
+	private LineType copiedLineType = null;
+	private List<List<Point>> copiedCPRuns = null;
+
+	// Width-slider edit state. sliderEditWidthBeforeDrag holds the per-segment widths captured before the user grabbed the slider
+	// thumb; on release we push an undo point if any width actually changed. Null means "no edit in progress".
+	private Map<River, Map<Integer, Integer>> sliderEditWidthsBeforeDrag = null;
+	// True while we're applying the slider's value to the selected segments programmatically, so the change listener doesn't recurse
+	// or attempt to re-tune the segments.
 	private boolean syncingSliderToSelection = false;
 
 	private enum LineType
@@ -246,8 +244,9 @@ public class LandWaterTool extends EditorTool
 
 				if (brushSizeComboBox != null)
 				{
-					brushSizeHider.setVisible(oceanButton.isSelected() || lakesButton.isSelected() || landButton.isSelected() || (riversButton.isSelected() && modeWidget.isEraseMode())
-							|| (roadsButton.isSelected() && modeWidget.isEraseMode()));
+					boolean riversOrRoads = riversButton.isSelected() || roadsButton.isSelected();
+					boolean inBrushFamily = oceanButton.isSelected() || lakesButton.isSelected() || landButton.isSelected();
+					brushSizeHider.setVisible(inBrushFamily || (riversOrRoads && (modeWidget.isEraseMode() || modeWidget.isEditMode())));
 				}
 
 				showOrHideRoadAndRiverOptions();
@@ -301,7 +300,7 @@ public class LandWaterTool extends EditorTool
 				@Override
 				public void mousePressed(java.awt.event.MouseEvent ev)
 				{
-					sliderEditWidthBeforeDrag = currentEditSelectedSegmentWidthLevel();
+					sliderEditWidthsBeforeDrag = captureSelectedRiverSegmentWidths();
 				}
 
 				@Override
@@ -386,6 +385,15 @@ public class LandWaterTool extends EditorTool
 		brushSizeComboBox = brushSizeTuple.getFirst();
 		brushSizeHider = brushSizeTuple.getSecond();
 
+		// Edit-mode multi-select UI: Ctrl-click behavior toggle, then a separator, then Copy/Paste/Delete buttons. All visible only in
+		// edit mode for rivers/roads (toggled together in showOrHideRoadAndRiverOptions).
+		controlClickBehavior = new ControlClickBehaviorWidget();
+		controlClickBehaviorHider = controlClickBehavior.addToOrganizer(organizer);
+		editButtonsSeparatorHider = organizer.addSeparator();
+		EditClipboardButtonsWidget editButtons = new EditClipboardButtonsWidget(this::copySelectedCPs, this::pasteCopiedCPs, this::deleteSelectedCPs,
+				Translation.get("landWaterTool.edit.deleteSelection.tooltip"));
+		editButtonsHider = editButtons.addToOrganizer(organizer);
+
 		// Create new region button
 		{
 			newRegionButton = new JToggleButton(Translation.get("landWaterTool.createNewRegion"));
@@ -444,33 +452,48 @@ public class LandWaterTool extends EditorTool
 	private void showOrHideRoadAndRiverOptions()
 	{
 		modeHider.setVisible(riversButton.isSelected() || roadsButton.isSelected());
-		// Clear edit-mode sticky selection and hover state when leaving edit mode, leaving the rivers/roads
-		// brush family entirely, or switching between rivers and roads (sticky on one type would render
-		// stale highlights while editing the other type). Do this before computing slider visibility so
-		// the slider hides if the sticky was just cleared.
+		// Clear edit-mode selection and hover state when leaving edit mode, leaving the rivers/roads brush family entirely, or switching
+		// between rivers and roads (a selection on one type would render stale highlights while editing the other). Do this before
+		// computing slider visibility so the slider hides if the selection was just cleared. The selection maps may be null during the
+		// initial super-constructor callback (before our field initializers run); treat null as empty.
 		boolean leftEditMode = !modeWidget.isEditMode() || (!riversButton.isSelected() && !roadsButton.isSelected());
-		boolean stickyTypeMismatch = (stickyRiver != null && !riversButton.isSelected()) || (stickyRoad != null && !roadsButton.isSelected());
-		if (leftEditMode || stickyTypeMismatch)
+		boolean hasSelectedRivers = selectedRiverCPs != null && !selectedRiverCPs.isEmpty();
+		boolean hasSelectedRoads = selectedRoadCPs != null && !selectedRoadCPs.isEmpty();
+		boolean selectionTypeMismatch = (hasSelectedRivers && !riversButton.isSelected()) || (hasSelectedRoads && !roadsButton.isSelected());
+		if (leftEditMode || selectionTypeMismatch)
 		{
-			boolean hadSticky = stickyRiver != null || stickyRoad != null;
+			boolean hadSelection = hasSelectedRivers || hasSelectedRoads;
 			boolean hadHover = hoveredRiver != null || hoveredRoad != null;
-			if (hadSticky || hadHover)
+			if (hadSelection || hadHover)
 			{
-				clearStickySegment();
+				clearSelection();
 				clearHoverState();
 				mapEditingPanel.clearHighlightedPolylines();
+				mapEditingPanel.setSelectedControlPointCircles(null);
 				mapEditingPanel.repaint();
 			}
 		}
-		// River width slider is shown in draw mode (sets the width of new rivers) and in edit mode
-		// only when a sticky river segment is selected (slider then retunes that segment's width).
-		// Hidden in edit mode without a selection so the slider's value doesn't look meaningful when
-		// it has no effect.
+		// River width slider is shown in draw mode (sets the width of new rivers) and in edit mode only when at least one river segment
+		// is implicitly selected (both endpoint CPs of a segment are in the selection). Hidden in edit mode without a selected segment
+		// so the slider's value doesn't look meaningful when it has no effect.
 		boolean showSliderInDraw = riversButton.isSelected() && modeWidget.isDrawMode();
-		boolean showSliderInEdit = riversButton.isSelected() && modeWidget.isEditMode() && stickyRiver != null;
+		boolean showSliderInEdit = riversButton.isSelected() && modeWidget.isEditMode() && isAnyRiverSegmentSelected();
 		riverOptionHider.setVisible(showSliderInDraw || showSliderInEdit);
 		riverDrawStyleHider.setVisible(riversButton.isSelected() && modeWidget.isDrawMode());
 		drawStyleHider.setVisible(roadsButton.isSelected() && modeWidget.isDrawMode());
+		boolean inLineEditMode = modeWidget.isEditMode() && (riversButton.isSelected() || roadsButton.isSelected());
+		if (controlClickBehaviorHider != null)
+		{
+			controlClickBehaviorHider.setVisible(inLineEditMode);
+		}
+		if (editButtonsSeparatorHider != null)
+		{
+			editButtonsSeparatorHider.setVisible(inLineEditMode);
+		}
+		if (editButtonsHider != null)
+		{
+			editButtonsHider.setVisible(inLineEditMode);
+		}
 		if (updater != null)
 		{
 			updater.doWhenMapIsReadyForInteractions(() ->
@@ -521,6 +544,391 @@ public class LandWaterTool extends EditorTool
 		// Match the outer edge of the drawn circle (including the stroke outline) so a click on the
 		// visible circle line is considered "on" the control point, not just clicks inside it.
 		return mapEditingPanel.getRoadControlPointHitRadiusInGraphPixels() / mainWindow.displayQualityScale;
+	}
+
+	// -------------------- Selection helpers --------------------
+
+	/** True if any control point of the active line type is selected. Null-safe (the maps may not be initialized yet during construction). */
+	private boolean hasAnySelection()
+	{
+		return (selectedRiverCPs != null && !selectedRiverCPs.isEmpty()) || (selectedRoadCPs != null && !selectedRoadCPs.isEmpty());
+	}
+
+	private void clearSelection()
+	{
+		if (selectedRiverCPs != null)
+		{
+			selectedRiverCPs.clear();
+		}
+		if (selectedRoadCPs != null)
+		{
+			selectedRoadCPs.clear();
+		}
+	}
+
+	private boolean isCPSelected(Object line, int index)
+	{
+		if (line instanceof River r)
+		{
+			Set<Integer> s = selectedRiverCPs.get(r);
+			return s != null && s.contains(index);
+		}
+		if (line instanceof Road r)
+		{
+			Set<Integer> s = selectedRoadCPs.get(r);
+			return s != null && s.contains(index);
+		}
+		return false;
+	}
+
+	private void addToSelection(Object line, int index)
+	{
+		if (line instanceof River r)
+		{
+			selectedRiverCPs.computeIfAbsent(r, k -> new HashSet<>()).add(index);
+		}
+		else if (line instanceof Road r)
+		{
+			selectedRoadCPs.computeIfAbsent(r, k -> new HashSet<>()).add(index);
+		}
+	}
+
+	private void removeFromSelection(Object line, int index)
+	{
+		if (line instanceof River r)
+		{
+			Set<Integer> s = selectedRiverCPs.get(r);
+			if (s != null)
+			{
+				s.remove(index);
+				if (s.isEmpty())
+				{
+					selectedRiverCPs.remove(r);
+				}
+			}
+		}
+		else if (line instanceof Road r)
+		{
+			Set<Integer> s = selectedRoadCPs.get(r);
+			if (s != null)
+			{
+				s.remove(index);
+				if (s.isEmpty())
+				{
+					selectedRoadCPs.remove(r);
+				}
+			}
+		}
+	}
+
+	/** Iterates every (line, index) pair in the active selection. */
+	private void forEachSelectedCP(java.util.function.BiConsumer<Object, Integer> body)
+	{
+		for (Map.Entry<River, Set<Integer>> entry : selectedRiverCPs.entrySet())
+		{
+			for (int idx : entry.getValue())
+			{
+				body.accept(entry.getKey(), idx);
+			}
+		}
+		for (Map.Entry<Road, Set<Integer>> entry : selectedRoadCPs.entrySet())
+		{
+			for (int idx : entry.getValue())
+			{
+				body.accept(entry.getKey(), idx);
+			}
+		}
+	}
+
+	/** Returns the {@link PathNode} list for a line that is a River or Road. */
+	private static List<? extends PathNode> nodesOf(Object line)
+	{
+		if (line instanceof River r)
+		{
+			return r.nodes;
+		}
+		if (line instanceof Road r)
+		{
+			return r.nodes;
+		}
+		throw new IllegalArgumentException("Not a line: " + line);
+	}
+
+	/** True if any river segment is implicitly selected (both endpoint CPs selected on the same river). */
+	private boolean isAnyRiverSegmentSelected()
+	{
+		if (selectedRiverCPs == null)
+		{
+			return false;
+		}
+		for (Map.Entry<River, Set<Integer>> entry : selectedRiverCPs.entrySet())
+		{
+			Set<Integer> idxs = entry.getValue();
+			if (idxs.size() < 2)
+			{
+				continue;
+			}
+			River river = entry.getKey();
+			int n = river.nodes.size();
+			for (int i = 0; i < n - 1; i++)
+			{
+				if (idxs.contains(i) && idxs.contains(i + 1))
+				{
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+
+	/**
+	 * Deletes every selected CP from its line, splitting the line at each deletion the same way Erase mode / right-click "Delete
+	 * Segment" does: every segment that touches a deleted CP is removed, so the line is left fragmented (not bridged across the gap).
+	 * Pieces with fewer than 2 nodes are dropped entirely. Pushes one incremental undo point.
+	 */
+	private void deleteSelectedCPs()
+	{
+		if (!hasAnySelection())
+		{
+			return;
+		}
+		List<River> riversWithSel = new ArrayList<>(selectedRiverCPs.keySet());
+		List<Road> roadsWithSel = new ArrayList<>(selectedRoadCPs.keySet());
+
+		// Build the list of (start, end) location pairs for every segment touching a selected CP. removeSegmentsAndSplit{Rivers,Roads}
+		// will handle the split + drop-degenerate-pieces logic for us.
+		List<List<Point>> riverSegmentsToRemove = new ArrayList<>();
+		for (River river : riversWithSel)
+		{
+			Set<Integer> sel = selectedRiverCPs.get(river);
+			if (sel == null || sel.isEmpty())
+			{
+				continue;
+			}
+			List<RiverPathNode> nodes = river.nodes;
+			for (int idx : sel)
+			{
+				if (idx > 0 && idx - 1 < nodes.size())
+				{
+					riverSegmentsToRemove.add(Arrays.asList(nodes.get(idx - 1).getLoc(), nodes.get(idx).getLoc()));
+				}
+				if (idx >= 0 && idx + 1 < nodes.size())
+				{
+					riverSegmentsToRemove.add(Arrays.asList(nodes.get(idx).getLoc(), nodes.get(idx + 1).getLoc()));
+				}
+			}
+		}
+		List<List<Point>> roadSegmentsToRemove = new ArrayList<>();
+		for (Road road : roadsWithSel)
+		{
+			Set<Integer> sel = selectedRoadCPs.get(road);
+			if (sel == null || sel.isEmpty())
+			{
+				continue;
+			}
+			List<RoadPathNode> nodes = road.nodes;
+			for (int idx : sel)
+			{
+				if (idx > 0 && idx - 1 < nodes.size())
+				{
+					roadSegmentsToRemove.add(Arrays.asList(nodes.get(idx - 1).getLoc(), nodes.get(idx).getLoc()));
+				}
+				if (idx >= 0 && idx + 1 < nodes.size())
+				{
+					roadSegmentsToRemove.add(Arrays.asList(nodes.get(idx).getLoc(), nodes.get(idx + 1).getLoc()));
+				}
+			}
+		}
+
+		// The selection refers to indices on the pre-cut lines; after the cut, surviving pieces may live in new River/Road objects and
+		// indices shift. Clearing the selection is simpler than trying to map every selected CP across the split.
+		clearSelection();
+
+		RiverDrawer.removeSegmentsAndSplitRivers(mainWindow.edits.rivers, riverSegmentsToRemove);
+		RiverDrawer.removeEmptyOrShortRivers(mainWindow.edits.rivers);
+		List<Road> changedRoads = RoadDrawer.removeSegmentsAndSplitRoads(mainWindow.edits.roads, roadSegmentsToRemove);
+		RoadDrawer.removeEmptyOrSinglePointRoads(mainWindow.edits.roads);
+
+		Set<Center> centersToRedraw = new HashSet<>();
+		if (!riverSegmentsToRemove.isEmpty())
+		{
+			centersToRedraw.addAll(getCentersTouchingPoints(
+					pointsToCoverInRedrawAfterPathCut(mainWindow.edits.rivers, r -> r.nodes, riverSegmentsToRemove)));
+		}
+		if (!roadSegmentsToRemove.isEmpty())
+		{
+			centersToRedraw.addAll(getCentersTouchingPoints(
+					pointsToCoverInRedrawAfterPathCut(mainWindow.edits.roads, r -> r.nodes, roadSegmentsToRemove)));
+		}
+		if (!changedRoads.isEmpty())
+		{
+			updater.addRoadsToRedrawLowPriority(changedRoads, mainWindow.displayQualityScale);
+		}
+
+		undoer.setUndoPoint(UpdateType.Incremental, this);
+		updater.createAndShowMapIncrementalUsingCenters(centersToRedraw);
+		updater.doWhenMapIsNotDrawing(() -> updater.createAndShowLowPriorityChanges());
+		LineType activeType = riversButton.isSelected() ? LineType.RIVER : LineType.ROAD;
+		refreshSelectionVisuals(mapEditingPanel.getMousePosition(), activeType);
+	}
+
+	/**
+	 * Captures contiguous runs of selected-CP locations from the active line type into the clipboard. Each run becomes one paste-able
+	 * mini-line. Non-contiguous selections produce multiple runs.
+	 */
+	private void copySelectedCPs()
+	{
+		if (!hasAnySelection())
+		{
+			return;
+		}
+		List<List<Point>> runs = new ArrayList<>();
+		LineType type = !selectedRiverCPs.isEmpty() ? LineType.RIVER : LineType.ROAD;
+		if (type == LineType.RIVER)
+		{
+			for (Map.Entry<River, Set<Integer>> entry : selectedRiverCPs.entrySet())
+			{
+				List<RiverPathNode> nodes = entry.getKey().nodes;
+				Set<Integer> sel = entry.getValue();
+				List<Point> run = new ArrayList<>();
+				for (int i = 0; i < nodes.size(); i++)
+				{
+					if (sel.contains(i))
+					{
+						run.add(nodes.get(i).getLoc());
+					}
+					else if (!run.isEmpty())
+					{
+						if (run.size() >= 2)
+						{
+							runs.add(run);
+						}
+						run = new ArrayList<>();
+					}
+				}
+				if (run.size() >= 2)
+				{
+					runs.add(run);
+				}
+			}
+		}
+		else
+		{
+			for (Map.Entry<Road, Set<Integer>> entry : selectedRoadCPs.entrySet())
+			{
+				List<RoadPathNode> nodes = entry.getKey().nodes;
+				Set<Integer> sel = entry.getValue();
+				List<Point> run = new ArrayList<>();
+				for (int i = 0; i < nodes.size(); i++)
+				{
+					if (sel.contains(i))
+					{
+						run.add(nodes.get(i).getLoc());
+					}
+					else if (!run.isEmpty())
+					{
+						if (run.size() >= 2)
+						{
+							runs.add(run);
+						}
+						run = new ArrayList<>();
+					}
+				}
+				if (run.size() >= 2)
+				{
+					runs.add(run);
+				}
+			}
+		}
+		if (runs.isEmpty())
+		{
+			return;
+		}
+		copiedCPRuns = runs;
+		copiedLineType = type;
+	}
+
+	/**
+	 * Pastes the clipboard as new lines of the same type, translated so that the first run's first CP lands at the current cursor
+	 * position. Selects the pasted CPs. Requires the active line type to match the clipboard's type (silently no-ops otherwise).
+	 */
+	private void pasteCopiedCPs()
+	{
+		if (copiedCPRuns == null || copiedCPRuns.isEmpty() || copiedLineType == null)
+		{
+			return;
+		}
+		LineType activeType = riversButton.isSelected() ? LineType.RIVER : LineType.ROAD;
+		if (activeType != copiedLineType)
+		{
+			return;
+		}
+		java.awt.Point mouse = mapEditingPanel.getMousePosition();
+		if (mouse == null)
+		{
+			return;
+		}
+		Point mouseRI = getPointOnGraph(mouse).mult(1.0 / mainWindow.displayQualityScale);
+		Point origin = copiedCPRuns.get(0).get(0);
+		Point delta = new Point(mouseRI.x - origin.x, mouseRI.y - origin.y);
+
+		clearSelection();
+		List<List<Point>> centersTouched = new ArrayList<>();
+		Set<Road> roadsToRephaseDashes = new HashSet<>();
+		for (List<Point> run : copiedCPRuns)
+		{
+			List<Point> translated = new ArrayList<>(run.size());
+			for (Point p : run)
+			{
+				translated.add(new Point(p.x + delta.x, p.y + delta.y));
+			}
+			if (activeType == LineType.RIVER)
+			{
+				List<RiverPathNode> newNodes = new ArrayList<>(translated.size());
+				Random random = new Random();
+				for (int i = 0; i < translated.size(); i++)
+				{
+					newNodes.add(new RiverPathNode(translated.get(i), GraphRiver.RIVERS_THIS_SIZE_OR_SMALLER_WILL_NOT_BE_DRAWN + 1, random.nextLong(),
+							RiverPathNode.EDGE_INDEX_NONE));
+				}
+				River newRiver = new River(newNodes);
+				mainWindow.edits.rivers.add(newRiver);
+				Set<Integer> sel = new HashSet<>();
+				for (int i = 0; i < newNodes.size(); i++)
+				{
+					sel.add(i);
+				}
+				selectedRiverCPs.put(newRiver, sel);
+				centersTouched.add(translated);
+			}
+			else
+			{
+				List<RoadPathNode> newNodes = new ArrayList<>(translated.size());
+				for (Point p : translated)
+				{
+					newNodes.add(new RoadPathNode(p));
+				}
+				Road newRoad = new Road(newNodes);
+				mainWindow.edits.roads.add(newRoad);
+				Set<Integer> sel = new HashSet<>();
+				for (int i = 0; i < newNodes.size(); i++)
+				{
+					sel.add(i);
+				}
+				selectedRoadCPs.put(newRoad, sel);
+				centersTouched.add(translated);
+				roadsToRephaseDashes.add(newRoad);
+			}
+		}
+		if (!roadsToRephaseDashes.isEmpty())
+		{
+			updater.addRoadsToRedrawLowPriority(new ArrayList<>(roadsToRephaseDashes), mainWindow.displayQualityScale);
+		}
+		undoer.setUndoPoint(UpdateType.Incremental, this);
+		updater.createAndShowMapIncrementalUsingCenters(getCentersTouchingPoints(centersTouched));
+		updater.doWhenMapIsNotDrawing(() -> updater.createAndShowLowPriorityChanges());
+		refreshSelectionVisuals(mouse, activeType);
 	}
 
 	/**
@@ -908,73 +1316,16 @@ public class LandWaterTool extends EditorTool
 		return null;
 	}
 
-	/**
-	 * Returns the hit-test scope for the active brush in edit mode while a sticky line is locked: only the sticky line is considered.
-	 * Used by right-click and hover so they don't surface other lines while the user has one selected.
-	 */
-	private LineHit editModeHitTestScopedToStickyIfAny(java.awt.Point panelPoint, LineType activeType)
-	{
-		return editModeHitTestScopedToStickyIfAny(panelPoint, activeType, -1);
-	}
-
-	/** Overload that forwards a custom segment hit threshold (see {@link #editModeHitTest(java.awt.Point, LineType, River, Road, double)}). */
-	private LineHit editModeHitTestScopedToStickyIfAny(java.awt.Point panelPoint, LineType activeType, double customSegmentThresholdGraphPixels)
-	{
-		if (stickyRiver != null && activeType == LineType.RIVER)
-		{
-			return editModeHitTest(panelPoint, activeType, stickyRiver, null, customSegmentThresholdGraphPixels);
-		}
-		if (stickyRoad != null && activeType == LineType.ROAD)
-		{
-			return editModeHitTest(panelPoint, activeType, null, stickyRoad, customSegmentThresholdGraphPixels);
-		}
-		return editModeHitTest(panelPoint, activeType, null, null, customSegmentThresholdGraphPixels);
-	}
-
 	private void clearHoverState()
 	{
 		hoveredRiver = null;
 		hoveredRoad = null;
 	}
 
-	private void setStickyRiverSegment(River river, int segmentIndex)
-	{
-		boolean wasRiver = stickyRiver != null;
-		stickyRiver = river;
-		stickyRoad = null;
-		stickySegmentIndex = segmentIndex;
-		if (!wasRiver)
-		{
-			// Slider visibility depends on stickyRiver in edit mode — refresh so it appears.
-			refreshRiverWidthSliderVisibility();
-		}
-	}
-
-	private void setStickyRoadSegment(Road road, int segmentIndex)
-	{
-		boolean wasRiver = stickyRiver != null;
-		stickyRiver = null;
-		stickyRoad = road;
-		stickySegmentIndex = segmentIndex;
-		if (wasRiver)
-		{
-			refreshRiverWidthSliderVisibility();
-		}
-	}
-
-	private void clearStickySegment()
-	{
-		boolean wasRiver = stickyRiver != null;
-		stickyRiver = null;
-		stickyRoad = null;
-		stickySegmentIndex = -1;
-		if (wasRiver)
-		{
-			refreshRiverWidthSliderVisibility();
-		}
-	}
-
-	/** Refreshes the river-width slider's visibility based on the current mode and sticky state. */
+	/**
+	 * Refreshes the river-width slider's visibility based on the current mode and selection state. Should be called after any change to
+	 * the selection or mode.
+	 */
 	private void refreshRiverWidthSliderVisibility()
 	{
 		if (riverOptionHider == null)
@@ -982,19 +1333,14 @@ public class LandWaterTool extends EditorTool
 			return;
 		}
 		boolean showSliderInDraw = riversButton.isSelected() && modeWidget.isDrawMode();
-		boolean showSliderInEdit = riversButton.isSelected() && modeWidget.isEditMode() && stickyRiver != null;
+		boolean showSliderInEdit = riversButton.isSelected() && modeWidget.isEditMode() && isAnyRiverSegmentSelected();
 		riverOptionHider.setVisible(showSliderInDraw || showSliderInEdit);
 	}
 
-	private boolean stickyLineActive()
-	{
-		return stickyRiver != null || stickyRoad != null;
-	}
-
 	/**
-	 * Refreshes the edit-mode hover visuals (control-point circles + the hover ring) at {@code mouseLocation}. When a sticky line is locked,
-	 * only that line's control points are drawn (regardless of cursor distance), and the hover ring is restricted to that line's CPs.
-	 * When nothing is sticky, behaves like draw mode: any line within the highlight threshold contributes its CPs.
+	 * Refreshes the edit-mode hover visuals: outlined circles for control points on any line near the cursor, filled circles for
+	 * currently-selected control points (which are always drawn regardless of cursor distance), and a narrow hover ring on the
+	 * single CP directly under the cursor (if any).
 	 */
 	private void updateEditModeHoverDisplay(java.awt.Point mouseLocation, LineType type)
 	{
@@ -1003,62 +1349,65 @@ public class LandWaterTool extends EditorTool
 			return;
 		}
 		double scale = mainWindow.displayQualityScale;
-		List<Point> circlesGraphPixels = new ArrayList<>();
+		List<Point> outlinedCirclesGraphPixels = new ArrayList<>();
+		List<Point> selectedCirclesGraphPixels = new ArrayList<>();
 		Point mouseRI = mouseLocation != null ? getPointOnGraph(mouseLocation).mult(1.0 / scale) : null;
 
-		if (stickyLineActive())
+		// Selected CPs (of the active type) are always drawn as filled circles.
+		if (type == LineType.RIVER)
 		{
-			if (type == LineType.RIVER && stickyRiver != null)
+			for (Map.Entry<River, Set<Integer>> entry : selectedRiverCPs.entrySet())
 			{
-				for (RiverPathNode n : stickyRiver.nodes)
+				List<RiverPathNode> nodes = entry.getKey().nodes;
+				for (int idx : entry.getValue())
 				{
-					circlesGraphPixels.add(n.getLoc().mult(scale));
-				}
-			}
-			else if (type == LineType.ROAD && stickyRoad != null)
-			{
-				for (RoadPathNode n : stickyRoad.nodes)
-				{
-					circlesGraphPixels.add(n.getLoc().mult(scale));
+					if (idx >= 0 && idx < nodes.size())
+					{
+						selectedCirclesGraphPixels.add(nodes.get(idx).getLoc().mult(scale));
+					}
 				}
 			}
 		}
 		else
 		{
-			double highlightThresholdRI = getHoverHighlightThresholdInRI();
-			for (List<Point> path : getAllLinePaths(type))
+			for (Map.Entry<Road, Set<Integer>> entry : selectedRoadCPs.entrySet())
 			{
-				if (mouseRI != null && isPathNearPoint(path, mouseRI, highlightThresholdRI))
+				List<RoadPathNode> nodes = entry.getKey().nodes;
+				for (int idx : entry.getValue())
 				{
-					for (Point riPoint : path)
+					if (idx >= 0 && idx < nodes.size())
 					{
-						circlesGraphPixels.add(riPoint.mult(scale));
+						selectedCirclesGraphPixels.add(nodes.get(idx).getLoc().mult(scale));
 					}
 				}
 			}
 		}
-		mapEditingPanel.setControlPointCircles(circlesGraphPixels);
 
-		// Hover ring on the specific CP under the cursor, scoped to the sticky line if one is locked.
+		// Lines near the cursor get outlined circles drawn on every CP that isn't already in the selection.
+		double highlightThresholdRI = getHoverHighlightThresholdInRI();
+		Set<Point> selectedLocations = new HashSet<>(selectedCirclesGraphPixels);
+		for (List<Point> path : getAllLinePaths(type))
+		{
+			if (mouseRI != null && isPathNearPoint(path, mouseRI, highlightThresholdRI))
+			{
+				for (Point riPoint : path)
+				{
+					Point graphPoint = riPoint.mult(scale);
+					if (!selectedLocations.contains(graphPoint))
+					{
+						outlinedCirclesGraphPixels.add(graphPoint);
+					}
+				}
+			}
+		}
+		mapEditingPanel.setControlPointCircles(outlinedCirclesGraphPixels);
+		mapEditingPanel.setSelectedControlPointCircles(selectedCirclesGraphPixels);
+
+		// Hover ring on the single CP directly under the cursor (if any), considering all lines of the active type.
 		Point snapPointRI = null;
 		if (mouseLocation != null && mouseRI != null)
 		{
-			double snapRadius = getSnapRadiusRI();
-			if (stickyLineActive())
-			{
-				if (type == LineType.RIVER && stickyRiver != null)
-				{
-					snapPointRI = findNearestPointInSinglePath(mouseRI, PathOperations.toLocationList(stickyRiver.nodes), snapRadius);
-				}
-				else if (type == LineType.ROAD && stickyRoad != null)
-				{
-					snapPointRI = findNearestPointInSinglePath(mouseRI, PathOperations.toLocationList(stickyRoad.nodes), snapRadius);
-				}
-			}
-			else
-			{
-				snapPointRI = computeSnapPointForType(mouseLocation, type);
-			}
+			snapPointRI = computeSnapPointForType(mouseLocation, type);
 		}
 		if (snapPointRI != null)
 		{
@@ -1070,47 +1419,39 @@ public class LandWaterTool extends EditorTool
 		}
 	}
 
-	private Point findNearestPointInSinglePath(Point mouseRI, List<Point> path, double snapRadius)
-	{
-		Point best = null;
-		double bestDist = snapRadius;
-		for (Point p : path)
-		{
-			double d = p.distanceTo(mouseRI);
-			if (d < bestDist)
-			{
-				bestDist = d;
-				best = p;
-			}
-		}
-		return best;
-	}
-
 	/**
-	 * Adds the sticky segment polyline to the panel's highlight list. Callers must clear highlighted polylines beforehand if they want
-	 * only the sticky highlight to remain. Safe to call when no sticky segment is selected (no-op).
+	 * Adds every implicitly-selected segment (both endpoint CPs in the selection) to the panel's highlighted-polyline list. Callers must
+	 * clear highlighted polylines beforehand if they want only the selection highlight to remain. Safe to call when nothing is selected.
 	 */
-	private void applyStickySegmentHighlight()
+	private void applySelectedSegmentsHighlight()
 	{
 		double scale = mainWindow.displayQualityScale;
-		if (stickyRiver != null && stickySegmentIndex >= 0)
+		for (Map.Entry<River, Set<Integer>> entry : selectedRiverCPs.entrySet())
 		{
-			List<RiverPathNode> nodes = stickyRiver.nodes;
-			if (stickySegmentIndex < nodes.size() - 1)
+			List<RiverPathNode> nodes = entry.getKey().nodes;
+			Set<Integer> sel = entry.getValue();
+			for (int i = 0; i < nodes.size() - 1; i++)
 			{
-				Point a = nodes.get(stickySegmentIndex).getLoc().mult(scale);
-				Point b = nodes.get(stickySegmentIndex + 1).getLoc().mult(scale);
-				mapEditingPanel.addPolylinesToHighlight(List.of(a, b));
+				if (sel.contains(i) && sel.contains(i + 1))
+				{
+					Point a = nodes.get(i).getLoc().mult(scale);
+					Point b = nodes.get(i + 1).getLoc().mult(scale);
+					mapEditingPanel.addPolylinesToHighlight(List.of(a, b));
+				}
 			}
 		}
-		else if (stickyRoad != null && stickySegmentIndex >= 0)
+		for (Map.Entry<Road, Set<Integer>> entry : selectedRoadCPs.entrySet())
 		{
-			List<RoadPathNode> nodes = stickyRoad.nodes;
-			if (stickySegmentIndex < nodes.size() - 1)
+			List<RoadPathNode> nodes = entry.getKey().nodes;
+			Set<Integer> sel = entry.getValue();
+			for (int i = 0; i < nodes.size() - 1; i++)
 			{
-				Point a = nodes.get(stickySegmentIndex).getLoc().mult(scale);
-				Point b = nodes.get(stickySegmentIndex + 1).getLoc().mult(scale);
-				mapEditingPanel.addPolylinesToHighlight(List.of(a, b));
+				if (sel.contains(i) && sel.contains(i + 1))
+				{
+					Point a = nodes.get(i).getLoc().mult(scale);
+					Point b = nodes.get(i + 1).getLoc().mult(scale);
+					mapEditingPanel.addPolylinesToHighlight(List.of(a, b));
+				}
 			}
 		}
 	}
@@ -1143,24 +1484,67 @@ public class LandWaterTool extends EditorTool
 		return value;
 	}
 
+	/**
+	 * Returns the mode (most common value) of width levels across all currently-selected river segments. Returns -1 when no segment is
+	 * selected — the slider is hidden in that case.
+	 */
 	private int currentEditSelectedSegmentWidthLevel()
 	{
-		if (stickyRiver == null || stickySegmentIndex < 0)
+		Map<Integer, Integer> counts = new HashMap<>();
+		int bestLevel = -1;
+		int bestCount = 0;
+		for (Map.Entry<River, Set<Integer>> entry : selectedRiverCPs.entrySet())
 		{
-			return -1;
+			List<RiverPathNode> nodes = entry.getKey().nodes;
+			Set<Integer> sel = entry.getValue();
+			for (int i = 0; i < nodes.size() - 1; i++)
+			{
+				if (sel.contains(i) && sel.contains(i + 1))
+				{
+					int lvl = nodes.get(i).getWidthLevelToNext();
+					int c = counts.merge(lvl, 1, Integer::sum);
+					if (c > bestCount)
+					{
+						bestCount = c;
+						bestLevel = lvl;
+					}
+				}
+			}
 		}
-		List<RiverPathNode> nodes = stickyRiver.nodes;
-		if (stickySegmentIndex >= nodes.size() - 1)
-		{
-			return -1;
-		}
-		return nodes.get(stickySegmentIndex).getWidthLevelToNext();
+		return bestLevel;
 	}
 
 	/**
-	 * Whenever the slider value changes AND we're in edit mode with a river segment selected, rewrite the segment's width level live. The
-	 * change listener also fires when the slider is synced programmatically from selection; {@link #syncingSliderToSelection} suppresses
-	 * the rewrite in that case.
+	 * Snapshot the current width level of every selected river segment, keyed by (river, segmentIndex). Used to push an undo point only
+	 * when at least one selected segment's width actually changed during a slider drag.
+	 */
+	private Map<River, Map<Integer, Integer>> captureSelectedRiverSegmentWidths()
+	{
+		Map<River, Map<Integer, Integer>> result = new HashMap<>();
+		for (Map.Entry<River, Set<Integer>> entry : selectedRiverCPs.entrySet())
+		{
+			List<RiverPathNode> nodes = entry.getKey().nodes;
+			Set<Integer> sel = entry.getValue();
+			Map<Integer, Integer> perSeg = new HashMap<>();
+			for (int i = 0; i < nodes.size() - 1; i++)
+			{
+				if (sel.contains(i) && sel.contains(i + 1))
+				{
+					perSeg.put(i, nodes.get(i).getWidthLevelToNext());
+				}
+			}
+			if (!perSeg.isEmpty())
+			{
+				result.put(entry.getKey(), perSeg);
+			}
+		}
+		return result;
+	}
+
+	/**
+	 * Whenever the slider value changes AND we're in edit mode with a river segment selected, rewrite every selected segment's width
+	 * level live. The change listener also fires when the slider is synced programmatically from selection;
+	 * {@link #syncingSliderToSelection} suppresses the rewrite in that case.
 	 */
 	private void handleRiverWidthSliderChanged()
 	{
@@ -1168,43 +1552,82 @@ public class LandWaterTool extends EditorTool
 		{
 			return;
 		}
-		if (!modeWidget.isEditMode() || stickyRiver == null || stickySegmentIndex < 0)
-		{
-			return;
-		}
-		List<RiverPathNode> nodes = new ArrayList<>(stickyRiver.nodes);
-		if (stickySegmentIndex >= nodes.size() - 1)
+		if (!modeWidget.isEditMode() || selectedRiverCPs.isEmpty())
 		{
 			return;
 		}
 		int newLevel = sliderValueToRiverLevel(riverWidthSlider.getValue());
-		RiverPathNode old = nodes.get(stickySegmentIndex);
-		if (old.getWidthLevelToNext() == newLevel)
-		{
-			return;
-		}
-		nodes.set(stickySegmentIndex, new RiverPathNode(old.getLoc(), newLevel, old.getSeedToNext(), old.getEdgeIndexToNext()));
-		stickyRiver.nodes = new java.util.concurrent.CopyOnWriteArrayList<>(nodes);
 		List<List<Point>> centersTouched = new ArrayList<>();
-		centersTouched.add(PathOperations.toLocationList(nodes));
-		updater.createAndShowMapIncrementalUsingCenters(getCentersTouchingPoints(centersTouched));
+		boolean anyChanged = false;
+		for (Map.Entry<River, Set<Integer>> entry : selectedRiverCPs.entrySet())
+		{
+			River river = entry.getKey();
+			Set<Integer> sel = entry.getValue();
+			if (sel.size() < 2)
+			{
+				continue;
+			}
+			List<RiverPathNode> nodes = new ArrayList<>(river.nodes);
+			boolean changedThisRiver = false;
+			for (int i = 0; i < nodes.size() - 1; i++)
+			{
+				if (sel.contains(i) && sel.contains(i + 1))
+				{
+					RiverPathNode old = nodes.get(i);
+					if (old.getWidthLevelToNext() != newLevel)
+					{
+						nodes.set(i, new RiverPathNode(old.getLoc(), newLevel, old.getSeedToNext(), old.getEdgeIndexToNext()));
+						changedThisRiver = true;
+					}
+				}
+			}
+			if (changedThisRiver)
+			{
+				river.nodes = new java.util.concurrent.CopyOnWriteArrayList<>(nodes);
+				centersTouched.add(PathOperations.toLocationList(nodes));
+				anyChanged = true;
+			}
+		}
+		if (anyChanged)
+		{
+			updater.createAndShowMapIncrementalUsingCenters(getCentersTouchingPoints(centersTouched));
+		}
 	}
 
 	private void commitSliderEditIfChanged()
 	{
-		if (sliderEditWidthBeforeDrag < 0)
+		if (sliderEditWidthsBeforeDrag == null)
 		{
 			return;
 		}
-		int newLevel = currentEditSelectedSegmentWidthLevel();
-		if (newLevel >= 0 && newLevel != sliderEditWidthBeforeDrag)
+		boolean changed = false;
+		for (Map.Entry<River, Map<Integer, Integer>> entry : sliderEditWidthsBeforeDrag.entrySet())
+		{
+			River river = entry.getKey();
+			List<RiverPathNode> nodes = river.nodes;
+			for (Map.Entry<Integer, Integer> seg : entry.getValue().entrySet())
+			{
+				int segIdx = seg.getKey();
+				int beforeLevel = seg.getValue();
+				if (segIdx < nodes.size() - 1 && nodes.get(segIdx).getWidthLevelToNext() != beforeLevel)
+				{
+					changed = true;
+					break;
+				}
+			}
+			if (changed)
+			{
+				break;
+			}
+		}
+		if (changed)
 		{
 			undoer.setUndoPoint(UpdateType.Incremental, this);
 		}
-		sliderEditWidthBeforeDrag = -1;
+		sliderEditWidthsBeforeDrag = null;
 	}
 
-	/** Reflects the selected segment's current width in the slider, suppressing the change-listener side effect. */
+	/** Reflects the mode of selected segment widths in the slider, suppressing the change-listener side effect. */
 	private void syncSliderToSelectedSegment()
 	{
 		int level = currentEditSelectedSegmentWidthLevel();
@@ -1998,208 +2421,434 @@ public class LandWaterTool extends EditorTool
 		}
 		else if (modeWidget.isEditMode() && (riversButton.isSelected() || roadsButton.isSelected()) && SwingUtilities.isLeftMouseButton(e))
 		{
-			// Edit mode press. The hit-test scope is restricted to the sticky line while one is
-			// locked, matching what's highlighted on screen. Clicking on the sticky line's control
-			// point starts a drag; clicking on a different segment of it updates the sticky segment;
-			// clicking anything outside the sticky line clears the sticky lock (no other action this
-			// click — the next click is fresh).
-			LineType activeType = riversButton.isSelected() ? LineType.RIVER : LineType.ROAD;
-			LineHit hit = editModeHitTestScopedToStickyIfAny(e.getPoint(), activeType);
-			if (hit != null && hit.isControlPoint())
+			handleEditModeMousePressed(e);
+		}
+	}
+
+	/**
+	 * Edit-mode press handler. Dispatches to one of three modes based on where the click landed and whether the modifier key is held:
+	 * <ul>
+	 * <li><b>Move-drag</b> — press on a CP (with brush 1) or in the brush radius of a CP — replaces the selection with that CP (or
+	 * extends it when Ctrl is held), then arms a move-drag so any subsequent cursor motion translates every selected CP.</li>
+	 * <li><b>Paint-drag (from segment)</b> — press on a segment's centerline — selects both endpoint CPs of the segment, then arms a
+	 * paint-drag so subsequent motion extends the selection with the brush. Does not move the line on accidental drag.</li>
+	 * <li><b>Paint-drag (from empty)</b> — press in empty space — clears the selection (unless Ctrl is held), then arms a paint-drag.</li>
+	 * </ul>
+	 */
+	private void handleEditModeMousePressed(MouseEvent e)
+	{
+		LineType activeType = riversButton.isSelected() ? LineType.RIVER : LineType.ROAD;
+		boolean ctrlDown = SwingHelper.isCommandKeyDown(e);
+		boolean deselectMode = controlClickBehavior != null && controlClickBehavior.isUnselectMode();
+		int brushDiameter = getEditBrushDiameter();
+		boolean brushIsSinglePoint = brushDiameter <= 1;
+
+		// Reset transient drag state. We'll re-arm below if the press starts a drag.
+		dragInProgress = false;
+		dragOccurred = false;
+		dragIsPaint = false;
+		dragMovingCPs = null;
+		dragBeforeSnapshots = null;
+		dragStartLocRI = getPointOnGraph(e.getPoint()).mult(1.0 / mainWindow.displayQualityScale);
+
+		// A precise CP hit-test always runs first — even with brush > 1 — so we can detect "press lands on a CP that's already in the
+		// selection." That case is special: it should start a move-drag of the whole selection, regardless of brush size or Ctrl state,
+		// since the user clearly intends to grab the existing group. Without this branch, brush > 1 would always paint-clear, and a
+		// no-Ctrl click would reset the selection to just the clicked CP — both of which lose the user's existing multi-selection.
+		LineHit preciseHit = editModeHitTest(e.getPoint(), activeType, null, null, getHoverHighlightThresholdInGraphPixels());
+		if (preciseHit != null && preciseHit.isControlPoint())
+		{
+			Object hitLine = preciseHit.river() != null ? preciseHit.river() : preciseHit.road();
+			int hitIdx = preciseHit.controlPointIndex();
+			if (isCPSelected(hitLine, hitIdx))
 			{
-				dragRiver = hit.river();
-				dragRoad = hit.road();
-				dragControlPointIndex = hit.controlPointIndex();
-				dragInProgress = true;
-				dragOccurred = false;
-				dragSnapshotPath = dragRiver != null ? PathOperations.toLocationList(dragRiver.nodes)
-						: PathOperations.toLocationList(dragRoad.nodes);
-				captureSharedControlPointsForDrag();
+				armMoveDragIfApplicable(hitLine, hitIdx);
+				refreshSelectionVisuals(e.getPoint(), activeType);
+				return;
 			}
-			else if (hit != null && hit.isSegment() && hit.river() != null)
+		}
+
+		LineHit hit = brushIsSinglePoint ? preciseHit : null;
+
+		if (brushIsSinglePoint && hit != null && hit.isControlPoint())
+		{
+			// Move-drag from an unselected CP (the selected-CP case was handled above).
+			Object line = hit.river() != null ? hit.river() : hit.road();
+			int idx = hit.controlPointIndex();
+			if (ctrlDown)
 			{
-				// Only rivers support sticky segment selection (the width slider needs a target).
-				// Road segments aren't selectable because there's no road-segment-level setting to tune.
-				setStickyRiverSegment(hit.river(), hit.segmentIndex());
-				syncSliderToSelectedSegment();
-				mapEditingPanel.clearHighlightedPolylines();
-				applyStickySegmentHighlight();
-				// Refresh hover so the sticky line's CPs are now the only ones drawn.
-				updateEditModeHoverDisplay(e.getPoint(), activeType);
-				mapEditingPanel.repaint();
-				dragInProgress = false;
-				dragOccurred = false;
-				dragSnapshotPath = null;
+				if (deselectMode)
+				{
+					removeFromSelection(line, idx);
+				}
+				else
+				{
+					addToSelection(line, idx);
+				}
 			}
 			else
 			{
-				if (stickyRiver != null || stickyRoad != null)
-				{
-					clearStickySegment();
-					mapEditingPanel.clearHighlightedPolylines();
-					// Refresh hover so other lines' CPs reappear now that the lock is released.
-					updateEditModeHoverDisplay(e.getPoint(), activeType);
-					mapEditingPanel.repaint();
-				}
-				dragInProgress = false;
-				dragOccurred = false;
-				dragSnapshotPath = null;
+				clearSelection();
+				addToSelection(line, idx);
 			}
+			armMoveDragIfApplicable(line, idx);
+			refreshSelectionVisuals(e.getPoint(), activeType);
 		}
-	}
-
-	/**
-	 * Scans the active type's other lines for any control point sharing the dragged CP's location and records them so they can be moved
-	 * in lockstep. Run once at drag-start; the resulting list survives until {@link #clearDragSharedTargets()}. A river only matches other
-	 * rivers, and a road only matches other roads — we don't pull cross-type joints because the user's description was scoped to same-type
-	 * Y-junctions.
-	 */
-	private void captureSharedControlPointsForDrag()
-	{
-		dragSharedRivers = new ArrayList<>();
-		dragSharedRoads = new ArrayList<>();
-		Point primaryLoc;
-		if (dragRiver != null && dragControlPointIndex >= 0 && dragControlPointIndex < dragRiver.nodes.size())
+		else if (brushIsSinglePoint && hit != null && hit.isSegment())
 		{
-			primaryLoc = dragRiver.nodes.get(dragControlPointIndex).getLoc();
-		}
-		else if (dragRoad != null && dragControlPointIndex >= 0 && dragControlPointIndex < dragRoad.nodes.size())
-		{
-			primaryLoc = dragRoad.nodes.get(dragControlPointIndex).getLoc();
+			// Single click on a segment: selects both its endpoint CPs. The drag becomes paint-extend (does NOT move the line on
+			// accidental drag — segments aren't grab handles).
+			Object line = hit.river() != null ? hit.river() : hit.road();
+			int segIdx = hit.segmentIndex();
+			if (!ctrlDown)
+			{
+				clearSelection();
+			}
+			if (deselectMode && ctrlDown)
+			{
+				removeFromSelection(line, segIdx);
+				removeFromSelection(line, segIdx + 1);
+			}
+			else
+			{
+				addToSelection(line, segIdx);
+				addToSelection(line, segIdx + 1);
+			}
+			dragInProgress = true;
+			dragIsPaint = true;
+			refreshSelectionVisuals(e.getPoint(), activeType);
 		}
 		else
 		{
-			return;
-		}
-		if (dragRiver != null)
-		{
-			for (River other : mainWindow.edits.rivers)
+			// Press on empty space, or with a multi-CP brush. Paint-select under the brush. Without Ctrl, the press immediately replaces
+			// any prior selection (including the empty-click case, which clears it).
+			List<LineHit> brushHits = brushIsSinglePoint ? Collections.emptyList() : multiBrushHitTest(e.getPoint(), activeType, brushDiameter);
+			if (!ctrlDown)
 			{
-				if (other == dragRiver)
+				clearSelection();
+			}
+			for (LineHit bh : brushHits)
+			{
+				Object line = bh.river() != null ? bh.river() : bh.road();
+				if (bh.isControlPoint())
 				{
-					continue;
+					applySelectionDelta(line, bh.controlPointIndex(), ctrlDown && deselectMode);
 				}
-				List<RiverPathNode> nodes = other.nodes;
-				for (int i = 0; i < nodes.size(); i++)
+				else if (bh.isSegment())
 				{
-					if (nodes.get(i).getLoc().isCloseEnough(primaryLoc))
-					{
-						dragSharedRivers.add(new RiverDragShare(other, i, PathOperations.toLocationList(nodes)));
-					}
+					applySelectionDelta(line, bh.segmentIndex(), ctrlDown && deselectMode);
+					applySelectionDelta(line, bh.segmentIndex() + 1, ctrlDown && deselectMode);
 				}
 			}
-		}
-		else if (dragRoad != null)
-		{
-			for (Road other : mainWindow.edits.roads)
-			{
-				if (other == dragRoad)
-				{
-					continue;
-				}
-				List<RoadPathNode> nodes = other.nodes;
-				for (int i = 0; i < nodes.size(); i++)
-				{
-					if (nodes.get(i).getLoc().isCloseEnough(primaryLoc))
-					{
-						dragSharedRoads.add(new RoadDragShare(other, i, PathOperations.toLocationList(nodes)));
-					}
-				}
-			}
+			dragInProgress = true;
+			dragIsPaint = true;
+			refreshSelectionVisuals(e.getPoint(), activeType);
 		}
 	}
 
-	private void clearDragSharedTargets()
+	/** Adds or removes (depending on {@code isDeselect}) the given CP from the selection. */
+	private void applySelectionDelta(Object line, int idx, boolean isDeselect)
 	{
-		dragSharedRivers = null;
-		dragSharedRoads = null;
+		if (isDeselect)
+		{
+			removeFromSelection(line, idx);
+		}
+		else
+		{
+			addToSelection(line, idx);
+		}
 	}
 
 	/**
-	 * Moves the in-progress dragged control point to follow the cursor. Updates {@code river.nodes} (or {@code road.nodes}) in place and
-	 * triggers an incremental redraw of the centers under the new path so the user sees the line follow the cursor live. Any other lines
-	 * sharing the original control-point location (recorded at drag-start) move with it so Y-junctions stay joined. The undo point is
-	 * set only on mouse release ({@link #handleEditModeControlPointDragEnd(java.util.List)}), not on each drag tick.
+	 * If the CP at (line, idx) is in the current selection, captures the locations of every selected CP and arms a move-drag. Y-junction
+	 * shared CPs (CPs of OTHER lines at the same locations as selected CPs) are also captured so they move in lockstep. If the CP isn't
+	 * in the selection (e.g. user clicked-then-Ctrl-removed it), no drag is armed.
+	 */
+	private void armMoveDragIfApplicable(Object line, int idx)
+	{
+		if (!isCPSelected(line, idx))
+		{
+			return;
+		}
+		List<MovingCP> moving = new ArrayList<>();
+		Set<Point> selectedLocations = new HashSet<>();
+		forEachSelectedCP((selLine, selIdx) ->
+		{
+			List<? extends PathNode> nodes = nodesOf(selLine);
+			if (selIdx >= 0 && selIdx < nodes.size())
+			{
+				Point loc = nodes.get(selIdx).getLoc();
+				moving.add(new MovingCP(selLine, selIdx, loc));
+				selectedLocations.add(loc);
+			}
+		});
+		// Find Y-junction shared CPs: other lines of the active type whose CPs sit at any selected location.
+		LineType activeType = riversButton.isSelected() ? LineType.RIVER : LineType.ROAD;
+		if (activeType == LineType.RIVER)
+		{
+			for (River other : mainWindow.edits.rivers)
+			{
+				List<RiverPathNode> nodes = other.nodes;
+				for (int i = 0; i < nodes.size(); i++)
+				{
+					if (isCPSelected(other, i))
+					{
+						continue;
+					}
+					Point loc = nodes.get(i).getLoc();
+					for (Point sel : selectedLocations)
+					{
+						if (loc.isCloseEnough(sel))
+						{
+							moving.add(new MovingCP(other, i, loc));
+							break;
+						}
+					}
+				}
+			}
+		}
+		else
+		{
+			for (Road other : mainWindow.edits.roads)
+			{
+				List<RoadPathNode> nodes = other.nodes;
+				for (int i = 0; i < nodes.size(); i++)
+				{
+					if (isCPSelected(other, i))
+					{
+						continue;
+					}
+					Point loc = nodes.get(i).getLoc();
+					for (Point sel : selectedLocations)
+					{
+						if (loc.isCloseEnough(sel))
+						{
+							moving.add(new MovingCP(other, i, loc));
+							break;
+						}
+					}
+				}
+			}
+		}
+		dragMovingCPs = moving;
+		// Snapshot the full path of every line participating in the drag (anchor + selected + shares) for redraw-bound computation at
+		// drag-end. Use a map so duplicates are coalesced.
+		dragBeforeSnapshots = new HashMap<>();
+		for (MovingCP m : moving)
+		{
+			dragBeforeSnapshots.computeIfAbsent(m.line(), l -> PathOperations.toLocationList(nodesOf(l)));
+		}
+		dragInProgress = true;
+		dragIsPaint = false;
+	}
+
+	/** Hit-tests every line of the active type whose CPs or segments are within {@code brushDiameter / 2} of {@code panelPoint}. */
+	private List<LineHit> multiBrushHitTest(java.awt.Point panelPoint, LineType activeType, int brushDiameter)
+	{
+		List<LineHit> hits = new ArrayList<>();
+		if (updater.mapParts == null || updater.mapParts.graph == null || panelPoint == null)
+		{
+			return hits;
+		}
+		Point clickGraph = getPointOnGraph(panelPoint);
+		double scale = mainWindow.displayQualityScale;
+		double brushRadius = ((double) brushDiameter / mainWindow.zoom) * mapEditingPanel.osScale / 2.0;
+		double controlPointRadius = mapEditingPanel.getRoadControlPointHitRadiusInGraphPixels();
+		double cpThreshold = Math.max(controlPointRadius, brushRadius);
+		double segmentThreshold = Math.max(getHoverHighlightThresholdInGraphPixels(), brushRadius);
+
+		if (activeType == LineType.RIVER)
+		{
+			for (River river : mainWindow.edits.rivers)
+			{
+				List<RiverPathNode> nodes = river.nodes;
+				for (int i = 0; i < nodes.size(); i++)
+				{
+					if (clickGraph.distanceTo(nodes.get(i).getLoc().mult(scale)) <= cpThreshold)
+					{
+						hits.add(new LineHit(river, null, i, -1));
+					}
+				}
+				for (int i = 0; i < nodes.size() - 1; i++)
+				{
+					Point a = nodes.get(i).getLoc().mult(scale);
+					Point b = nodes.get(i + 1).getLoc().mult(scale);
+					if (GeometryHelper.distanceFromPointToSegment(clickGraph, a, b) <= segmentThreshold)
+					{
+						hits.add(new LineHit(river, null, -1, i));
+					}
+				}
+			}
+		}
+		else
+		{
+			for (Road road : mainWindow.edits.roads)
+			{
+				List<RoadPathNode> nodes = road.nodes;
+				for (int i = 0; i < nodes.size(); i++)
+				{
+					if (clickGraph.distanceTo(nodes.get(i).getLoc().mult(scale)) <= cpThreshold)
+					{
+						hits.add(new LineHit(null, road, i, -1));
+					}
+				}
+				for (int i = 0; i < nodes.size() - 1; i++)
+				{
+					Point a = nodes.get(i).getLoc().mult(scale);
+					Point b = nodes.get(i + 1).getLoc().mult(scale);
+					if (GeometryHelper.distanceFromPointToSegment(clickGraph, a, b) <= segmentThreshold)
+					{
+						hits.add(new LineHit(null, road, -1, i));
+					}
+				}
+			}
+		}
+		return hits;
+	}
+
+	/** Returns the edit-mode brush diameter (in panel pixels). Defaults to 1 (single-point) when the dropdown isn't available. */
+	private int getEditBrushDiameter()
+	{
+		if (brushSizeComboBox == null)
+		{
+			return 1;
+		}
+		int idx = brushSizeComboBox.getSelectedIndex();
+		if (idx < 0 || idx >= brushSizes.size())
+		{
+			return 1;
+		}
+		return brushSizes.get(idx);
+	}
+
+	/** Refreshes the selection-related visuals: highlighted segments, control-point circles, and the slider value+visibility. */
+	private void refreshSelectionVisuals(java.awt.Point mouseLocation, LineType activeType)
+	{
+		mapEditingPanel.clearHighlightedPolylines();
+		applySelectedSegmentsHighlight();
+		updateEditModeHoverDisplay(mouseLocation, activeType);
+		refreshRiverWidthSliderVisibility();
+		syncSliderToSelectedSegment();
+		mapEditingPanel.repaint();
+	}
+
+	/**
+	 * Drag tick. Two flavors:
+	 * <ul>
+	 * <li><b>Move-drag</b> ({@code dragIsPaint == false}) — translates every CP in {@link #dragMovingCPs} by the cursor delta and
+	 * redraws the affected map regions. The undo point is set only on release.</li>
+	 * <li><b>Paint-drag</b> ({@code dragIsPaint == true}) — accumulates CPs/segments under the brush into the selection (without Ctrl)
+	 * or into a deselection (with Ctrl in deselect mode). Does not modify any line geometry.</li>
+	 * </ul>
 	 */
 	private void handleEditModeControlPointDrag(MouseEvent e)
 	{
 		dragOccurred = true;
-		Point newLocRI = getPointOnGraph(e.getPoint()).mult(1.0 / mainWindow.displayQualityScale);
-		// Only the segments adjacent to the moved CP (within Catmull-Rom propagation range) need redrawing; long paths used to redraw end
-		// to end on every drag tick, which made manipulating long roads or rivers chug. The unaffected portions of the road's dashed
-		// pattern are caught later by the low-priority redraw queued in handleEditModeControlPointDragEnd.
-		List<List<Point>> centersTouched = new ArrayList<>();
-		if (dragRiver != null)
+		LineType activeType = riversButton.isSelected() ? LineType.RIVER : LineType.ROAD;
+		if (dragIsPaint)
 		{
-			List<RiverPathNode> nodes = new ArrayList<>(dragRiver.nodes);
-			int idx = dragControlPointIndex;
-			if (idx < 0 || idx >= nodes.size())
-			{
-				return;
-			}
-			appendControlPointEditScope(centersTouched, nodes, idx);
-			moveRiverControlPointTo(nodes, idx, newLocRI);
-			dragRiver.nodes = new java.util.concurrent.CopyOnWriteArrayList<>(nodes);
-			appendControlPointEditScope(centersTouched, nodes, idx);
-			// Move every shared CP in lockstep so joined Y-shape rivers stay joined.
-			if (dragSharedRivers != null)
-			{
-				for (RiverDragShare share : dragSharedRivers)
-				{
-					List<RiverPathNode> sharedNodes = new ArrayList<>(share.river().nodes);
-					int sharedIdx = share.cpIndex();
-					if (sharedIdx < 0 || sharedIdx >= sharedNodes.size())
-					{
-						continue;
-					}
-					appendControlPointEditScope(centersTouched, sharedNodes, sharedIdx);
-					moveRiverControlPointTo(sharedNodes, sharedIdx, newLocRI);
-					share.river().nodes = new java.util.concurrent.CopyOnWriteArrayList<>(sharedNodes);
-					appendControlPointEditScope(centersTouched, sharedNodes, sharedIdx);
-				}
-			}
+			handleEditModePaintDragTick(e, activeType);
+			return;
 		}
-		else if (dragRoad != null)
-		{
-			List<RoadPathNode> nodes = new ArrayList<>(dragRoad.nodes);
-			int idx = dragControlPointIndex;
-			if (idx < 0 || idx >= nodes.size())
-			{
-				return;
-			}
-			appendControlPointEditScope(centersTouched, nodes, idx);
-			nodes.set(idx, new RoadPathNode(newLocRI));
-			dragRoad.nodes = new java.util.concurrent.CopyOnWriteArrayList<>(nodes);
-			appendControlPointEditScope(centersTouched, nodes, idx);
-			if (dragSharedRoads != null)
-			{
-				for (RoadDragShare share : dragSharedRoads)
-				{
-					List<RoadPathNode> sharedNodes = new ArrayList<>(share.road().nodes);
-					int sharedIdx = share.cpIndex();
-					if (sharedIdx < 0 || sharedIdx >= sharedNodes.size())
-					{
-						continue;
-					}
-					appendControlPointEditScope(centersTouched, sharedNodes, sharedIdx);
-					sharedNodes.set(sharedIdx, new RoadPathNode(newLocRI));
-					share.road().nodes = new java.util.concurrent.CopyOnWriteArrayList<>(sharedNodes);
-					appendControlPointEditScope(centersTouched, sharedNodes, sharedIdx);
-				}
-			}
-		}
-		else
+		if (dragMovingCPs == null || dragMovingCPs.isEmpty() || dragStartLocRI == null)
 		{
 			return;
 		}
-		// Refresh hover visuals (control-point circles + hover ring) at the new cursor position, then
-		// re-apply the sticky segment highlight on top so it survives the polyline clear.
-		LineType activeType = riversButton.isSelected() ? LineType.RIVER : LineType.ROAD;
+		Point currentLocRI = getPointOnGraph(e.getPoint()).mult(1.0 / mainWindow.displayQualityScale);
+		Point delta = new Point(currentLocRI.x - dragStartLocRI.x, currentLocRI.y - dragStartLocRI.y);
+
+		// Only the segments adjacent to each moved CP (within Catmull-Rom propagation range) need redrawing. The unaffected portions
+		// of any road's dashed pattern are caught later by the low-priority redraw queued in handleEditModeControlPointDragEnd.
+		List<List<Point>> centersTouched = new ArrayList<>();
+
+		// Group by line so we mutate each line once with all its moves applied.
+		Map<Object, Map<Integer, Point>> movesByLine = new HashMap<>();
+		for (MovingCP m : dragMovingCPs)
+		{
+			Point newLoc = new Point(m.startLocRI().x + delta.x, m.startLocRI().y + delta.y);
+			movesByLine.computeIfAbsent(m.line(), k -> new HashMap<>()).put(m.nodeIndex(), newLoc);
+		}
+
+		for (Map.Entry<Object, Map<Integer, Point>> entry : movesByLine.entrySet())
+		{
+			Object line = entry.getKey();
+			Map<Integer, Point> moves = entry.getValue();
+			if (line instanceof River river)
+			{
+				List<RiverPathNode> nodes = new ArrayList<>(river.nodes);
+				for (Map.Entry<Integer, Point> move : moves.entrySet())
+				{
+					int idx = move.getKey();
+					if (idx < 0 || idx >= nodes.size())
+					{
+						continue;
+					}
+					appendControlPointEditScope(centersTouched, nodes, idx);
+					moveRiverControlPointTo(nodes, idx, move.getValue());
+				}
+				river.nodes = new java.util.concurrent.CopyOnWriteArrayList<>(nodes);
+				for (int idx : moves.keySet())
+				{
+					appendControlPointEditScope(centersTouched, nodes, idx);
+				}
+			}
+			else if (line instanceof Road road)
+			{
+				List<RoadPathNode> nodes = new ArrayList<>(road.nodes);
+				for (Map.Entry<Integer, Point> move : moves.entrySet())
+				{
+					int idx = move.getKey();
+					if (idx < 0 || idx >= nodes.size())
+					{
+						continue;
+					}
+					appendControlPointEditScope(centersTouched, nodes, idx);
+					nodes.set(idx, new RoadPathNode(move.getValue()));
+				}
+				road.nodes = new java.util.concurrent.CopyOnWriteArrayList<>(nodes);
+				for (int idx : moves.keySet())
+				{
+					appendControlPointEditScope(centersTouched, nodes, idx);
+				}
+			}
+		}
+
+		// Refresh selection highlight + hover visuals at the new cursor position.
 		mapEditingPanel.clearHighlightedPolylines();
 		updateEditModeHoverDisplay(e.getPoint(), activeType);
-		applyStickySegmentHighlight();
+		applySelectedSegmentsHighlight();
 		updater.createAndShowMapIncrementalUsingCenters(getCentersTouchingPoints(centersTouched));
 		mapEditingPanel.repaint();
+	}
+
+	/**
+	 * Paint-drag tick. Accumulates CPs/segments under the brush into (or out of) the selection. Geometry is not modified.
+	 */
+	private void handleEditModePaintDragTick(MouseEvent e, LineType activeType)
+	{
+		boolean ctrlDown = SwingHelper.isCommandKeyDown(e);
+		boolean deselectMode = controlClickBehavior != null && controlClickBehavior.isUnselectMode();
+		int brushDiameter = getEditBrushDiameter();
+		List<LineHit> brushHits = multiBrushHitTest(e.getPoint(), activeType, brushDiameter);
+		if (brushHits.isEmpty())
+		{
+			return;
+		}
+		boolean removing = ctrlDown && deselectMode;
+		for (LineHit bh : brushHits)
+		{
+			Object line = bh.river() != null ? bh.river() : bh.road();
+			if (bh.isControlPoint())
+			{
+				applySelectionDelta(line, bh.controlPointIndex(), removing);
+			}
+			else if (bh.isSegment())
+			{
+				applySelectionDelta(line, bh.segmentIndex(), removing);
+				applySelectionDelta(line, bh.segmentIndex() + 1, removing);
+			}
+		}
+		refreshSelectionVisuals(e.getPoint(), activeType);
 	}
 
 	/**
@@ -2219,54 +2868,47 @@ public class LandWaterTool extends EditorTool
 	}
 
 	/**
-	 * Commits the drag: snapshots the new path, records the undo point, and triggers the redraw of the changed line. Called from the
-	 * mouse release handler. The drag's snapshot of the path before the drag is provided so centers along the original path are also
-	 * redrawn (in case the moved control point pulled the line off some centers).
+	 * Commits a move-drag: records the undo point and triggers a normal-priority redraw scoped to each moved CP's neighborhood, plus a
+	 * low-priority full-line redraw for any roads that had CPs moved (so the dashed pattern is rephased across the whole road).
+	 * No-op for paint-drags (they don't modify geometry).
 	 */
-	private void handleEditModeControlPointDragEnd(List<Point> beforePath)
+	private void handleEditModeControlPointDragEnd()
 	{
-		// Same scoping rationale as handleEditModeControlPointDrag: only the segments within Catmull-Rom propagation range of the moved
-		// control point need a normal-priority redraw. For roads, the rest of the line is picked up by the low-priority queue below so
-		// the dashed pattern is rephased across the whole line.
-		List<List<Point>> centerPaths = new ArrayList<>();
-		int draggedIdx = dragControlPointIndex;
-		appendControlPointEditScopeFromSnapshot(centerPaths, beforePath, draggedIdx);
-		if (dragRiver != null)
+		if (dragIsPaint || dragMovingCPs == null || dragMovingCPs.isEmpty() || dragBeforeSnapshots == null)
 		{
-			appendControlPointEditScope(centerPaths, dragRiver.nodes, draggedIdx);
-			if (dragSharedRivers != null)
+			return;
+		}
+		List<List<Point>> centerPaths = new ArrayList<>();
+		// Group moved indices by line so we can call the per-line scope helper once with all changed indices.
+		Map<Object, Set<Integer>> indicesByLine = new HashMap<>();
+		for (MovingCP m : dragMovingCPs)
+		{
+			indicesByLine.computeIfAbsent(m.line(), k -> new HashSet<>()).add(m.nodeIndex());
+		}
+		Set<Road> roadsToRephaseDashes = new HashSet<>();
+		for (Map.Entry<Object, Set<Integer>> entry : indicesByLine.entrySet())
+		{
+			Object line = entry.getKey();
+			List<Point> beforeSnapshot = dragBeforeSnapshots.get(line);
+			for (int idx : entry.getValue())
 			{
-				for (RiverDragShare share : dragSharedRivers)
-				{
-					appendControlPointEditScopeFromSnapshot(centerPaths, share.snapshot(), share.cpIndex());
-					appendControlPointEditScope(centerPaths, share.river().nodes, share.cpIndex());
-				}
+				appendControlPointEditScopeFromSnapshot(centerPaths, beforeSnapshot, idx);
+				appendControlPointEditScope(centerPaths, nodesOf(line), idx);
+			}
+			if (line instanceof Road r)
+			{
+				roadsToRephaseDashes.add(r);
 			}
 		}
-		else if (dragRoad != null)
+		if (!roadsToRephaseDashes.isEmpty())
 		{
-			appendControlPointEditScope(centerPaths, dragRoad.nodes, draggedIdx);
-			// Queue a low-priority redraw of the entire road so the dotted pattern is recomputed across
-			// any centers the drag pulled the road onto but that aren't covered by the eager scope. The eager pass above only redrew
-			// centers near the moved control point; this catches the long-haul centers along the unchanged portions of the road.
-			updater.addRoadsToRedrawLowPriority(Collections.singletonList(dragRoad), mainWindow.displayQualityScale);
-			if (dragSharedRoads != null)
-			{
-				for (RoadDragShare share : dragSharedRoads)
-				{
-					appendControlPointEditScopeFromSnapshot(centerPaths, share.snapshot(), share.cpIndex());
-					appendControlPointEditScope(centerPaths, share.road().nodes, share.cpIndex());
-					updater.addRoadsToRedrawLowPriority(Collections.singletonList(share.road()), mainWindow.displayQualityScale);
-				}
-			}
+			updater.addRoadsToRedrawLowPriority(new ArrayList<>(roadsToRephaseDashes), mainWindow.displayQualityScale);
 		}
 		undoer.setUndoPoint(UpdateType.Incremental, this);
 		updater.createAndShowMapIncrementalUsingCenters(getCentersTouchingPoints(centerPaths));
 		updater.doWhenMapIsNotDrawing(() -> updater.createAndShowLowPriorityChanges());
-		dragRiver = null;
-		dragRoad = null;
-		dragControlPointIndex = -1;
-		clearDragSharedTargets();
+		dragMovingCPs = null;
+		dragBeforeSnapshots = null;
 	}
 
 	/**
@@ -2316,21 +2958,20 @@ public class LandWaterTool extends EditorTool
 		// Use the same threshold the hover highlight uses so the menu becomes available as soon as the river/road is visually highlighted
 		// — otherwise the highlight appears before the right-click range starts, which is confusing.
 		double rightClickSegmentThreshold = getHoverHighlightThresholdInGraphPixels();
-		// While a sticky segment is locked in edit mode, the menu only targets that line.
-		final LineHit hit = modeWidget.isEditMode() ? editModeHitTestScopedToStickyIfAny(e.getPoint(), activeType, rightClickSegmentThreshold)
-				: editModeHitTest(e.getPoint(), activeType, null, null, rightClickSegmentThreshold);
-		if (hit == null)
+		final LineHit hit = editModeHitTest(e.getPoint(), activeType, null, null, rightClickSegmentThreshold);
+		boolean haveSelectionMenuItems = modeWidget.isEditMode() && hasAnySelection();
+		if (hit == null && !haveSelectionMenuItems)
 		{
 			return;
 		}
 		JPopupMenu menu = new JPopupMenu();
-		if (hit.isControlPoint())
+		if (hit != null && hit.isControlPoint())
 		{
 			JMenuItem deleteCp = new JMenuItem(Translation.get("landWaterTool.edit.deleteControlPoint"));
 			deleteCp.addActionListener(ev -> deleteControlPoint(hit));
 			menu.add(deleteCp);
 		}
-		else if (hit.isSegment())
+		else if (hit != null && hit.isSegment())
 		{
 			JMenuItem deleteSeg = new JMenuItem(Translation.get("landWaterTool.edit.deleteSegment"));
 			deleteSeg.addActionListener(ev -> deleteSegment(hit));
@@ -2340,17 +2981,16 @@ public class LandWaterTool extends EditorTool
 			final java.awt.Point clickPanelPoint = e.getPoint();
 			insertCp.addActionListener(ev -> insertControlPointIntoSegment(hit, clickPanelPoint));
 			menu.add(insertCp);
-
-			// "Select Segment" makes the hit segment the sticky selection. Only rivers (the width slider
-			// needs a target); only in edit mode (where the slider applies); and only when not already
-			// the sticky one.
-			boolean alreadySticky = hit.river() != null && hit.river() == stickyRiver && hit.segmentIndex() == stickySegmentIndex;
-			if (modeWidget.isEditMode() && hit.river() != null && !alreadySticky)
+		}
+		if (haveSelectionMenuItems)
+		{
+			if (menu.getComponentCount() > 0)
 			{
-				JMenuItem selectSeg = new JMenuItem(Translation.get("landWaterTool.edit.selectSegment"));
-				selectSeg.addActionListener(ev -> selectSegmentFromHit(hit));
-				menu.add(selectSeg);
+				menu.addSeparator();
 			}
+			JMenuItem deleteSelection = new JMenuItem(Translation.get("landWaterTool.edit.deleteSelection"));
+			deleteSelection.addActionListener(ev -> deleteSelectedCPs());
+			menu.add(deleteSelection);
 		}
 		if (menu.getComponentCount() > 0)
 		{
@@ -2358,25 +2998,10 @@ public class LandWaterTool extends EditorTool
 		}
 	}
 
-	private void selectSegmentFromHit(LineHit hit)
-	{
-		// Only rivers can be sticky-selected (the width slider needs a target). The "Select Segment"
-		// menu item is gated to river hits, so we shouldn't reach here for a road.
-		if (hit.river() == null)
-		{
-			return;
-		}
-		setStickyRiverSegment(hit.river(), hit.segmentIndex());
-		syncSliderToSelectedSegment();
-		mapEditingPanel.clearHighlightedPolylines();
-		applyStickySegmentHighlight();
-		mapEditingPanel.repaint();
-	}
-
 	/**
 	 * Deletes the control point identified by {@code hit} (must be a control-point hit). The sticky
 	 * selection is preserved across the edit: if the deleted CP belongs to the sticky river/road,
-	 * {@link #stickySegmentIndex} is adjusted so it tracks the same geometric segment when possible.
+	 * the selection is adjusted so the user's other selected CPs on the line keep tracking the same geometric points after the shift.
 	 * If the line drops below 2 control points, the line is removed and any sticky selection on it
 	 * is cleared.
 	 */
@@ -2400,7 +3025,7 @@ public class LandWaterTool extends EditorTool
 				nodes.set(idx - 1, new RiverPathNode(prev.getLoc(), prev.getWidthLevelToNext(), prev.getSeedToNext(), RiverPathNode.EDGE_INDEX_NONE));
 			}
 			nodes.remove(idx);
-			adjustStickyAfterControlPointDelete(line, null, idx, nodes.size());
+			adjustSelectionAfterControlPointDelete(line, idx);
 			// After delete: the post-delete index closest to where the change happened is min(idx, lastIndex). The redraw slice around
 			// it (radius = CATMULL_ROM_PROPAGATION_RADIUS) covers the new bridging segment plus its tangent-reference neighbors.
 			int afterIdx = Math.max(0, Math.min(idx, nodes.size() - 1));
@@ -2416,7 +3041,7 @@ public class LandWaterTool extends EditorTool
 			}
 			List<Point> beforePath = PathOperations.toLocationList(nodes);
 			nodes.remove(idx);
-			adjustStickyAfterControlPointDelete(null, line, idx, nodes.size());
+			adjustSelectionAfterControlPointDelete(line, idx);
 			int afterIdx = Math.max(0, Math.min(idx, nodes.size() - 1));
 			commitRoadEdit(line, beforePath, nodes, idx, afterIdx);
 		}
@@ -2465,7 +3090,7 @@ public class LandWaterTool extends EditorTool
 				mainWindow.edits.rivers.add(newRiver);
 				changed.add(newRiver);
 			}
-			adjustStickyAfterRiverSegmentDelete(line, newRiver, idx, firstHalf.size());
+			adjustSelectionAfterSegmentDelete(line, newRiver, idx);
 			List<List<Point>> removedSegments = Collections.singletonList(Arrays.asList(nodes.get(idx).getLoc(), nodes.get(idx + 1).getLoc()));
 			commitRiverCut(removedSegments);
 		}
@@ -2496,7 +3121,7 @@ public class LandWaterTool extends EditorTool
 				mainWindow.edits.roads.add(newRoad);
 				changed.add(newRoad);
 			}
-			adjustStickyAfterRoadSegmentDelete(line, newRoad, idx, firstHalf.size());
+			adjustSelectionAfterSegmentDelete(line, newRoad, idx);
 			List<List<Point>> removedSegments = Collections.singletonList(Arrays.asList(nodes.get(idx).getLoc(), nodes.get(idx + 1).getLoc()));
 			commitRoadCut(removedSegments, changed);
 		}
@@ -2529,7 +3154,7 @@ public class LandWaterTool extends EditorTool
 			// New node carries its outgoing segment's width with a fresh seed; no edge index either.
 			RiverPathNode newNode = new RiverPathNode(clickRI, width, random.nextLong(), RiverPathNode.EDGE_INDEX_NONE);
 			nodes.add(idx + 1, newNode);
-			adjustStickyAfterControlPointInsert(line, null, idx);
+			adjustSelectionAfterControlPointInsert(line, idx);
 			// The split segment ran from idx to idx+1 in beforePath; the new node lands at idx+1 in the post-insert path. Slicing
 			// around those indices (radius = CATMULL_ROM_PROPAGATION_RADIUS) covers every segment whose tangent-reference position
 			// shifted because of the insert.
@@ -2545,170 +3170,159 @@ public class LandWaterTool extends EditorTool
 			}
 			List<Point> beforePath = PathOperations.toLocationList(nodes);
 			nodes.add(idx + 1, new RoadPathNode(clickRI));
-			adjustStickyAfterControlPointInsert(null, line, idx);
+			adjustSelectionAfterControlPointInsert(line, idx);
 			commitRoadEdit(line, beforePath, nodes, idx, idx + 1);
 		}
 	}
 
 	/**
-	 * Adjusts {@link #stickySegmentIndex} after a control point was removed from a line. If the sticky line wasn't the modified line, no
-	 * change. Otherwise the index is shifted to track the same geometric segment when possible. If the line drops below 2 nodes the sticky
-	 * is cleared.
-	 *
-	 * @param river
-	 *            the river that was modified, or null if a road was modified
-	 * @param road
-	 *            the road that was modified, or null if a river was modified
-	 * @param deletedIdx
-	 *            index of the deleted control point in the pre-delete node list
-	 * @param newSize
-	 *            number of nodes remaining after the delete
+	 * Shifts indices in the selection set of {@code line} after the control point at {@code deletedIdx} was removed. The deleted index
+	 * itself is dropped; indices > deletedIdx shift down by 1. Selections on other lines are untouched.
 	 */
-	private void adjustStickyAfterControlPointDelete(River river, Road road, int deletedIdx, int newSize)
+	private void adjustSelectionAfterControlPointDelete(Object line, int deletedIdx)
 	{
-		boolean affectsSticky = (river != null && river == stickyRiver) || (road != null && road == stickyRoad);
-		if (!affectsSticky || stickySegmentIndex < 0)
+		Set<Integer> oldSet = (line instanceof River r) ? selectedRiverCPs.get(r) : selectedRoadCPs.get((Road) line);
+		if (oldSet == null || oldSet.isEmpty())
 		{
 			return;
 		}
-		int newSegmentCount = newSize - 1;
-		if (newSegmentCount < 1)
+		Set<Integer> newSet = new HashSet<>();
+		for (int idx : oldSet)
 		{
-			clearStickySegment();
-			return;
-		}
-		int K = stickySegmentIndex;
-		if (deletedIdx == 0)
-		{
-			// First CP deleted: segment 0 disappears, segments K >= 1 shift to K - 1.
-			stickySegmentIndex = Math.max(0, K - 1);
-		}
-		else if (deletedIdx == newSize)
-		{
-			// Last CP deleted (deletedIdx equals the old last-node index, which is newSize after delete).
-			// Segment newSize-1 (= old size-2) disappears. Earlier segments unchanged.
-			if (K >= newSegmentCount)
+			if (idx < deletedIdx)
 			{
-				stickySegmentIndex = newSegmentCount - 1;
+				newSet.add(idx);
 			}
-		}
-		else
-		{
-			// Middle CP deleted. Segments deletedIdx-1 and deletedIdx merge into segment deletedIdx-1.
-			// Segments > deletedIdx shift down by 1.
-			if (K < deletedIdx - 1)
+			else if (idx > deletedIdx)
 			{
-				// unchanged
+				newSet.add(idx - 1);
 			}
-			else if (K == deletedIdx - 1 || K == deletedIdx)
+			// idx == deletedIdx: dropped.
+		}
+		if (line instanceof River r)
+		{
+			if (newSet.isEmpty())
 			{
-				stickySegmentIndex = deletedIdx - 1;
+				selectedRiverCPs.remove(r);
 			}
 			else
 			{
-				stickySegmentIndex = K - 1;
+				selectedRiverCPs.put(r, newSet);
 			}
 		}
-		if (stickySegmentIndex >= newSegmentCount || stickySegmentIndex < 0)
+		else if (line instanceof Road r)
 		{
-			clearStickySegment();
+			if (newSet.isEmpty())
+			{
+				selectedRoadCPs.remove(r);
+			}
+			else
+			{
+				selectedRoadCPs.put(r, newSet);
+			}
 		}
 	}
 
 	/**
-	 * Adjusts sticky-segment indices after a segment was deleted from a river. If the sticky river was the modified one, the sticky may
-	 * migrate to the newly-split second half river ({@code newRiver}), or be cleared entirely if it landed on the deleted segment.
+	 * Shifts indices in the selection set of {@code line} after a control point was inserted at index {@code splitSegmentIdx + 1}.
+	 * Indices > splitSegmentIdx shift up by 1.
 	 */
-	private void adjustStickyAfterRiverSegmentDelete(River modifiedRiver, River newRiver, int deletedSegIdx, int firstHalfSize)
+	private void adjustSelectionAfterControlPointInsert(Object line, int splitSegmentIdx)
 	{
-		if (stickyRiver != modifiedRiver || stickySegmentIndex < 0)
+		Set<Integer> oldSet = (line instanceof River r) ? selectedRiverCPs.get(r) : selectedRoadCPs.get((Road) line);
+		if (oldSet == null || oldSet.isEmpty())
 		{
 			return;
 		}
-		int K = stickySegmentIndex;
-		if (K < deletedSegIdx)
+		Set<Integer> newSet = new HashSet<>();
+		for (int idx : oldSet)
 		{
-			if (firstHalfSize >= 2)
+			if (idx > splitSegmentIdx)
 			{
-				// Sticky stays in the first half (still the original line).
-				return;
+				newSet.add(idx + 1);
 			}
-			clearStickySegment();
-		}
-		else if (K == deletedSegIdx)
-		{
-			// Sticky segment was the deleted one.
-			clearStickySegment();
-		}
-		else
-		{
-			// K > deletedSegIdx — sticky belongs to what's now the second half.
-			if (newRiver != null)
+			else
 			{
-				int newIdx = K - (deletedSegIdx + 1);
-				if (newIdx >= 0 && newIdx < newRiver.nodes.size() - 1)
-				{
-					setStickyRiverSegment(newRiver, newIdx);
-					return;
-				}
+				newSet.add(idx);
 			}
-			clearStickySegment();
 		}
-	}
-
-	/** Road counterpart of {@link #adjustStickyAfterRiverSegmentDelete}. */
-	private void adjustStickyAfterRoadSegmentDelete(Road modifiedRoad, Road newRoad, int deletedSegIdx, int firstHalfSize)
-	{
-		if (stickyRoad != modifiedRoad || stickySegmentIndex < 0)
+		if (line instanceof River r)
 		{
-			return;
+			selectedRiverCPs.put(r, newSet);
 		}
-		int K = stickySegmentIndex;
-		if (K < deletedSegIdx)
+		else if (line instanceof Road r)
 		{
-			if (firstHalfSize >= 2)
-			{
-				return;
-			}
-			clearStickySegment();
-		}
-		else if (K == deletedSegIdx)
-		{
-			clearStickySegment();
-		}
-		else
-		{
-			if (newRoad != null)
-			{
-				int newIdx = K - (deletedSegIdx + 1);
-				if (newIdx >= 0 && newIdx < newRoad.nodes.size() - 1)
-				{
-					setStickyRoadSegment(newRoad, newIdx);
-					return;
-				}
-			}
-			clearStickySegment();
+			selectedRoadCPs.put(r, newSet);
 		}
 	}
 
 	/**
-	 * Adjusts {@link #stickySegmentIndex} after a control point was inserted into segment {@code splitSegmentIdx} of a line. If the sticky
-	 * line wasn't the modified one, no change. The sticky segment stays on the same geometric portion when possible: the original split
-	 * segment becomes the new "first half" (kept as sticky); segments after the insert shift up by 1.
+	 * Splits the selection of {@code modifiedLine} after a segment-cut. Indices &le; deletedSegIdx stay; indices &gt; deletedSegIdx move
+	 * to {@code newLine} (with shifted index). Indices at exactly the cut endpoints (deletedSegIdx, deletedSegIdx+1) stay on whichever
+	 * surviving piece they belong to.
 	 */
-	private void adjustStickyAfterControlPointInsert(River river, Road road, int splitSegmentIdx)
+	private void adjustSelectionAfterSegmentDelete(Object modifiedLine, Object newLine, int deletedSegIdx)
 	{
-		boolean affectsSticky = (river != null && river == stickyRiver) || (road != null && road == stickyRoad);
-		if (!affectsSticky || stickySegmentIndex < 0)
+		Set<Integer> oldSet;
+		if (modifiedLine instanceof River r)
+		{
+			oldSet = selectedRiverCPs.get(r);
+		}
+		else if (modifiedLine instanceof Road r)
+		{
+			oldSet = selectedRoadCPs.get(r);
+		}
+		else
 		{
 			return;
 		}
-		int K = stickySegmentIndex;
-		if (K > splitSegmentIdx)
+		if (oldSet == null || oldSet.isEmpty())
 		{
-			stickySegmentIndex = K + 1;
+			return;
 		}
-		// K <= splitSegmentIdx: unchanged (the first half keeps the same index as the original segment).
+		Set<Integer> firstHalfIdxs = new HashSet<>();
+		Set<Integer> secondHalfIdxs = new HashSet<>();
+		for (int idx : oldSet)
+		{
+			if (idx <= deletedSegIdx)
+			{
+				firstHalfIdxs.add(idx);
+			}
+			else
+			{
+				secondHalfIdxs.add(idx - (deletedSegIdx + 1));
+			}
+		}
+		if (modifiedLine instanceof River r)
+		{
+			if (firstHalfIdxs.isEmpty())
+			{
+				selectedRiverCPs.remove(r);
+			}
+			else
+			{
+				selectedRiverCPs.put(r, firstHalfIdxs);
+			}
+			if (newLine instanceof River newRiver && !secondHalfIdxs.isEmpty())
+			{
+				selectedRiverCPs.put(newRiver, secondHalfIdxs);
+			}
+		}
+		else if (modifiedLine instanceof Road r)
+		{
+			if (firstHalfIdxs.isEmpty())
+			{
+				selectedRoadCPs.remove(r);
+			}
+			else
+			{
+				selectedRoadCPs.put(r, firstHalfIdxs);
+			}
+			if (newLine instanceof Road newRoad && !secondHalfIdxs.isEmpty())
+			{
+				selectedRoadCPs.put(newRoad, secondHalfIdxs);
+			}
+		}
 	}
 
 	/**
@@ -2723,10 +3337,7 @@ public class LandWaterTool extends EditorTool
 		if (removed)
 		{
 			mainWindow.edits.rivers.remove(line);
-			if (stickyRiver == line)
-			{
-				clearStickySegment();
-			}
+			selectedRiverCPs.remove(line);
 		}
 		else
 		{
@@ -2758,7 +3369,7 @@ public class LandWaterTool extends EditorTool
 		undoer.setUndoPoint(UpdateType.Incremental, this);
 		updater.createAndShowMapIncrementalUsingCenters(centersToRedraw);
 		mapEditingPanel.clearHighlightedPolylines();
-		applyStickySegmentHighlight();
+		applySelectedSegmentsHighlight();
 		mapEditingPanel.repaint();
 	}
 
@@ -2769,10 +3380,7 @@ public class LandWaterTool extends EditorTool
 		if (removed)
 		{
 			mainWindow.edits.roads.remove(line);
-			if (stickyRoad == line)
-			{
-				clearStickySegment();
-			}
+			selectedRoadCPs.remove(line);
 		}
 		else
 		{
@@ -2806,7 +3414,7 @@ public class LandWaterTool extends EditorTool
 		updater.createAndShowMapIncrementalUsingCenters(centersToRedraw);
 		updater.doWhenMapIsNotDrawing(() -> updater.createAndShowLowPriorityChanges());
 		mapEditingPanel.clearHighlightedPolylines();
-		applyStickySegmentHighlight();
+		applySelectedSegmentsHighlight();
 		mapEditingPanel.repaint();
 	}
 
@@ -2818,24 +3426,18 @@ public class LandWaterTool extends EditorTool
 		if (dragInProgress)
 		{
 			boolean wasDrag = dragOccurred;
-			List<Point> snapshot = dragSnapshotPath;
 			dragInProgress = false;
 			dragOccurred = false;
-			dragSnapshotPath = null;
-			// Only commit when the user actually moved the cursor; a click-without-drag on a control
-			// point is just a select and shouldn't push an undo point.
-			if (wasDrag)
+			// Only commit when the user actually moved the cursor; a click-without-drag is just a select and shouldn't push an undo point.
+			// Paint-drags don't modify geometry, so they have no commit step either way.
+			if (wasDrag && !dragIsPaint)
 			{
-				handleEditModeControlPointDragEnd(snapshot);
+				handleEditModeControlPointDragEnd();
 			}
-			else
-			{
-				// click-without-drag: discard the shared-target list captured at press time.
-				dragRiver = null;
-				dragRoad = null;
-				dragControlPointIndex = -1;
-				clearDragSharedTargets();
-			}
+			dragIsPaint = false;
+			dragMovingCPs = null;
+			dragBeforeSnapshots = null;
+			dragStartLocRI = null;
 			return;
 		}
 
@@ -3045,10 +3647,14 @@ public class LandWaterTool extends EditorTool
 		else if ((riversButton.isSelected() || roadsButton.isSelected()) && modeWidget.isEditMode())
 		{
 			LineType activeType = riversButton.isSelected() ? LineType.RIVER : LineType.ROAD;
+			int brushDiameter = getEditBrushDiameter();
+			if (brushDiameter > 1)
+			{
+				mapEditingPanel.showBrush(mouseLocation, brushDiameter);
+			}
 			updateEditModeHoverDisplay(mouseLocation, activeType);
-			// Re-apply the sticky segment polyline after the polyline clear above so it persists
-			// across mouse moves.
-			applyStickySegmentHighlight();
+			// Re-apply the selected-segments polyline highlight after the polyline clear above so it persists across mouse moves.
+			applySelectedSegmentsHighlight();
 		}
 		else if (roadsButton.isSelected() && modeWidget.isEraseMode())
 		{
@@ -3263,7 +3869,7 @@ public class LandWaterTool extends EditorTool
 	{
 		cancelFreeHandDrawing(LineType.ROAD);
 		cancelFreeHandDrawing(LineType.RIVER);
-		clearStickySegment();
+		clearSelection();
 		clearHoverState();
 		if (selectedRegion != null)
 		{
@@ -3278,7 +3884,7 @@ public class LandWaterTool extends EditorTool
 		cancelFreeHandDrawing(LineType.ROAD);
 		cancelFreeHandDrawing(LineType.RIVER);
 		// Sticky/hover may reference river/road instances that no longer exist after undo/redo.
-		clearStickySegment();
+		clearSelection();
 		clearHoverState();
 		selectedRegion = null;
 		mapEditingPanel.clearSelectedCenters();
