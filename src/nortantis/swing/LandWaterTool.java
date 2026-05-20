@@ -39,6 +39,7 @@ public class LandWaterTool extends EditorTool
 	private JToggleButton riversButton;
 	private RowHider riverOptionHider;
 	private JSlider riverWidthSlider;
+	private SliderWithSpinner riverWidthSliderWithSpinner;
 	private Corner riverStart;
 	private Center roadStart;
 	private RowHider modeHider;
@@ -290,13 +291,9 @@ public class LandWaterTool extends EditorTool
 			riverWidthSlider = new JSlider(1, maxSliderValue);
 			final int initialValue = 1;
 			riverWidthSlider.setValue(initialValue);
-			SliderWithDisplayedValue sliderWithDisplay = new SliderWithDisplayedValue(riverWidthSlider);
-			riverOptionHider = sliderWithDisplay.addToOrganizer(organizer, Translation.get("landWaterTool.riverWidth.label"), Translation.get("landWaterTool.riverWidth.help"));
+			riverWidthSliderWithSpinner = new SliderWithSpinner(riverWidthSlider, () -> handleRiverWidthSliderChanged());
+			riverOptionHider = riverWidthSliderWithSpinner.addToOrganizer(organizer, Translation.get("landWaterTool.riverWidth.label"), Translation.get("landWaterTool.riverWidth.help"));
 
-			// In edit mode with a river segment selected, slider changes retune that segment's width
-			// rather than (or in addition to) setting the width for the next-drawn river. Live updates
-			// fire on every tick; the undo point is only set when the slider is released (or focus
-			// leaves) to avoid an undo entry per drag pixel.
 			riverWidthSlider.addChangeListener(ev -> handleRiverWidthSliderChanged());
 			riverWidthSlider.addMouseListener(new java.awt.event.MouseAdapter()
 			{
@@ -1251,6 +1248,11 @@ public class LandWaterTool extends EditorTool
 		colorGeneratorSettingsHider.setVisible(showColorControls);
 	}
 
+	private LineHit editModeHitTest(java.awt.Point panelPoint, LineType activeType, River scopeRiver, Road scopeRoad)
+	{
+		return editModeHitTest(panelPoint, activeType, scopeRiver, scopeRoad, -1);
+	}
+
 	/**
 	 * @param customSegmentThresholdGraphPixels
 	 *            When non-negative, overrides the default {@code controlPointRadius * 2.0} segment hit threshold. Used by the
@@ -1258,11 +1260,6 @@ public class LandWaterTool extends EditorTool
 	 *            whenever the line is visually highlighted (avoiding the confusing case where the highlight is shown but right-click
 	 *            does nothing because the cursor isn't close enough to the centerline). Pass {@code -1} for the default threshold.
 	 */
-	private LineHit editModeHitTest(java.awt.Point panelPoint, LineType activeType, River scopeRiver, Road scopeRoad)
-	{
-		return editModeHitTest(panelPoint, activeType, scopeRiver, scopeRoad, -1);
-	}
-
 	private LineHit editModeHitTest(java.awt.Point panelPoint, LineType activeType, River scopeRiver, Road scopeRoad, double customSegmentThresholdGraphPixels)
 	{
 		if (updater.mapParts == null || updater.mapParts.graph == null || panelPoint == null)
@@ -2543,6 +2540,14 @@ public class LandWaterTool extends EditorTool
 	@Override
 	protected void handleMousePressedOnMap(MouseEvent e)
 	{
+		// MapEditingPanel doesn't grab focus on click, so a JSpinner text field with an uncommitted typed value won't get a focus-lost
+		// event from this press. Commit any pending edit up front so its change listener fires (and applies the typed value to the
+		// currently-selected segments) BEFORE this press mutates the selection.
+		if (riverWidthSliderWithSpinner != null && riverOptionHider.isVisible())
+		{
+			riverWidthSliderWithSpinner.commitEdit();
+		}
+
 		handleMousePressOrDrag(e, false);
 
 		if (riversButton.isSelected() && modeWidget.isDrawMode() && !isFreeHandRiverDrawMode())

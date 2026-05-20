@@ -375,8 +375,12 @@ public class SwingHelper
 		}
 	}
 
-	@SuppressWarnings("rawtypes")
 	public static void addListener(Component component, Runnable action)
+	{
+		addListener(component, action, false);
+	}
+
+	public static void addListener(Component component, Runnable action, boolean runActionWhenValueIsAdjusting)
 	{
 		if (component instanceof AbstractButton)
 		{
@@ -410,7 +414,7 @@ public class SwingHelper
 				@Override
 				public void stateChanged(ChangeEvent e)
 				{
-					if (!((JSlider) component).getValueIsAdjusting())
+					if (runActionWhenValueIsAdjusting || !((JSlider) component).getValueIsAdjusting())
 					{
 						action.run();
 					}
@@ -421,7 +425,6 @@ public class SwingHelper
 		{
 			((JSpinner) component).addChangeListener(new ChangeListener()
 			{
-
 				@Override
 				public void stateChanged(ChangeEvent e)
 				{
