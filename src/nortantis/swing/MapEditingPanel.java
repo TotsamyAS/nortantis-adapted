@@ -236,6 +236,11 @@ public class MapEditingPanel extends UnscaledImagePanel
 		this.selectedRoadControlPointCircles = circles;
 	}
 
+	public void clearSelectedRoadControlPointCircles()
+	{
+		this.selectedRoadControlPointCircles = null;
+	}
+
 	public void setHoveredRoadControlPoint(Point point)
 	{
 		this.hoveredRoadControlPoints = point == null ? null : java.util.Collections.singletonList(point);
@@ -1723,7 +1728,9 @@ public class MapEditingPanel extends UnscaledImagePanel
 		clearHighlightedCenters();
 		clearHighlightedEdges();
 		clearHighlightedPolylines();
+		clearHoverPolylines();
 		clearRoadControlPointCircles();
+		clearSelectedRoadControlPointCircles();
 		clearHoveredControlPoint();
 		clearFreeHandRoadPreviewPath();
 		hideBrush();

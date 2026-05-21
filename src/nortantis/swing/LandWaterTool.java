@@ -3852,6 +3852,10 @@ public class LandWaterTool extends EditorTool
 			Corner end = updater.mapParts.graph.findClosestCorner(getPointOnGraph(e.getPoint()));
 			Point polygonRiverSnapEnd = computeSnapPointForType(e.getPoint(), LineType.RIVER);
 			Set<Edge> river = filterOutOceanAndCoastEdges(updater.mapParts.graph.findPathGreedy(riverStart, end));
+			Point snapEndGraphPixels = polygonRiverSnapEnd == null ? null : polygonRiverSnapEnd.mult(mainWindow.displayQualityScale);
+			TrimmedRiverPath trimmed = trimRiverPathIfPathOvershootsMouse(river, end, snapEndGraphPixels);
+			river = trimmed.path();
+			end = trimmed.end();
 			if (DebugFlags.printRiverEdgeIndexes())
 			{
 				System.out.println("River edges (polygon mode):");
@@ -3918,6 +3922,10 @@ public class LandWaterTool extends EditorTool
 			Point polygonSnapEnd = computeSnapPointForType(e.getPoint(), LineType.ROAD);
 			Center end = updater.mapParts.graph.findClosestCenter(getPointOnGraph(e.getPoint()));
 			List<Edge> edges = updater.mapParts.graph.findShortestPath(roadStart, end, (ignored1, ignored2, distance) -> distance);
+			Point snapEndGraphPixels = polygonSnapEnd == null ? null : polygonSnapEnd.mult(mainWindow.displayQualityScale);
+			TrimmedRoadPath trimmed = trimRoadPathIfPathOvershootsMouse(edges, end, snapEndGraphPixels);
+			edges = trimmed.path();
+			end = trimmed.end();
 
 			mapEditingPanel.clearHighlightedEdges();
 			mapEditingPanel.clearHighlightedPolylines();
@@ -3979,6 +3987,93 @@ public class LandWaterTool extends EditorTool
 	private Set<Edge> filterOutOceanAndCoastEdges(Set<Edge> edges)
 	{
 		return edges.stream().filter(e -> (e.d0 == null || !e.d0.isWater) && (e.d1 == null || !e.d1.isWater)).collect(Collectors.toSet());
+	}
+
+	/**
+	 * Returns the river polygon path, trimmed by one Corner if the snap-bridge from {@code end} to {@code snapGraphPixels} would
+	 * backtrack the path. Backtracking is detected with a dot product: when the bridge direction ({@code snap - end}) points opposite
+	 * to the path-approach direction ({@code end - secondToLast}), the bridge forms a V — going past {@code end} and curving back to
+	 * the snap target. Trimming the final Corner makes the path end at {@code secondToLast} instead, so the bridge continues straight
+	 * from the path's approach direction.
+	 *
+	 * <p>The trim only fires when a snap is present (no snap → no bridge → nothing to overshoot) and only when the path has at least 2
+	 * edges (so at least one edge always remains).
+	 */
+	private TrimmedRiverPath trimRiverPathIfPathOvershootsMouse(Set<Edge> path, Corner end, Point snapGraphPixels)
+	{
+		if (path == null || path.size() < 2 || end == null || snapGraphPixels == null)
+		{
+			return new TrimmedRiverPath(path, end);
+		}
+		Edge lastEdge = null;
+		for (Edge edge : path)
+		{
+			if (edge.v0 == end || edge.v1 == end)
+			{
+				lastEdge = edge;
+				break;
+			}
+		}
+		if (lastEdge == null)
+		{
+			return new TrimmedRiverPath(path, end);
+		}
+		Corner secondToLast = (lastEdge.v0 == end) ? lastEdge.v1 : lastEdge.v0;
+		if (secondToLast == null)
+		{
+			return new TrimmedRiverPath(path, end);
+		}
+		// Dot product: (snap - end) · (end - secondToLast) < 0 means the bridge reverses the approach direction at end.
+		double approachX = end.loc.x - secondToLast.loc.x;
+		double approachY = end.loc.y - secondToLast.loc.y;
+		double bridgeX = snapGraphPixels.x - end.loc.x;
+		double bridgeY = snapGraphPixels.y - end.loc.y;
+		if (approachX * bridgeX + approachY * bridgeY >= 0)
+		{
+			return new TrimmedRiverPath(path, end);
+		}
+		Set<Edge> trimmed = new HashSet<>(path);
+		trimmed.remove(lastEdge);
+		return new TrimmedRiverPath(trimmed, secondToLast);
+	}
+
+	private record TrimmedRiverPath(Set<Edge> path, Corner end)
+	{
+	}
+
+	/** Road counterpart of {@link #trimRiverPathIfPathOvershootsMouse}. See that method for the rationale. */
+	private TrimmedRoadPath trimRoadPathIfPathOvershootsMouse(List<Edge> path, Center end, Point snapGraphPixels)
+	{
+		if (path == null || path.size() < 2 || end == null || snapGraphPixels == null)
+		{
+			return new TrimmedRoadPath(path, end);
+		}
+		// findShortestPath builds the list by walking back from end, so path.get(0) is the edge touching end.
+		Edge lastEdge = path.get(0);
+		if (lastEdge.d0 != end && lastEdge.d1 != end)
+		{
+			return new TrimmedRoadPath(path, end);
+		}
+		Center secondToLast = (lastEdge.d0 == end) ? lastEdge.d1 : lastEdge.d0;
+		if (secondToLast == null)
+		{
+			return new TrimmedRoadPath(path, end);
+		}
+		double approachX = end.loc.x - secondToLast.loc.x;
+		double approachY = end.loc.y - secondToLast.loc.y;
+		double bridgeX = snapGraphPixels.x - end.loc.x;
+		double bridgeY = snapGraphPixels.y - end.loc.y;
+		if (approachX * bridgeX + approachY * bridgeY >= 0)
+		{
+			return new TrimmedRoadPath(path, end);
+		}
+		List<Edge> trimmed = new ArrayList<>(path);
+		trimmed.remove(0);
+		return new TrimmedRoadPath(trimmed, secondToLast);
+	}
+
+	private record TrimmedRoadPath(List<Edge> path, Center end)
+	{
 	}
 
 	@Override
@@ -4124,11 +4219,15 @@ public class LandWaterTool extends EditorTool
 				mapEditingPanel.clearHighlightedPolylines();
 				Corner end = updater.mapParts.graph.findClosestCorner(getPointOnGraph(e.getPoint()));
 				Set<Edge> river = filterOutOceanAndCoastEdges(updater.mapParts.graph.findPathGreedy(riverStart, end));
-				mapEditingPanel.addHighlightedEdges(river, EdgeType.Voronoi);
 				// Preview the snap-back connection that will be added when the mouse is released, so the
 				// user isn't surprised by the gap between the polygon path and the freehand control point
 				// they clicked on (or the one they're hovering near at the other end).
 				Point currentEndSnapPoint = computeSnapPointForType(e.getPoint(), LineType.RIVER);
+				Point snapEndGraphPixels = currentEndSnapPoint == null ? null : currentEndSnapPoint.mult(mainWindow.displayQualityScale);
+				TrimmedRiverPath trimmed = trimRiverPathIfPathOvershootsMouse(river, end, snapEndGraphPixels);
+				river = trimmed.path();
+				end = trimmed.end();
+				mapEditingPanel.addHighlightedEdges(river, EdgeType.Voronoi);
 				Point riverStartRI = riverStart.loc.mult(1.0 / mainWindow.displayQualityScale);
 				Point endRI = end == null ? null : end.loc.mult(1.0 / mainWindow.displayQualityScale);
 				if (polygonRiverSnapStart != null && !polygonRiverSnapStart.isCloseEnough(riverStartRI))
@@ -4164,6 +4263,10 @@ public class LandWaterTool extends EditorTool
 				List<Edge> edges = updater.mapParts.graph.findShortestPath(roadStart, end, (ignored1, ignored2, distance) -> distance);
 				Point roadStartRI = roadStart.loc.mult(1.0 / mainWindow.displayQualityScale);
 				Point currentEndSnapPoint = computeSnapPointForType(e.getPoint(), LineType.ROAD);
+				Point snapEndGraphPixels = currentEndSnapPoint == null ? null : currentEndSnapPoint.mult(mainWindow.displayQualityScale);
+				TrimmedRoadPath trimmed = trimRoadPathIfPathOvershootsMouse(edges, end, snapEndGraphPixels);
+				edges = trimmed.path();
+				end = trimmed.end();
 				Point endRI = end.loc.mult(1.0 / mainWindow.displayQualityScale);
 				boolean snapStartActive = polygonRoadSnapStart != null && !polygonRoadSnapStart.isCloseEnough(roadStartRI);
 				boolean snapEndActive = currentEndSnapPoint != null && !currentEndSnapPoint.isCloseEnough(endRI);
