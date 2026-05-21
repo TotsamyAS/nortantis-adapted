@@ -992,11 +992,6 @@ public class LandWaterTool extends EditorTool
 		return ((double) brushDiameter / mainWindow.zoom) * mapEditingPanel.osScale / 2.0;
 	}
 
-	private double getEditSegmentHitThresholdInRI()
-	{
-		return getEditSegmentHitThresholdInGraphPixels() / mainWindow.displayQualityScale;
-	}
-
 	private Point computeSnapPointForType(java.awt.Point mouseLocation, LineType type)
 	{
 		if (updater.mapParts == null)
@@ -1406,14 +1401,14 @@ public class LandWaterTool extends EditorTool
 			return;
 		}
 		double scale = mainWindow.displayQualityScale;
-		Point mouseRI = mouseLocation != null ? getPointOnGraph(mouseLocation).mult(1.0 / scale) : null;
 		int brushDiameter = getEditBrushDiameter();
-		double brushRadiusRI = brushDiameter <= 1 ? 0 : ((double) brushDiameter / mainWindow.zoom) * mapEditingPanel.osScale / 2.0 / scale;
 
-		// Filled circles: the live selection (independent of where the cursor is). Outlines and hover polylines come from the press
-		// outcome — they preview what would change if the press fires right now.
+		// Filled circles: the live selection (independent of where the cursor is). Outlines, yellow rings, and hover polylines all
+		// come from the press outcome — they preview exactly what would change if the press fires right now, so the visuals always
+		// match the actual click behavior.
 		List<Point> selectedCirclesGraphPixels = collectCPGraphLocations(selectedRiverCPs, selectedRoadCPs, type, scale);
 		List<Point> outlinedCirclesGraphPixels = new ArrayList<>();
+		List<Point> hoverRingsGraphPixels = new ArrayList<>();
 		mapEditingPanel.clearHoverPolylines();
 
 		if (mouseLocation != null)
@@ -1422,13 +1417,15 @@ public class LandWaterTool extends EditorTool
 			PressOutcome preview = computePressOutcome(mouseLocation, ctrlDown, deselectMode, brushDiameter, type);
 			List<Point> previewLocations = collectCPGraphLocations(preview.riverCPsAfter(), preview.roadCPsAfter(), type, scale);
 			Set<Point> selectedLocations = new HashSet<>(selectedCirclesGraphPixels);
-			// CPs that the press would ADD to the selection get the orange outline preview. CPs that the press would REMOVE keep their
-			// filled appearance (they're still currently selected); we don't currently visualize the "would be removed" state.
+			// CPs that the press would ADD to the selection get the orange outline AND the yellow hover ring — they're the
+			// click targets, so we make them visually obvious. The yellow ring matching the orange outline keeps the hover-on-
+			// segment case visually consistent with the hover-on-CP case (in both, the would-be-selected CP gets both rings).
 			for (Point p : previewLocations)
 			{
 				if (!selectedLocations.contains(p))
 				{
 					outlinedCirclesGraphPixels.add(p);
+					hoverRingsGraphPixels.add(p);
 				}
 			}
 			// Segments that would be implicitly selected post-press (both endpoints in preview) but aren't currently — show as hover
@@ -1438,32 +1435,9 @@ public class LandWaterTool extends EditorTool
 
 		mapEditingPanel.setControlPointCircles(outlinedCirclesGraphPixels);
 		mapEditingPanel.setSelectedControlPointCircles(selectedCirclesGraphPixels);
-
-		// Hover ring on the single CP closest to the cursor (if any). Snap radius widens with the brush so brush>1 can grab CPs from
-		// further away — matches the click-to-move grab radius used by the press handler.
-		Point snapPointRI = null;
-		if (mouseLocation != null && mouseRI != null)
+		if (!hoverRingsGraphPixels.isEmpty())
 		{
-			double snapRadiusRI = Math.max(getSnapRadiusRI(), brushRadiusRI);
-			Point nearest = null;
-			double bestDist = snapRadiusRI;
-			for (LineHoverPaths paths : getAllLinePathsWithNodeRefs(type))
-			{
-				for (Point p : paths.locations)
-				{
-					double d = p.distanceTo(mouseRI);
-					if (d < bestDist)
-					{
-						bestDist = d;
-						nearest = p;
-					}
-				}
-			}
-			snapPointRI = nearest;
-		}
-		if (snapPointRI != null)
-		{
-			mapEditingPanel.setHoveredRoadControlPoint(snapPointRI.mult(scale));
+			mapEditingPanel.setHoveredRoadControlPoints(hoverRingsGraphPixels);
 		}
 		else
 		{
@@ -1561,33 +1535,6 @@ public class LandWaterTool extends EditorTool
 				}
 			}
 		}
-	}
-
-	/** Pair-up of a line's CP locations with the indices that are in the current selection (used when iterating hovered lines). */
-	private record LineHoverPaths(List<Point> locations, Set<Integer> selectedIndices)
-	{
-	}
-
-	private List<LineHoverPaths> getAllLinePathsWithNodeRefs(LineType type)
-	{
-		List<LineHoverPaths> result = new ArrayList<>();
-		if (type == LineType.RIVER)
-		{
-			for (River river : mainWindow.edits.rivers)
-			{
-				Set<Integer> sel = selectedRiverCPs == null ? Collections.emptySet() : selectedRiverCPs.getOrDefault(river, Collections.emptySet());
-				result.add(new LineHoverPaths(PathOperations.toLocationList(river.nodes), sel));
-			}
-		}
-		else
-		{
-			for (Road road : mainWindow.edits.roads)
-			{
-				Set<Integer> sel = selectedRoadCPs == null ? Collections.emptySet() : selectedRoadCPs.getOrDefault(road, Collections.emptySet());
-				result.add(new LineHoverPaths(PathOperations.toLocationList(road.nodes), sel));
-			}
-		}
-		return result;
 	}
 
 	/**
@@ -2744,9 +2691,13 @@ public class LandWaterTool extends EditorTool
 		double brushRadiusGraphPixels = brushIsSinglePoint ? 0 : ((double) brushDiameter / mainWindow.zoom) * mapEditingPanel.osScale / 2.0;
 
 		// PRIORITY: a plain (no-Ctrl) press that lands on a selected CP/segment preserves the existing selection and arms a move-drag.
+		// The CP grab radius is at least the segment hit threshold (the same Erase-mode 10-RI radius); without that, a click slightly
+		// off a selected CP but still within typical mouse-aiming tolerance would resolve to the segment-hit branch and wipe the
+		// selection — making the user have to re-select before they could drag again.
 		if (!ctrlDown)
 		{
-			double cpGrabRadius = Math.max(mapEditingPanel.getRoadControlPointHitRadiusInGraphPixels(), brushRadiusGraphPixels);
+			double cpGrabRadius = Math.max(Math.max(mapEditingPanel.getRoadControlPointHitRadiusInGraphPixels(), getEditSegmentHitThresholdInGraphPixels()),
+					brushRadiusGraphPixels);
 			double segGrabRadius = Math.max(getEditSegmentHitThresholdInGraphPixels(), brushRadiusGraphPixels);
 			SelectedCPRef grab = findNearestSelectedCP(point, activeType, cpGrabRadius);
 			if (grab == null)
@@ -2755,41 +2706,8 @@ public class LandWaterTool extends EditorTool
 			}
 			if (grab != null)
 			{
-				// Brush-radius extension: any unselected CPs under the brush get folded into the selection so the user's "brush is my
-				// action zone" mental model holds.
-				if (brushDiameter > 1)
-				{
-					Point clickGraph = getPointOnGraph(point);
-					double scale = mainWindow.displayQualityScale;
-					if (activeType == LineType.RIVER)
-					{
-						for (River river : mainWindow.edits.rivers)
-						{
-							List<RiverPathNode> nodes = river.nodes;
-							for (int i = 0; i < nodes.size(); i++)
-							{
-								if (clickGraph.distanceTo(nodes.get(i).getLoc().mult(scale)) <= brushRadiusGraphPixels)
-								{
-									add.accept(river, i);
-								}
-							}
-						}
-					}
-					else
-					{
-						for (Road road : mainWindow.edits.roads)
-						{
-							List<RoadPathNode> nodes = road.nodes;
-							for (int i = 0; i < nodes.size(); i++)
-							{
-								if (clickGraph.distanceTo(nodes.get(i).getLoc().mult(scale)) <= brushRadiusGraphPixels)
-								{
-									add.accept(road, i);
-								}
-							}
-						}
-					}
-				}
+				// Grabbing the existing selection preserves it as-is — unselected CPs under a wide brush are NOT folded in. The
+				// brush is a hit-test zone for finding the grab anchor, not a selection-extension on a grab+drag.
 				return new PressOutcome(riverAfter, roadAfter, true, grab.line, grab.index);
 			}
 		}
@@ -3285,12 +3203,29 @@ public class LandWaterTool extends EditorTool
 			}
 		}
 
-		// Refresh selection highlight + hover visuals at the new cursor position.
+		// Refresh visuals at the new cursor position. During a move-drag we deliberately skip the hover preview (orange CP outlines,
+		// yellow rings, hover-color segment polylines) since nothing under the cursor is selectable while the drag is in flight —
+		// showing them would falsely suggest the user could pick something up.
 		mapEditingPanel.clearHighlightedPolylines();
-		updateEditModeHoverDisplay(e.getPoint(), activeType, SwingHelper.isCommandKeyDown(e));
-		applySelectedSegmentsHighlight();
+		renderSelectionOnlyVisuals(activeType);
 		updater.createAndShowMapIncrementalUsingCenters(getCentersTouchingPoints(centersTouched));
 		mapEditingPanel.repaint();
+	}
+
+	/**
+	 * Refreshes the live-selection visuals (filled CP circles + selected-segment polylines) and clears every hover-preview visual
+	 * (orange CP outlines, yellow hover rings, hover-color segment polylines). Used during a move-drag, where the hover preview is
+	 * misleading because the user can't switch the selection mid-drag.
+	 */
+	private void renderSelectionOnlyVisuals(LineType activeType)
+	{
+		double scale = mainWindow.displayQualityScale;
+		List<Point> selectedCirclesGraphPixels = collectCPGraphLocations(selectedRiverCPs, selectedRoadCPs, activeType, scale);
+		mapEditingPanel.setSelectedControlPointCircles(selectedCirclesGraphPixels);
+		mapEditingPanel.setControlPointCircles(new ArrayList<>());
+		mapEditingPanel.clearHoveredControlPoint();
+		mapEditingPanel.clearHoverPolylines();
+		applySelectedSegmentsHighlight();
 	}
 
 	/**

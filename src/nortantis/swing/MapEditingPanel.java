@@ -51,7 +51,7 @@ public class MapEditingPanel extends UnscaledImagePanel
 	private EdgeType edgeTypeToHighlight;
 	private List<Point> roadControlPointCircles = null;
 	private List<Point> selectedRoadControlPointCircles = null;
-	private Point hoveredRoadControlPoint = null;
+	private List<Point> hoveredRoadControlPoints = null;
 	private List<Point> freeHandPreviewPath = null;
 	private boolean highlightLakes;
 	private boolean highlightRivers;
@@ -238,12 +238,21 @@ public class MapEditingPanel extends UnscaledImagePanel
 
 	public void setHoveredRoadControlPoint(Point point)
 	{
-		this.hoveredRoadControlPoint = point;
+		this.hoveredRoadControlPoints = point == null ? null : java.util.Collections.singletonList(point);
+	}
+
+	/**
+	 * Replaces the hover-ring set with the given points. Used when more than one CP should show the yellow hover ring
+	 * (e.g. when a wide edit brush covers several CPs at once).
+	 */
+	public void setHoveredRoadControlPoints(List<Point> points)
+	{
+		this.hoveredRoadControlPoints = points == null || points.isEmpty() ? null : points;
 	}
 
 	public void clearHoveredControlPoint()
 	{
-		this.hoveredRoadControlPoint = null;
+		this.hoveredRoadControlPoints = null;
 	}
 
 	public void setFreeHandPreviewPath(List<Point> path)
@@ -1014,7 +1023,8 @@ public class MapEditingPanel extends UnscaledImagePanel
 	private void drawRoadControlPoints(Graphics2D g2)
 	{
 		boolean hasSelected = selectedRoadControlPointCircles != null && !selectedRoadControlPointCircles.isEmpty();
-		if ((roadControlPointCircles == null || roadControlPointCircles.isEmpty()) && !hasSelected && hoveredRoadControlPoint == null
+		boolean hasHovered = hoveredRoadControlPoints != null && !hoveredRoadControlPoints.isEmpty();
+		if ((roadControlPointCircles == null || roadControlPointCircles.isEmpty()) && !hasSelected && !hasHovered
 				&& freeHandPreviewPath == null)
 		{
 			return;
@@ -1046,11 +1056,14 @@ public class MapEditingPanel extends UnscaledImagePanel
 			}
 		}
 
-		if (hoveredRoadControlPoint != null)
+		if (hasHovered)
 		{
 			g2.setColor(highlightEditColor);
 			int hr = r + Math.max(1, r / 6);
-			g2.drawOval((int) hoveredRoadControlPoint.x - hr, (int) hoveredRoadControlPoint.y - hr, hr * 2, hr * 2);
+			for (Point p : hoveredRoadControlPoints)
+			{
+				g2.drawOval((int) p.x - hr, (int) p.y - hr, hr * 2, hr * 2);
+			}
 		}
 
 		if (freeHandPreviewPath != null && freeHandPreviewPath.size() >= 2)
