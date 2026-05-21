@@ -2309,7 +2309,10 @@ public class LandWaterTool extends EditorTool
 		RiverPathNode last = nodes.get(nodes.size() - 1);
 		if (last.getLoc().isCloseEnough(natural))
 		{
-			int width = nodes.size() >= 2 ? nodes.get(nodes.size() - 2).getWidthLevelToNext() : 0;
+			// For a normal polygon-derived river (size >= 2), the bridge inherits width from the previous segment. For the synthetic
+			// single-node river built when the polygon path is empty (Corner-to-snap bridge with no polygon edges), there is no
+			// previous segment, so we fall back to the lone node's own widthLevelToNext — the caller seeds it with the slider's level.
+			int width = nodes.size() >= 2 ? nodes.get(nodes.size() - 2).getWidthLevelToNext() : last.getWidthLevelToNext();
 			long seed = random.nextLong();
 			// The old last node now has an outgoing segment (the bridge); set its to-next metadata
 			// so the bridge inherits the polygon path's width and gets a fresh seed.
@@ -3868,6 +3871,19 @@ public class LandWaterTool extends EditorTool
 			int riverLevel = base * base * 2 + GraphRiver.RIVERS_THIS_SIZE_OR_SMALLER_WILL_NOT_BE_DRAWN + 1;
 			List<River> newRivers = RiverDrawer.addRiversFromEdgesInEditor(river, riverStart, riverLevel, mainWindow.displayQualityScale, mainWindow.edits.rivers);
 
+			// Empty-path case: the user pressed and released at the same Corner (or so close that findPathGreedy returned no edges),
+			// but a snap is active because the cursor is near a freehand control point. The intended result is a bridge-only river
+			// from the Corner to the snap point — synthesize a 1-node river so applyRiverSnapPoints has something to extend.
+			if (newRivers.isEmpty() && (polygonRiverSnapStart != null || polygonRiverSnapEnd != null))
+			{
+				Point startLocRI = riverStart.loc.mult(1.0 / mainWindow.displayQualityScale);
+				List<RiverPathNode> syntheticNodes = new ArrayList<>();
+				syntheticNodes.add(new RiverPathNode(startLocRI, riverLevel, new Random().nextLong(), RiverPathNode.EDGE_INDEX_NONE));
+				River syntheticRiver = new River(syntheticNodes);
+				mainWindow.edits.rivers.add(syntheticRiver);
+				newRivers.add(syntheticRiver);
+			}
+
 			if (polygonRiverSnapStart != null || polygonRiverSnapEnd != null)
 			{
 				Point riverStartRI = riverStart.loc.mult(1.0 / mainWindow.displayQualityScale);
@@ -3933,6 +3949,19 @@ public class LandWaterTool extends EditorTool
 			mapEditingPanel.repaint();
 
 			List<Road> changed = RoadDrawer.addRoadsFromEdgesInEditor(edges, updater.mapParts.graph, mainWindow.edits.roads, mainWindow.displayQualityScale);
+
+			// Empty-path case: same as the river branch — pressed and released at the same Center but a snap is active, so the
+			// intended result is a bridge-only road from the Center to the snap point. Synthesize a 1-node road for the snap logic
+			// to extend.
+			if (changed.isEmpty() && (polygonRoadSnapStart != null || polygonSnapEnd != null))
+			{
+				Point roadStartLocRI = roadStart.loc.mult(1.0 / mainWindow.displayQualityScale);
+				List<RoadPathNode> syntheticNodes = new ArrayList<>();
+				syntheticNodes.add(new RoadPathNode(roadStartLocRI));
+				Road syntheticRoad = new Road(syntheticNodes);
+				mainWindow.edits.roads.add(syntheticRoad);
+				changed.add(syntheticRoad);
+			}
 
 			// If snap points are set, extend the road's endpoints to connect to those exact control-point locations.
 			// Skip if the snap point already equals the center location (already the natural start/end of the Delaunay road).
