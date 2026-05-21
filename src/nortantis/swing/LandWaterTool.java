@@ -4299,34 +4299,34 @@ public class LandWaterTool extends EditorTool
 				Point endRI = end.loc.mult(1.0 / mainWindow.displayQualityScale);
 				boolean snapStartActive = polygonRoadSnapStart != null && !polygonRoadSnapStart.isCloseEnough(roadStartRI);
 				boolean snapEndActive = currentEndSnapPoint != null && !currentEndSnapPoint.isCloseEnough(endRI);
+				// Show the full Delaunay path AND any snap bridges. The actual road drawn at release keeps every Center on the path
+				// (the bridges are added as extra nodes BEYOND roadStart/end, not as replacements for them), so the preview must do
+				// the same — otherwise the preview hides Center crossings the user will actually see in the drawn road.
 				if (edges != null && !edges.isEmpty())
 				{
-					int startTrim = snapEndActive ? 1 : 0;
-					int endTrim = snapStartActive ? edges.size() - 1 : edges.size();
-					List<Edge> edgesToHighlight = (startTrim < endTrim) ? edges.subList(startTrim, endTrim) : List.of();
-					mapEditingPanel.addHighlightedEdges(edgesToHighlight, EdgeType.Delaunay);
+					mapEditingPanel.addHighlightedEdges(edges, EdgeType.Delaunay);
 					if (snapEndActive)
 					{
-						Edge endEdge = edges.get(0);
-						Center endNeighbor = endEdge.d0 == end ? endEdge.d1 : endEdge.d0;
-						if (endNeighbor != null)
-						{
-							mapEditingPanel.addPolylinesToHighlight(List.of(endNeighbor.loc, currentEndSnapPoint.mult(mainWindow.displayQualityScale)));
-						}
+						mapEditingPanel.addPolylinesToHighlight(List.of(end.loc, currentEndSnapPoint.mult(mainWindow.displayQualityScale)));
 					}
 					if (snapStartActive)
 					{
-						Edge roadStartEdge = edges.get(edges.size() - 1);
-						Center snapNeighbor = roadStartEdge.d0 == roadStart ? roadStartEdge.d1 : roadStartEdge.d0;
-						if (snapNeighbor != null)
-						{
-							mapEditingPanel.addPolylinesToHighlight(List.of(polygonRoadSnapStart.mult(mainWindow.displayQualityScale), snapNeighbor.loc));
-						}
+						mapEditingPanel.addPolylinesToHighlight(List.of(polygonRoadSnapStart.mult(mainWindow.displayQualityScale), roadStart.loc));
 					}
 				}
 				else
 				{
+					// Empty-path case (roadStart == end): the release branch synthesizes a 1-node road and bridges to the snap point,
+					// so the preview should show that same bridge instead of an empty highlight.
 					mapEditingPanel.addHighlightedEdges(edges, EdgeType.Delaunay);
+					if (snapEndActive)
+					{
+						mapEditingPanel.addPolylinesToHighlight(List.of(roadStart.loc, currentEndSnapPoint.mult(mainWindow.displayQualityScale)));
+					}
+					if (snapStartActive)
+					{
+						mapEditingPanel.addPolylinesToHighlight(List.of(polygonRoadSnapStart.mult(mainWindow.displayQualityScale), roadStart.loc));
+					}
 				}
 				updateControlPointDisplay(e.getPoint(), LineType.ROAD);
 				mapEditingPanel.repaint();
