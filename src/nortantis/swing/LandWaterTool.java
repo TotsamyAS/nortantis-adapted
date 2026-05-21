@@ -4025,12 +4025,12 @@ public class LandWaterTool extends EditorTool
 	 * the snap target. Trimming the final Corner makes the path end at {@code secondToLast} instead, so the bridge continues straight
 	 * from the path's approach direction.
 	 *
-	 * <p>The trim only fires when a snap is present (no snap → no bridge → nothing to overshoot) and only when the path has at least 2
-	 * edges (so at least one edge always remains).
+	 * <p>The trim only fires when a snap is present (no snap → no bridge → nothing to overshoot). It can reduce the path all the way
+	 * to empty — the caller's empty-path synthesis (1-node river bridged to snap) takes over from there.
 	 */
 	private TrimmedRiverPath trimRiverPathIfPathOvershootsMouse(Set<Edge> path, Corner end, Point snapGraphPixels)
 	{
-		if (path == null || path.size() < 2 || end == null || snapGraphPixels == null)
+		if (path == null || path.isEmpty() || end == null || snapGraphPixels == null)
 		{
 			return new TrimmedRiverPath(path, end);
 		}
@@ -4073,7 +4073,7 @@ public class LandWaterTool extends EditorTool
 	/** Road counterpart of {@link #trimRiverPathIfPathOvershootsMouse}. See that method for the rationale. */
 	private TrimmedRoadPath trimRoadPathIfPathOvershootsMouse(List<Edge> path, Center end, Point snapGraphPixels)
 	{
-		if (path == null || path.size() < 2 || end == null || snapGraphPixels == null)
+		if (path == null || path.isEmpty() || end == null || snapGraphPixels == null)
 		{
 			return new TrimmedRoadPath(path, end);
 		}
