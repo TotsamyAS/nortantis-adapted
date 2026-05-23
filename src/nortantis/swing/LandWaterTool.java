@@ -93,8 +93,11 @@ public class LandWaterTool extends EditorTool
 	// Note: the super constructor calls back into virtual methods on this subclass (e.g. createToolOptionsPanel → showOrHideBrushOptions
 	// → showOrHideRoadAndRiverOptions) BEFORE our instance-field initializers run, so these references are null for a brief window.
 	// Methods reachable during that window must tolerate that.
-	private Map<River, Set<Integer>> selectedRiverCPs = new HashMap<>();
-	private Map<Road, Set<Integer>> selectedRoadCPs = new HashMap<>();
+	// IdentityHashMap by design: River/Road override equals/hashCode based on their mutable `nodes` field, so a regular HashMap loses
+	// entries the instant a line's nodes are reassigned (e.g. segment delete sets line.nodes = firstHalf, changing the hashCode and
+	// orphaning the entry in its original bucket). Selection state must be keyed by identity, not content.
+	private Map<River, Set<Integer>> selectedRiverCPs = new java.util.IdentityHashMap<>();
+	private Map<Road, Set<Integer>> selectedRoadCPs = new java.util.IdentityHashMap<>();
 
 	// Hover state — what's under the cursor right now, refreshed on every mouse-moved. Drives the
 	// hover ring on a control point and the right-click context menu's target. Cleared when the
@@ -132,6 +135,7 @@ public class LandWaterTool extends EditorTool
 
 	// Width-slider edit state. sliderEditWidthBeforeDrag holds the per-segment widths captured before the user grabbed the slider
 	// thumb; on release we push an undo point if any width actually changed. Null means "no edit in progress".
+	// IdentityHashMap when populated — see selectedRiverCPs note about River's mutable-content hashCode.
 	private Map<River, Map<Integer, Integer>> sliderEditWidthsBeforeDrag = null;
 	// True while we're applying the slider's value to the selected segments programmatically, so the change listener doesn't recurse
 	// or attempt to re-tune the segments.
@@ -309,6 +313,11 @@ public class LandWaterTool extends EditorTool
 					commitSliderEditIfChanged();
 				}
 			});
+			// Each spinner click is an atomic edit — snapshot the prior widths before applying it, then commit an undo point after. The
+			// slider's mouse listener handles the drag analogue; without this, spinner clicks change widths but never push undo points.
+			riverWidthSliderWithSpinner.setSpinnerEditHooks(
+					() -> sliderEditWidthsBeforeDrag = captureSelectedRiverSegmentWidths(),
+					() -> commitSliderEditIfChanged());
 		}
 
 		// River draw style (graph vs. free-hand)
@@ -742,9 +751,16 @@ public class LandWaterTool extends EditorTool
 
 
 	/**
-	 * Deletes every selected CP from its line, splitting the line at each deletion the same way Erase mode / right-click "Delete
-	 * Segment" does: every segment that touches a deleted CP is removed, so the line is left fragmented (not bridged across the gap).
-	 * Pieces with fewer than 2 nodes are dropped entirely. Pushes one incremental undo point.
+	 * Applies the right-click delete semantics to every selected CP/segment as a single undo step:
+	 * <ul>
+	 * <li>Pairs of selected consecutive CPs are treated as a "selected segment" and dropped like right-click Delete Segment (the two
+	 * endpoint CPs survive unless they become orphans, which the &lt;2-node fragment drop handles).</li>
+	 * <li>A selected CP whose neighbors are <em>not</em> also selected is "isolated" and dropped like right-click Delete CP: the path is
+	 * stitched between its previous and next surviving CPs (predecessor's edge-index metadata cleared because the bridge no longer
+	 * follows a single Voronoi edge).</li>
+	 * </ul>
+	 * Pre-edit selection is cleared (mapping indices across multi-fragment splits would be brittle and the user can re-select what
+	 * survives).
 	 */
 	private void deleteSelectedCPs()
 	{
@@ -752,89 +768,81 @@ public class LandWaterTool extends EditorTool
 		{
 			return;
 		}
-		List<River> riversWithSel = new ArrayList<>(selectedRiverCPs.keySet());
-		List<Road> roadsWithSel = new ArrayList<>(selectedRoadCPs.keySet());
-
-		// Build the list of (start, end) location pairs for every segment touching a selected CP. removeSegmentsAndSplit{Rivers,Roads}
-		// will handle the split + drop-degenerate-pieces logic for us.
-		List<List<Point>> riverSegmentsToRemove = new ArrayList<>();
-		for (River river : riversWithSel)
+		// Snapshot pre-edit node lists so we can compute redraw scope from where the deleted segments USED to be (the lines themselves
+		// no longer hold those positions after the cut). Identity-keyed so a mutation to line.nodes mid-operation can't lose entries.
+		Map<River, List<Point>> riverBeforePaths = new java.util.IdentityHashMap<>();
+		for (River r : selectedRiverCPs.keySet())
 		{
-			Set<Integer> sel = selectedRiverCPs.get(river);
+			riverBeforePaths.put(r, PathOperations.toLocationList(r.nodes));
+		}
+		Map<Road, List<Point>> roadBeforePaths = new java.util.IdentityHashMap<>();
+		for (Road r : selectedRoadCPs.keySet())
+		{
+			roadBeforePaths.put(r, PathOperations.toLocationList(r.nodes));
+		}
+
+		List<River> changedRivers = new ArrayList<>();
+		for (Map.Entry<River, Set<Integer>> entry : new ArrayList<>(selectedRiverCPs.entrySet()))
+		{
+			River river = entry.getKey();
+			Set<Integer> sel = entry.getValue();
 			if (sel == null || sel.isEmpty())
 			{
 				continue;
 			}
-			List<RiverPathNode> nodes = river.nodes;
-			for (int idx : sel)
+			List<RiverPathNode> originalNodes = river.nodes;
+			DeletePlan plan = computeDeletePlan(sel, originalNodes.size());
+			if (plan.isEmpty())
 			{
-				if (idx > 0 && idx - 1 < nodes.size())
-				{
-					riverSegmentsToRemove.add(Arrays.asList(nodes.get(idx - 1).getLoc(), nodes.get(idx).getLoc()));
-				}
-				if (idx >= 0 && idx + 1 < nodes.size())
-				{
-					riverSegmentsToRemove.add(Arrays.asList(nodes.get(idx).getLoc(), nodes.get(idx + 1).getLoc()));
-				}
+				continue;
 			}
+			List<List<RiverPathNode>> fragments = PathOperations.applySelectionDeletes(originalNodes, plan.isolatedNodes, plan.edges,
+					RiverDrawer.RIVER_OPS);
+			applyRiverFragments(river, fragments, changedRivers);
 		}
-		List<List<Point>> roadSegmentsToRemove = new ArrayList<>();
-		for (Road road : roadsWithSel)
+
+		List<Road> changedRoads = new ArrayList<>();
+		for (Map.Entry<Road, Set<Integer>> entry : new ArrayList<>(selectedRoadCPs.entrySet()))
 		{
-			Set<Integer> sel = selectedRoadCPs.get(road);
+			Road road = entry.getKey();
+			Set<Integer> sel = entry.getValue();
 			if (sel == null || sel.isEmpty())
 			{
 				continue;
 			}
-			List<RoadPathNode> nodes = road.nodes;
-			for (int idx : sel)
+			List<RoadPathNode> originalNodes = road.nodes;
+			DeletePlan plan = computeDeletePlan(sel, originalNodes.size());
+			if (plan.isEmpty())
 			{
-				if (idx > 0 && idx - 1 < nodes.size())
-				{
-					roadSegmentsToRemove.add(Arrays.asList(nodes.get(idx - 1).getLoc(), nodes.get(idx).getLoc()));
-				}
-				if (idx >= 0 && idx + 1 < nodes.size())
-				{
-					roadSegmentsToRemove.add(Arrays.asList(nodes.get(idx).getLoc(), nodes.get(idx + 1).getLoc()));
-				}
+				continue;
 			}
+			List<List<RoadPathNode>> fragments = PathOperations.applySelectionDeletes(originalNodes, plan.isolatedNodes, plan.edges,
+					RoadDrawer.ROAD_OPS);
+			applyRoadFragments(road, fragments, changedRoads);
 		}
 
-		// The selection refers to indices on the pre-cut lines; after the cut, surviving pieces may live in new River/Road objects and
-		// indices shift. Clearing the selection is simpler than trying to map every selected CP across the split.
+		// Mapping indices across multi-fragment splits would be brittle; the user can re-select what remains.
 		clearSelection();
 
-		List<River> changedRivers = RiverDrawer.removeSegmentsAndSplitRivers(mainWindow.edits.rivers, riverSegmentsToRemove);
-		RiverDrawer.removeEmptyOrShortRivers(mainWindow.edits.rivers);
-		List<Road> changedRoads = RoadDrawer.removeSegmentsAndSplitRoads(mainWindow.edits.roads, roadSegmentsToRemove);
-		RoadDrawer.removeEmptyOrSinglePointRoads(mainWindow.edits.roads);
-
-		// Splits may have exposed endpoints that match other rivers/roads — merge so the resulting splines stay continuous instead of
-		// meeting at a sharp angle. Extended targets are added to the redraw lists below so the join area gets repainted.
+		// Newly-exposed endpoints (split + stitch) may now match other lines' endpoints — merge so coincident-end splines stay continuous.
 		List<River> extendedRivers = RiverDrawer.mergeAdjacentRivers(changedRivers, mainWindow.edits.rivers);
 		List<Road> extendedRoads = RoadDrawer.mergeAdjacentRoads(changedRoads, mainWindow.edits.roads);
 
 		Set<Center> centersToRedraw = new HashSet<>();
-		if (!riverSegmentsToRemove.isEmpty())
+		List<List<Point>> riverRedrawPaths = new ArrayList<>(riverBeforePaths.values());
+		for (River ext : extendedRivers)
 		{
-			List<List<Point>> riverCenterPaths = new ArrayList<>(
-					pointsToCoverInRedrawAfterPathCut(mainWindow.edits.rivers, r -> r.nodes, riverSegmentsToRemove));
-			for (River ext : extendedRivers)
-			{
-				riverCenterPaths.add(PathOperations.toLocationList(ext.nodes));
-			}
-			centersToRedraw.addAll(getCentersTouchingPoints(riverCenterPaths));
+			riverRedrawPaths.add(PathOperations.toLocationList(ext.nodes));
 		}
-		if (!roadSegmentsToRemove.isEmpty())
+		centersToRedraw.addAll(getCentersTouchingPoints(riverRedrawPaths));
+
+		List<List<Point>> roadRedrawPaths = new ArrayList<>(roadBeforePaths.values());
+		for (Road ext : extendedRoads)
 		{
-			List<List<Point>> roadCenterPaths = new ArrayList<>(
-					pointsToCoverInRedrawAfterPathCut(mainWindow.edits.roads, r -> r.nodes, roadSegmentsToRemove));
-			for (Road ext : extendedRoads)
-			{
-				roadCenterPaths.add(PathOperations.toLocationList(ext.nodes));
-			}
-			centersToRedraw.addAll(getCentersTouchingPoints(roadCenterPaths));
+			roadRedrawPaths.add(PathOperations.toLocationList(ext.nodes));
 		}
+		centersToRedraw.addAll(getCentersTouchingPoints(roadRedrawPaths));
+
 		if (!changedRoads.isEmpty() || !extendedRoads.isEmpty())
 		{
 			List<Road> roadsToRedraw = new ArrayList<>(changedRoads);
@@ -852,11 +860,89 @@ public class LandWaterTool extends EditorTool
 			}
 		}
 
+		purgeOrphanedSelections();
 		undoer.setUndoPoint(UpdateType.Incremental, this);
 		updater.createAndShowMapIncrementalUsingCenters(centersToRedraw);
 		updater.doWhenMapIsNotDrawing(() -> updater.createAndShowLowPriorityChanges());
 		LineType activeType = riversButton.isSelected() ? LineType.RIVER : LineType.ROAD;
 		refreshSelectionVisuals(mapEditingPanel.getMousePosition(), activeType);
+	}
+
+	/**
+	 * Classifies {@code selectedIndices} into (a) edges to drop — pairs of consecutive selected indices — and (b) isolated nodes to drop —
+	 * selected indices with no selected neighbor. A selected index that touches a selected neighbor only has its segment dropped; the
+	 * surviving CP rides along with its untouched neighbor.
+	 */
+	private static DeletePlan computeDeletePlan(Set<Integer> selectedIndices, int nodeCount)
+	{
+		Set<Integer> edges = new HashSet<>();
+		Set<Integer> isolatedNodes = new HashSet<>();
+		for (int idx : selectedIndices)
+		{
+			if (idx < 0 || idx >= nodeCount)
+			{
+				continue;
+			}
+			boolean prevSelected = selectedIndices.contains(idx - 1);
+			boolean nextSelected = selectedIndices.contains(idx + 1);
+			if (nextSelected && idx + 1 < nodeCount)
+			{
+				edges.add(idx);
+			}
+			if (!prevSelected && !nextSelected)
+			{
+				isolatedNodes.add(idx);
+			}
+		}
+		return new DeletePlan(isolatedNodes, edges);
+	}
+
+	private record DeletePlan(Set<Integer> isolatedNodes, Set<Integer> edges)
+	{
+		boolean isEmpty()
+		{
+			return isolatedNodes.isEmpty() && edges.isEmpty();
+		}
+	}
+
+	/**
+	 * Replaces {@code river}'s nodes with the first surviving fragment (if any) and pushes the rest as new River objects. Removes
+	 * {@code river} from edits when no fragments survive. Every River the caller still has a reference to (modified or freshly added)
+	 * is appended to {@code changed} so the merge + redraw pass can find them.
+	 */
+	private void applyRiverFragments(River river, List<List<RiverPathNode>> fragments, List<River> changed)
+	{
+		if (fragments.isEmpty())
+		{
+			mainWindow.edits.rivers.remove(river);
+			return;
+		}
+		river.nodes = new java.util.concurrent.CopyOnWriteArrayList<>(fragments.get(0));
+		changed.add(river);
+		for (int i = 1; i < fragments.size(); i++)
+		{
+			River newRiver = new River(fragments.get(i));
+			mainWindow.edits.rivers.add(newRiver);
+			changed.add(newRiver);
+		}
+	}
+
+	/** Road counterpart of {@link #applyRiverFragments}. */
+	private void applyRoadFragments(Road road, List<List<RoadPathNode>> fragments, List<Road> changed)
+	{
+		if (fragments.isEmpty())
+		{
+			mainWindow.edits.roads.remove(road);
+			return;
+		}
+		road.nodes = new java.util.concurrent.CopyOnWriteArrayList<>(fragments.get(0));
+		changed.add(road);
+		for (int i = 1; i < fragments.size(); i++)
+		{
+			Road newRoad = new Road(fragments.get(i));
+			mainWindow.edits.roads.add(newRoad);
+			changed.add(newRoad);
+		}
 	}
 
 	/**
@@ -1724,7 +1810,7 @@ public class LandWaterTool extends EditorTool
 	 */
 	private Map<River, Map<Integer, Integer>> captureSelectedRiverSegmentWidths()
 	{
-		Map<River, Map<Integer, Integer>> result = new HashMap<>();
+		Map<River, Map<Integer, Integer>> result = new java.util.IdentityHashMap<>();
 		for (Map.Entry<River, Set<Integer>> entry : selectedRiverCPs.entrySet())
 		{
 			List<RiverPathNode> nodes = entry.getKey().nodes;
@@ -2735,7 +2821,8 @@ public class LandWaterTool extends EditorTool
 	 */
 	private PressOutcome computePressOutcome(java.awt.Point point, boolean ctrlDown, boolean deselectMode, int brushDiameter, LineType activeType)
 	{
-		Map<River, Set<Integer>> riverAfter = new HashMap<>();
+		// Identity-keyed to match selectedRiverCPs/selectedRoadCPs (Road/River hashCode is mutable; see field declarations).
+		Map<River, Set<Integer>> riverAfter = new java.util.IdentityHashMap<>();
 		if (selectedRiverCPs != null)
 		{
 			for (Map.Entry<River, Set<Integer>> e : selectedRiverCPs.entrySet())
@@ -2743,7 +2830,7 @@ public class LandWaterTool extends EditorTool
 				riverAfter.put(e.getKey(), new HashSet<>(e.getValue()));
 			}
 		}
-		Map<Road, Set<Integer>> roadAfter = new HashMap<>();
+		Map<Road, Set<Integer>> roadAfter = new java.util.IdentityHashMap<>();
 		if (selectedRoadCPs != null)
 		{
 			for (Map.Entry<Road, Set<Integer>> e : selectedRoadCPs.entrySet())
@@ -3917,6 +4004,7 @@ public class LandWaterTool extends EditorTool
 		updater.createAndShowMapIncrementalUsingCenters(centersToRedraw);
 		mapEditingPanel.clearHighlightedPolylines();
 		applySelectedSegmentsHighlight();
+		refreshSelectedControlPointCircles();
 		mapEditingPanel.repaint();
 	}
 
@@ -3990,6 +4078,7 @@ public class LandWaterTool extends EditorTool
 		updater.doWhenMapIsNotDrawing(() -> updater.createAndShowLowPriorityChanges());
 		mapEditingPanel.clearHighlightedPolylines();
 		applySelectedSegmentsHighlight();
+		refreshSelectedControlPointCircles();
 		mapEditingPanel.repaint();
 	}
 
@@ -4002,6 +4091,19 @@ public class LandWaterTool extends EditorTool
 	{
 		selectedRiverCPs.keySet().removeIf(r -> !mainWindow.edits.rivers.contains(r));
 		selectedRoadCPs.keySet().removeIf(r -> !mainWindow.edits.roads.contains(r));
+	}
+
+	/**
+	 * Re-publishes the selected-CP circle positions from the live selection state so visuals match after an edit that didn't go through
+	 * a hover refresh (e.g. right-click Delete Segment). Without this, the panel keeps drawing circles from the pre-edit selection,
+	 * leaving stale/missing dots at positions whose underlying CP changed.
+	 */
+	private void refreshSelectedControlPointCircles()
+	{
+		LineType activeType = riversButton.isSelected() ? LineType.RIVER : LineType.ROAD;
+		double scale = mainWindow.displayQualityScale;
+		List<Point> selectedCirclesGraphPixels = collectCPGraphLocations(selectedRiverCPs, selectedRoadCPs, activeType, scale);
+		mapEditingPanel.setSelectedControlPointCircles(selectedCirclesGraphPixels);
 	}
 
 	@Override

@@ -42,6 +42,13 @@ public class RiverDrawer
 		{
 			return new RiverPathNode(target.getLoc(), donor.getWidthLevelToNext(), donor.getSeedToNext(), donor.getEdgeIndexToNext());
 		}
+
+		@Override
+		public RiverPathNode withStitchedToNextMetadata(RiverPathNode original)
+		{
+			return new RiverPathNode(original.getLoc(), original.getWidthLevelToNext(), original.getSeedToNext(),
+					RiverPathNode.EDGE_INDEX_NONE);
+		}
 	};
 
 	private final List<River> rivers;

@@ -44,6 +44,12 @@ public class RoadDrawer
 		{
 			return target;
 		}
+
+		@Override
+		public RoadPathNode withStitchedToNextMetadata(RoadPathNode original)
+		{
+			return original;
+		}
 	};
 
 	/**

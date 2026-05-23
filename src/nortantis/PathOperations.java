@@ -38,6 +38,14 @@ public final class PathOperations
 
 		/** Returns a node at {@code target}'s location with "to-next" metadata copied from {@code donor}. */
 		T withMetadataFrom(T target, T donor);
+
+		/**
+		 * Returns a node whose "to-next" metadata describes a stitch-bridge segment (the original outgoing segment's destination CP was
+		 * removed; the new segment bridges directly to the next surviving CP and no longer follows a single Voronoi edge). For rivers this
+		 * preserves width and seed but clears the Voronoi edge index; for roads, which have no per-segment metadata, the original node is
+		 * returned unchanged.
+		 */
+		T withStitchedToNextMetadata(T original);
 	}
 
 	/**
@@ -110,6 +118,71 @@ public final class PathOperations
 			result.add(current);
 		}
 		return result;
+	}
+
+	/**
+	 * Applies a mixed delete plan to a single path, returning the surviving fragments (each with at least 2 nodes).
+	 *
+	 * <ul>
+	 * <li>{@code edgesToRemove} indexes the segments to drop ({@code i} = segment from {@code nodes.get(i)} to {@code nodes.get(i + 1)});
+	 * the path is split at each, and the last node of each fragment ending at a removed edge has its "to-next" metadata cleared.</li>
+	 * <li>{@code isolatedNodesToRemove} indexes nodes to drop with a stitch (the surviving CP before the removed CP has its "to-next"
+	 * metadata replaced via {@link NodeMetadataOps#withStitchedToNextMetadata}, since the new bridging segment doesn't follow a single
+	 * Voronoi edge anymore). If the removed node was the original path's last surviving node in its fragment, the new last node's
+	 * metadata is fully cleared instead.</li>
+	 * </ul>
+	 *
+	 * The two sets are independent — a node can be removed without its surrounding edges being in {@code edgesToRemove}, and vice versa.
+	 * Fragments with fewer than 2 surviving nodes are dropped (orphan CPs aren't a representable path).
+	 */
+	public static <T extends PathNode> List<List<T>> applySelectionDeletes(List<T> originalNodes, Set<Integer> isolatedNodesToRemove,
+			Set<Integer> edgesToRemove, NodeMetadataOps<T> ops)
+	{
+		List<List<T>> fragments = new ArrayList<>();
+		if (originalNodes == null || originalNodes.isEmpty())
+		{
+			return fragments;
+		}
+		List<T> current = new ArrayList<>();
+		boolean justSkippedNode = false;
+		int n = originalNodes.size();
+		for (int i = 0; i < n; i++)
+		{
+			if (isolatedNodesToRemove.contains(i))
+			{
+				justSkippedNode = true;
+				continue;
+			}
+			T node = originalNodes.get(i);
+			if (justSkippedNode && !current.isEmpty())
+			{
+				T lastInCurrent = current.get(current.size() - 1);
+				current.set(current.size() - 1, ops.withStitchedToNextMetadata(lastInCurrent));
+			}
+			justSkippedNode = false;
+			current.add(node);
+			if (i < n - 1 && edgesToRemove.contains(i))
+			{
+				if (current.size() >= 2)
+				{
+					T lastInCurrent = current.get(current.size() - 1);
+					current.set(current.size() - 1, ops.withClearedMetadata(lastInCurrent));
+					fragments.add(current);
+				}
+				current = new ArrayList<>();
+				justSkippedNode = false;
+			}
+		}
+		if (justSkippedNode && !current.isEmpty())
+		{
+			T lastInCurrent = current.get(current.size() - 1);
+			current.set(current.size() - 1, ops.withClearedMetadata(lastInCurrent));
+		}
+		if (current.size() >= 2)
+		{
+			fragments.add(current);
+		}
+		return fragments;
 	}
 
 	/**
