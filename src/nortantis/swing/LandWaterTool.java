@@ -96,6 +96,11 @@ public class LandWaterTool extends EditorTool
 	// IdentityHashMap by design: River/Road override equals/hashCode based on their mutable `nodes` field, so a regular HashMap loses
 	// entries the instant a line's nodes are reassigned (e.g. segment delete sets line.nodes = firstHalf, changing the hashCode and
 	// orphaning the entry in its original bucket). Selection state must be keyed by identity, not content.
+	//
+	// INVARIANT: after undo/redo, edits.rivers/roads are replaced with deep-copied instances, so any entry left here would point at a
+	// dead reference. {@link #onAfterUndoRedo} relies on this being the case and unconditionally calls {@link #clearSelection()} — if
+	// that ever changes (e.g. someone tries to preserve selection across undos), this design breaks silently and the maps must be
+	// rebuilt to point at the new instances.
 	private Map<River, Set<Integer>> selectedRiverCPs = new java.util.IdentityHashMap<>();
 	private Map<Road, Set<Integer>> selectedRoadCPs = new java.util.IdentityHashMap<>();
 
