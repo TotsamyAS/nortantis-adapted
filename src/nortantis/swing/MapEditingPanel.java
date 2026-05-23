@@ -52,6 +52,9 @@ public class MapEditingPanel extends UnscaledImagePanel
 	private List<Point> roadControlPointCircles = null;
 	private List<Point> selectedRoadControlPointCircles = null;
 	private List<Point> hoveredRoadControlPoints = null;
+	// True when the hovered CPs should be drawn as filled yellow disks (draw mode — single decisive snap target).
+	// False (default) draws them as stroked yellow rings (edit mode — selection preview, distinct from the filled selected CP).
+	private boolean hoveredRoadControlPointsFilled = false;
 	private List<Point> freeHandPreviewPath = null;
 	private boolean highlightLakes;
 	private boolean highlightRivers;
@@ -241,23 +244,31 @@ public class MapEditingPanel extends UnscaledImagePanel
 		this.selectedRoadControlPointCircles = null;
 	}
 
-	public void setHoveredRoadControlPoint(Point point)
+	/**
+	 * Marks a single CP as hovered. {@code filled} = true draws a yellow disk (used in draw mode where hover is a single decisive
+	 * snap target); false draws a yellow ring (used in edit mode where hover is a selection preview and the filled style is reserved
+	 * for actually-selected CPs).
+	 */
+	public void setHoveredRoadControlPoint(Point point, boolean filled)
 	{
 		this.hoveredRoadControlPoints = point == null ? null : java.util.Collections.singletonList(point);
+		this.hoveredRoadControlPointsFilled = filled;
 	}
 
 	/**
-	 * Replaces the hover-ring set with the given points. Used when more than one CP should show the yellow hover ring
-	 * (e.g. when a wide edit brush covers several CPs at once).
+	 * Replaces the hover-ring set with the given points. Used when more than one CP should show the yellow hover indicator
+	 * (e.g. when a wide edit brush covers several CPs at once). See {@link #setHoveredRoadControlPoint} for {@code filled} semantics.
 	 */
-	public void setHoveredRoadControlPoints(List<Point> points)
+	public void setHoveredRoadControlPoints(List<Point> points, boolean filled)
 	{
 		this.hoveredRoadControlPoints = points == null || points.isEmpty() ? null : points;
+		this.hoveredRoadControlPointsFilled = filled;
 	}
 
 	public void clearHoveredControlPoint()
 	{
 		this.hoveredRoadControlPoints = null;
+		this.hoveredRoadControlPointsFilled = false;
 	}
 
 	public void setFreeHandPreviewPath(List<Point> path)
@@ -1012,11 +1023,7 @@ public class MapEditingPanel extends UnscaledImagePanel
 
 	private double getRoadControlPointRadiusExact()
 	{
-		// 7/6 absorbs the prior hover-ring extension (was r + r/6) so unselected/selected/hovered CPs all share one outer radius. This
-		// matches the hit radius to the visible outer edge in every state — without it, selected CPs were drawn at a smaller radius
-		// than the hit zone, leaving a "dead zone" where the cursor was visually off the CP but still hijacked by the CP hit-test
-		// instead of the segment under it.
-		return graph.getMeanCenterWidth() * 0.16 * 7.0 / 6.0;
+		return graph.getMeanCenterWidth() * 0.13;
 	}
 
 	/**
@@ -1044,14 +1051,19 @@ public class MapEditingPanel extends UnscaledImagePanel
 		g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 		float strokeWidth = getRoadControlPointStrokeWidth();
 		int r = getRoadControlPointRadiusInGraphPixels();
-		// Selected CPs are filled (no stroke), so their visible outer is just the fill radius. To match the stroked-circle outer edge
-		// (r + halfStroke) used by the orange unselected and hovered rings, the fill radius extends by halfStroke. This keeps all three
-		// states' visible outer aligned with each other and with the hit radius — eliminating the dead zone outside the selected dot.
-		int selectedFillR = (int) Math.round(getRoadControlPointRadiusExact() + strokeWidth / 2.0);
+		// Filled circles (hovered, selected) use this larger radius so their visible outer matches the stroked-orange outer edge
+		// (r + halfStroke) — without it, the filled disk would be smaller than the hit radius and create a "dead zone" where the
+		// cursor was visually off the CP but still hijacked by the CP hit-test. Use ceil rather than round so the fill always
+		// covers the antialiased outer pixels of the orange stroke underneath; otherwise a hairline of orange leaks through.
+		int filledR = (int) Math.ceil(r + strokeWidth / 2.0);
 		g2.setStroke(new BasicStroke(strokeWidth));
 
-		// Unselected visible CPs are drawn first (outlined), then selected CPs on top (filled) so a selected CP at the same location
-		// shows the filled visual rather than the outline.
+		// CP visual hierarchy:
+		//   stroked orange ring  → CP is on a highlighted line, cursor not over it (and, in edit mode, also the hover indicator —
+		//                          would-be-added CPs already get this ring via setControlPointCircles, so the stroked hover variant
+		//                          simply re-draws in orange to keep the visual consistent)
+		//   filled  yellow disk  → cursor is hovering this CP and a click is a decisive action (draw mode hover, or selection)
+		// Drawn in that order so a hovered or selected CP's fill covers the underlying orange ring.
 		if (roadControlPointCircles != null)
 		{
 			g2.setColor(processingColor);
@@ -1061,25 +1073,32 @@ public class MapEditingPanel extends UnscaledImagePanel
 			}
 		}
 
+		if (hasHovered)
+		{
+			if (hoveredRoadControlPointsFilled)
+			{
+				g2.setColor(highlightEditColor);
+				for (Point p : hoveredRoadControlPoints)
+				{
+					g2.fillOval((int) p.x - filledR, (int) p.y - filledR, filledR * 2, filledR * 2);
+				}
+			}
+			else
+			{
+				g2.setColor(processingColor);
+				for (Point p : hoveredRoadControlPoints)
+				{
+					g2.drawOval((int) p.x - r, (int) p.y - r, r * 2, r * 2);
+				}
+			}
+		}
+
 		if (hasSelected)
 		{
 			g2.setColor(highlightEditColor);
 			for (Point p : selectedRoadControlPointCircles)
 			{
-				g2.fillOval((int) p.x - selectedFillR, (int) p.y - selectedFillR, selectedFillR * 2, selectedFillR * 2);
-			}
-		}
-
-		// Hover ring is inset inside the orange outline so both rings are visible as concentric circles when both apply (which is the
-		// common case — a hovered CP is also a "near cursor" CP). Yellow's outer stroke edge sits at orange's inner stroke edge, giving
-		// a clear shape-cue for hover on top of the color-cue, without obscuring the orange ring underneath.
-		if (hasHovered)
-		{
-			g2.setColor(highlightEditColor);
-			int hoverInsetR = Math.max(1, (int) Math.round(getRoadControlPointRadiusExact() - strokeWidth));
-			for (Point p : hoveredRoadControlPoints)
-			{
-				g2.drawOval((int) p.x - hoverInsetR, (int) p.y - hoverInsetR, hoverInsetR * 2, hoverInsetR * 2);
+				g2.fillOval((int) p.x - filledR, (int) p.y - filledR, filledR * 2, filledR * 2);
 			}
 		}
 

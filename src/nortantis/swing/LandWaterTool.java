@@ -1246,7 +1246,8 @@ public class LandWaterTool extends EditorTool
 
 		if (snapPoint != null)
 		{
-			mapEditingPanel.setHoveredRoadControlPoint(snapPoint.mult(mainWindow.displayQualityScale));
+			// Draw mode hover = filled yellow disk — the snap point is a single decisive click target.
+			mapEditingPanel.setHoveredRoadControlPoint(snapPoint.mult(mainWindow.displayQualityScale), true);
 		}
 		else
 		{
@@ -1614,7 +1615,8 @@ public class LandWaterTool extends EditorTool
 		mapEditingPanel.setSelectedControlPointCircles(selectedCirclesGraphPixels);
 		if (!hoverRingsGraphPixels.isEmpty())
 		{
-			mapEditingPanel.setHoveredRoadControlPoints(hoverRingsGraphPixels);
+			// Edit mode hover = stroked yellow ring — kept visually distinct from the filled-yellow selected CP.
+			mapEditingPanel.setHoveredRoadControlPoints(hoverRingsGraphPixels, false);
 		}
 		else
 		{
