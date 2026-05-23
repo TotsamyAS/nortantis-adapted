@@ -952,6 +952,42 @@ public class RiverDrawer
 	}
 
 	/**
+	 * Attempts to merge each river in {@code candidates} with any other river in {@code rivers} whose endpoint now matches. Used after
+	 * edits that may have changed a river's endpoints (control-point deletion, segment cut, erase) — a newly-exposed endpoint may
+	 * coincide with another existing river's endpoint, in which case the two should be one continuous river. Mirrors
+	 * {@link #connectAndAddRivers}'s join logic but for rivers already in {@code rivers}: when a merge succeeds the candidate is removed
+	 * from {@code rivers} (its data has been folded into the matched river). A second join attempt is made on the extended result in
+	 * case it can also connect at its other end.
+	 *
+	 * @return The rivers whose nodes were extended by absorbing a candidate.
+	 */
+	public static List<River> mergeAdjacentRivers(java.util.Collection<River> candidates, List<River> rivers)
+	{
+		List<River> extended = new ArrayList<>();
+		for (River candidate : candidates)
+		{
+			if (candidate == null || candidate.nodes.size() < 2 || !rivers.contains(candidate))
+			{
+				continue;
+			}
+			River joined = tryConnectingRiverToExistingRiver(candidate, rivers);
+			if (joined == null)
+			{
+				continue;
+			}
+			rivers.remove(candidate);
+			extended.add(joined);
+			River joined2 = tryConnectingRiverToExistingRiver(joined, rivers);
+			if (joined2 != null)
+			{
+				rivers.remove(joined);
+				extended.add(joined2);
+			}
+		}
+		return extended;
+	}
+
+	/**
 	 * Attempts to join {@code riverToAdd} to an existing river in {@code rivers} by matching endpoints. If a match is found, the existing
 	 * river's nodes are replaced with the merged node list (a single atomic volatile-field swap so concurrent readers don't see partial
 	 * state), {@code riverToAdd} is NOT added to {@code rivers}, and the extended existing river is returned. Returns {@code null} if no

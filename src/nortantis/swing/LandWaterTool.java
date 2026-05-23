@@ -583,39 +583,98 @@ public class LandWaterTool extends EditorTool
 
 	private void addToSelection(Object line, int index)
 	{
-		if (line instanceof River r)
+		forEachCoincidentCP(line, index, (l, i) ->
 		{
-			selectedRiverCPs.computeIfAbsent(r, k -> new HashSet<>()).add(index);
-		}
-		else if (line instanceof Road r)
-		{
-			selectedRoadCPs.computeIfAbsent(r, k -> new HashSet<>()).add(index);
-		}
+			if (l instanceof River r)
+			{
+				selectedRiverCPs.computeIfAbsent(r, k -> new HashSet<>()).add(i);
+			}
+			else if (l instanceof Road r)
+			{
+				selectedRoadCPs.computeIfAbsent(r, k -> new HashSet<>()).add(i);
+			}
+		});
 	}
 
 	private void removeFromSelection(Object line, int index)
 	{
-		if (line instanceof River r)
+		forEachCoincidentCP(line, index, (l, i) ->
 		{
-			Set<Integer> s = selectedRiverCPs.get(r);
-			if (s != null)
+			if (l instanceof River r)
 			{
-				s.remove(index);
-				if (s.isEmpty())
+				Set<Integer> s = selectedRiverCPs.get(r);
+				if (s != null)
 				{
-					selectedRiverCPs.remove(r);
+					s.remove(i);
+					if (s.isEmpty())
+					{
+						selectedRiverCPs.remove(r);
+					}
+				}
+			}
+			else if (l instanceof Road r)
+			{
+				Set<Integer> s = selectedRoadCPs.get(r);
+				if (s != null)
+				{
+					s.remove(i);
+					if (s.isEmpty())
+					{
+						selectedRoadCPs.remove(r);
+					}
+				}
+			}
+		});
+	}
+
+	/**
+	 * Invokes {@code action} for ({@code originLine}, {@code originIdx}) and for every other CP of the same line type whose location
+	 * matches the origin's. Used so selection operations on a junction CP (a shared point that lives in multiple River/Road objects)
+	 * propagate to every line touching that point. Without this, two CPs at the same point but in different objects can't form an
+	 * implicitly-selected segment, because consecutive-index detection in {@link #applySelectedSegmentsHighlight} runs per-line.
+	 */
+	private void forEachCoincidentCP(Object originLine, int originIdx, java.util.function.BiConsumer<Object, Integer> action)
+	{
+		List<? extends PathNode> originNodes = nodesOf(originLine);
+		if (originIdx < 0 || originIdx >= originNodes.size())
+		{
+			return;
+		}
+		action.accept(originLine, originIdx);
+		Point origLoc = originNodes.get(originIdx).getLoc();
+		if (originLine instanceof River)
+		{
+			for (River other : mainWindow.edits.rivers)
+			{
+				if (other == originLine)
+				{
+					continue;
+				}
+				List<RiverPathNode> nodes = other.nodes;
+				for (int i = 0; i < nodes.size(); i++)
+				{
+					if (nodes.get(i).getLoc().isCloseEnough(origLoc))
+					{
+						action.accept(other, i);
+					}
 				}
 			}
 		}
-		else if (line instanceof Road r)
+		else if (originLine instanceof Road)
 		{
-			Set<Integer> s = selectedRoadCPs.get(r);
-			if (s != null)
+			for (Road other : mainWindow.edits.roads)
 			{
-				s.remove(index);
-				if (s.isEmpty())
+				if (other == originLine)
 				{
-					selectedRoadCPs.remove(r);
+					continue;
+				}
+				List<RoadPathNode> nodes = other.nodes;
+				for (int i = 0; i < nodes.size(); i++)
+				{
+					if (nodes.get(i).getLoc().isCloseEnough(origLoc))
+					{
+						action.accept(other, i);
+					}
 				}
 			}
 		}
@@ -745,25 +804,52 @@ public class LandWaterTool extends EditorTool
 		// indices shift. Clearing the selection is simpler than trying to map every selected CP across the split.
 		clearSelection();
 
-		RiverDrawer.removeSegmentsAndSplitRivers(mainWindow.edits.rivers, riverSegmentsToRemove);
+		List<River> changedRivers = RiverDrawer.removeSegmentsAndSplitRivers(mainWindow.edits.rivers, riverSegmentsToRemove);
 		RiverDrawer.removeEmptyOrShortRivers(mainWindow.edits.rivers);
 		List<Road> changedRoads = RoadDrawer.removeSegmentsAndSplitRoads(mainWindow.edits.roads, roadSegmentsToRemove);
 		RoadDrawer.removeEmptyOrSinglePointRoads(mainWindow.edits.roads);
 
+		// Splits may have exposed endpoints that match other rivers/roads — merge so the resulting splines stay continuous instead of
+		// meeting at a sharp angle. Extended targets are added to the redraw lists below so the join area gets repainted.
+		List<River> extendedRivers = RiverDrawer.mergeAdjacentRivers(changedRivers, mainWindow.edits.rivers);
+		List<Road> extendedRoads = RoadDrawer.mergeAdjacentRoads(changedRoads, mainWindow.edits.roads);
+
 		Set<Center> centersToRedraw = new HashSet<>();
 		if (!riverSegmentsToRemove.isEmpty())
 		{
-			centersToRedraw.addAll(getCentersTouchingPoints(
-					pointsToCoverInRedrawAfterPathCut(mainWindow.edits.rivers, r -> r.nodes, riverSegmentsToRemove)));
+			List<List<Point>> riverCenterPaths = new ArrayList<>(
+					pointsToCoverInRedrawAfterPathCut(mainWindow.edits.rivers, r -> r.nodes, riverSegmentsToRemove));
+			for (River ext : extendedRivers)
+			{
+				riverCenterPaths.add(PathOperations.toLocationList(ext.nodes));
+			}
+			centersToRedraw.addAll(getCentersTouchingPoints(riverCenterPaths));
 		}
 		if (!roadSegmentsToRemove.isEmpty())
 		{
-			centersToRedraw.addAll(getCentersTouchingPoints(
-					pointsToCoverInRedrawAfterPathCut(mainWindow.edits.roads, r -> r.nodes, roadSegmentsToRemove)));
+			List<List<Point>> roadCenterPaths = new ArrayList<>(
+					pointsToCoverInRedrawAfterPathCut(mainWindow.edits.roads, r -> r.nodes, roadSegmentsToRemove));
+			for (Road ext : extendedRoads)
+			{
+				roadCenterPaths.add(PathOperations.toLocationList(ext.nodes));
+			}
+			centersToRedraw.addAll(getCentersTouchingPoints(roadCenterPaths));
 		}
-		if (!changedRoads.isEmpty())
+		if (!changedRoads.isEmpty() || !extendedRoads.isEmpty())
 		{
-			updater.addRoadsToRedrawLowPriority(changedRoads, mainWindow.displayQualityScale);
+			List<Road> roadsToRedraw = new ArrayList<>(changedRoads);
+			roadsToRedraw.removeIf(r -> !mainWindow.edits.roads.contains(r));
+			for (Road ext : extendedRoads)
+			{
+				if (!roadsToRedraw.contains(ext))
+				{
+					roadsToRedraw.add(ext);
+				}
+			}
+			if (!roadsToRedraw.isEmpty())
+			{
+				updater.addRoadsToRedrawLowPriority(roadsToRedraw, mainWindow.displayQualityScale);
+			}
 		}
 
 		undoer.setUndoPoint(UpdateType.Incremental, this);
@@ -1942,14 +2028,20 @@ public class LandWaterTool extends EditorTool
 			if (modeWidget.isEraseMode())
 			{
 				List<List<Point>> riverSegmentsToRemove = getSelectedRiverSegments(e.getPoint());
-				RiverDrawer.removeSegmentsAndSplitRivers(mainWindow.edits.rivers, riverSegmentsToRemove);
+				List<River> changed = RiverDrawer.removeSegmentsAndSplitRivers(mainWindow.edits.rivers, riverSegmentsToRemove);
 				RiverDrawer.removeEmptyOrShortRivers(mainWindow.edits.rivers);
+				List<River> extended = RiverDrawer.mergeAdjacentRivers(changed, mainWindow.edits.rivers);
 				mapEditingPanel.clearHighlightedEdges();
 
 				if (!riverSegmentsToRemove.isEmpty())
 				{
-					Set<Center> centersToRedraw = getCentersTouchingPoints(
+					List<List<Point>> centerPaths = new ArrayList<>(
 							pointsToCoverInRedrawAfterPathCut(mainWindow.edits.rivers, r -> r.nodes, riverSegmentsToRemove));
+					for (River ext : extended)
+					{
+						centerPaths.add(PathOperations.toLocationList(ext.nodes));
+					}
+					Set<Center> centersToRedraw = getCentersTouchingPoints(centerPaths);
 					if (!centersToRedraw.isEmpty())
 					{
 						updater.createAndShowMapIncrementalUsingCenters(centersToRedraw);
@@ -1966,10 +2058,25 @@ public class LandWaterTool extends EditorTool
 				List<List<Point>> roadSegmentsToRemove = getSelectedRoadSegments(e.getPoint());
 				List<Road> changed = RoadDrawer.removeSegmentsAndSplitRoads(mainWindow.edits.roads, roadSegmentsToRemove);
 				RoadDrawer.removeEmptyOrSinglePointRoads(mainWindow.edits.roads);
+				List<Road> extended = RoadDrawer.mergeAdjacentRoads(changed, mainWindow.edits.roads);
 				mapEditingPanel.clearHighlightedPolylines();
-				updater.createAndShowMapIncrementalUsingCenters(
-						getCentersTouchingPoints(pointsToCoverInRedrawAfterPathCut(mainWindow.edits.roads, r -> r.nodes, roadSegmentsToRemove)));
-				updater.addRoadsToRedrawLowPriority(changed, mainWindow.displayQualityScale);
+				List<List<Point>> centerPaths = new ArrayList<>(
+						pointsToCoverInRedrawAfterPathCut(mainWindow.edits.roads, r -> r.nodes, roadSegmentsToRemove));
+				for (Road ext : extended)
+				{
+					centerPaths.add(PathOperations.toLocationList(ext.nodes));
+				}
+				updater.createAndShowMapIncrementalUsingCenters(getCentersTouchingPoints(centerPaths));
+				List<Road> roadsToRedraw = new ArrayList<>(changed);
+				roadsToRedraw.removeIf(r -> !mainWindow.edits.roads.contains(r));
+				for (Road ext : extended)
+				{
+					if (!roadsToRedraw.contains(ext))
+					{
+						roadsToRedraw.add(ext);
+					}
+				}
+				updater.addRoadsToRedrawLowPriority(roadsToRedraw, mainWindow.displayQualityScale);
 			}
 		}
 	}
@@ -2689,6 +2796,9 @@ public class LandWaterTool extends EditorTool
 			riverAfter.clear();
 			roadAfter.clear();
 		};
+		// Expanding wrappers: include CPs at the same location in other lines so junction points behave as one selectable unit.
+		java.util.function.BiConsumer<Object, Integer> addExpanded = (line, idx) -> forEachCoincidentCP(line, idx, add);
+		java.util.function.BiConsumer<Object, Integer> removeExpanded = (line, idx) -> forEachCoincidentCP(line, idx, remove);
 
 		boolean brushIsSinglePoint = brushDiameter <= 1;
 		double brushRadiusGraphPixels = brushIsSinglePoint ? 0 : ((double) brushDiameter / mainWindow.zoom) * mapEditingPanel.osScale / 2.0;
@@ -2726,17 +2836,17 @@ public class LandWaterTool extends EditorTool
 			{
 				if (deselectMode)
 				{
-					remove.accept(line, idx);
+					removeExpanded.accept(line, idx);
 				}
 				else
 				{
-					add.accept(line, idx);
+					addExpanded.accept(line, idx);
 				}
 				return new PressOutcome(riverAfter, roadAfter, false, null, -1);
 			}
 			// Replace selection with the clicked CP, arm move-drag.
 			clear.run();
-			add.accept(line, idx);
+			addExpanded.accept(line, idx);
 			return new PressOutcome(riverAfter, roadAfter, true, line, idx);
 		}
 		if (brushIsSinglePoint && hit != null && hit.isSegment())
@@ -2749,13 +2859,13 @@ public class LandWaterTool extends EditorTool
 			}
 			if (deselectMode && ctrlDown)
 			{
-				remove.accept(line, segIdx);
-				remove.accept(line, segIdx + 1);
+				removeExpanded.accept(line, segIdx);
+				removeExpanded.accept(line, segIdx + 1);
 			}
 			else
 			{
-				add.accept(line, segIdx);
-				add.accept(line, segIdx + 1);
+				addExpanded.accept(line, segIdx);
+				addExpanded.accept(line, segIdx + 1);
 			}
 			return new PressOutcome(riverAfter, roadAfter, false, null, -1);
 		}
@@ -2774,24 +2884,24 @@ public class LandWaterTool extends EditorTool
 			{
 				if (removing)
 				{
-					remove.accept(line, bh.controlPointIndex());
+					removeExpanded.accept(line, bh.controlPointIndex());
 				}
 				else
 				{
-					add.accept(line, bh.controlPointIndex());
+					addExpanded.accept(line, bh.controlPointIndex());
 				}
 			}
 			else if (bh.isSegment())
 			{
 				if (removing)
 				{
-					remove.accept(line, bh.segmentIndex());
-					remove.accept(line, bh.segmentIndex() + 1);
+					removeExpanded.accept(line, bh.segmentIndex());
+					removeExpanded.accept(line, bh.segmentIndex() + 1);
 				}
 				else
 				{
-					add.accept(line, bh.segmentIndex());
-					add.accept(line, bh.segmentIndex() + 1);
+					addExpanded.accept(line, bh.segmentIndex());
+					addExpanded.accept(line, bh.segmentIndex() + 1);
 				}
 			}
 		}
@@ -3501,7 +3611,7 @@ public class LandWaterTool extends EditorTool
 			}
 			adjustSelectionAfterSegmentDelete(line, newRiver, idx);
 			List<List<Point>> removedSegments = Collections.singletonList(Arrays.asList(nodes.get(idx).getLoc(), nodes.get(idx + 1).getLoc()));
-			commitRiverCut(removedSegments);
+			commitRiverCut(removedSegments, changed);
 		}
 		else if (hit.road() != null)
 		{
@@ -3758,7 +3868,28 @@ public class LandWaterTool extends EditorTool
 		{
 			appendControlPointEditScope(centerPaths, line.nodes, afterChangedIndex);
 		}
+		// If the edit changed an endpoint (e.g. deleting a terminal CP), the line's new endpoint may now match an existing river's
+		// endpoint. Merge so the result is a single continuous spline instead of two coincident-end segments meeting at a sharp angle.
+		mergeRiverWithNeighborsAndExpandRedrawScope(removed ? null : line, centerPaths);
 		finishRiverPostEdit(getCentersTouchingPoints(centerPaths));
+	}
+
+	/**
+	 * Attempts to merge {@code modifiedLine} (if non-null) with any existing river whose endpoint now matches and, when a merge happens,
+	 * appends the extended river's full node list to {@code centerPaths} so the incremental redraw covers the join point. The newly
+	 * merged spline curves around the join in a way the candidate's local pre-edit scope would not have covered.
+	 */
+	private void mergeRiverWithNeighborsAndExpandRedrawScope(River modifiedLine, List<List<Point>> centerPaths)
+	{
+		if (modifiedLine == null || modifiedLine.nodes.size() < 2)
+		{
+			return;
+		}
+		List<River> extended = RiverDrawer.mergeAdjacentRivers(Collections.singletonList(modifiedLine), mainWindow.edits.rivers);
+		for (River ext : extended)
+		{
+			centerPaths.add(PathOperations.toLocationList(ext.nodes));
+		}
 	}
 
 	/**
@@ -3766,15 +3897,22 @@ public class LandWaterTool extends EditorTool
 	 * {@link PathOperations#findInnerNeighborsOfCutEndpoints} for why the inner neighbors are required (Catmull-Rom end segments use a
 	 * synthetic reflection control point, so the curve shape on the new end segments changes and the redraw bounds must cover them).
 	 */
-	private void commitRiverCut(List<List<Point>> removedSegments)
+	private void commitRiverCut(List<List<Point>> removedSegments, List<River> changed)
 	{
-		Set<Center> centersToRedraw = getCentersTouchingPoints(
+		List<List<Point>> centerPaths = new ArrayList<>(
 				pointsToCoverInRedrawAfterPathCut(mainWindow.edits.rivers, r -> r.nodes, removedSegments));
-		finishRiverPostEdit(centersToRedraw);
+		// The cut may have exposed new endpoints that match an existing river's endpoint — merge to keep splines continuous.
+		List<River> extended = RiverDrawer.mergeAdjacentRivers(changed, mainWindow.edits.rivers);
+		for (River ext : extended)
+		{
+			centerPaths.add(PathOperations.toLocationList(ext.nodes));
+		}
+		finishRiverPostEdit(getCentersTouchingPoints(centerPaths));
 	}
 
 	private void finishRiverPostEdit(Set<Center> centersToRedraw)
 	{
+		purgeOrphanedSelections();
 		undoer.setUndoPoint(UpdateType.Incremental, this);
 		updater.createAndShowMapIncrementalUsingCenters(centersToRedraw);
 		mapEditingPanel.clearHighlightedPolylines();
@@ -3797,10 +3935,22 @@ public class LandWaterTool extends EditorTool
 		}
 		List<List<Point>> centerPaths = new ArrayList<>();
 		appendControlPointEditScopeFromSnapshot(centerPaths, beforePath, beforeChangedIndex);
-		List<Road> changed = removed ? Collections.emptyList() : Collections.singletonList(line);
+		List<Road> changed = removed ? new ArrayList<>() : new ArrayList<>(Collections.singletonList(line));
 		if (!removed)
 		{
 			appendControlPointEditScope(centerPaths, line.nodes, afterChangedIndex);
+		}
+		// If the edit changed an endpoint, the line's new endpoint may now match an existing road's endpoint — merge so the spline
+		// continues smoothly across the join. Replace the redraw target with the surviving (extended) road in that case.
+		List<Road> extended = removed ? Collections.emptyList()
+				: RoadDrawer.mergeAdjacentRoads(Collections.singletonList(line), mainWindow.edits.roads);
+		if (!extended.isEmpty())
+		{
+			changed = new ArrayList<>(extended);
+			for (Road ext : extended)
+			{
+				centerPaths.add(PathOperations.toLocationList(ext.nodes));
+			}
 		}
 		finishRoadPostEdit(getCentersTouchingPoints(centerPaths), changed);
 	}
@@ -3808,13 +3958,29 @@ public class LandWaterTool extends EditorTool
 	/** Road counterpart of {@link #commitRiverCut}. */
 	private void commitRoadCut(List<List<Point>> removedSegments, List<Road> changed)
 	{
-		Set<Center> centersToRedraw = getCentersTouchingPoints(
+		List<List<Point>> centerPaths = new ArrayList<>(
 				pointsToCoverInRedrawAfterPathCut(mainWindow.edits.roads, r -> r.nodes, removedSegments));
-		finishRoadPostEdit(centersToRedraw, changed);
+		List<Road> extended = RoadDrawer.mergeAdjacentRoads(changed, mainWindow.edits.roads);
+		if (!extended.isEmpty())
+		{
+			// Drop any candidates that got absorbed (no longer in edits.roads) and add the surviving extended roads.
+			changed = new ArrayList<>(changed);
+			changed.removeIf(r -> !mainWindow.edits.roads.contains(r));
+			for (Road ext : extended)
+			{
+				if (!changed.contains(ext))
+				{
+					changed.add(ext);
+				}
+				centerPaths.add(PathOperations.toLocationList(ext.nodes));
+			}
+		}
+		finishRoadPostEdit(getCentersTouchingPoints(centerPaths), changed);
 	}
 
 	private void finishRoadPostEdit(Set<Center> centersToRedraw, List<Road> changed)
 	{
+		purgeOrphanedSelections();
 		undoer.setUndoPoint(UpdateType.Incremental, this);
 		if (!changed.isEmpty())
 		{
@@ -3825,6 +3991,17 @@ public class LandWaterTool extends EditorTool
 		mapEditingPanel.clearHighlightedPolylines();
 		applySelectedSegmentsHighlight();
 		mapEditingPanel.repaint();
+	}
+
+	/**
+	 * Drops selection entries whose River/Road has been removed from the live edits collection (segment cut leaving sub-2-node pieces,
+	 * post-edit merge absorbing the candidate, etc.). Without this, the highlight renderer happily redraws a CP using the dead object's
+	 * stale node list — leaving "orphan" highlights at locations whose underlying line no longer exists.
+	 */
+	private void purgeOrphanedSelections()
+	{
+		selectedRiverCPs.keySet().removeIf(r -> !mainWindow.edits.rivers.contains(r));
+		selectedRoadCPs.keySet().removeIf(r -> !mainWindow.edits.roads.contains(r));
 	}
 
 	@Override
@@ -3856,8 +4033,11 @@ public class LandWaterTool extends EditorTool
 			Point polygonRiverSnapEnd = computeSnapPointForType(e.getPoint(), LineType.RIVER);
 			Set<Edge> river = filterOutOceanAndCoastEdges(updater.mapParts.graph.findPathGreedy(riverStart, end));
 			Point snapEndGraphPixels = polygonRiverSnapEnd == null ? null : polygonRiverSnapEnd.mult(mainWindow.displayQualityScale);
-			TrimmedRiverPath trimmed = trimRiverPathIfPathOvershootsMouse(river, end, snapEndGraphPixels);
+			Point snapStartGraphPixels = polygonRiverSnapStart == null ? null
+					: polygonRiverSnapStart.mult(mainWindow.displayQualityScale);
+			TrimmedRiverPath trimmed = trimRiverPathIfPathOvershootsMouse(river, riverStart, end, snapStartGraphPixels, snapEndGraphPixels);
 			river = trimmed.path();
+			Corner start = trimmed.start();
 			end = trimmed.end();
 			if (DebugFlags.printRiverEdgeIndexes())
 			{
@@ -3869,14 +4049,14 @@ public class LandWaterTool extends EditorTool
 			}
 			int base = (riverWidthSlider.getValue() - 1);
 			int riverLevel = base * base * 2 + GraphRiver.RIVERS_THIS_SIZE_OR_SMALLER_WILL_NOT_BE_DRAWN + 1;
-			List<River> newRivers = RiverDrawer.addRiversFromEdgesInEditor(river, riverStart, riverLevel, mainWindow.displayQualityScale, mainWindow.edits.rivers);
+			List<River> newRivers = RiverDrawer.addRiversFromEdgesInEditor(river, start, riverLevel, mainWindow.displayQualityScale, mainWindow.edits.rivers);
 
 			// Empty-path case: the user pressed and released at the same Corner (or so close that findPathGreedy returned no edges),
 			// but a snap is active because the cursor is near a freehand control point. The intended result is a bridge-only river
 			// from the Corner to the snap point — synthesize a 1-node river so applyRiverSnapPoints has something to extend.
 			if (newRivers.isEmpty() && (polygonRiverSnapStart != null || polygonRiverSnapEnd != null))
 			{
-				Point startLocRI = riverStart.loc.mult(1.0 / mainWindow.displayQualityScale);
+				Point startLocRI = start.loc.mult(1.0 / mainWindow.displayQualityScale);
 				List<RiverPathNode> syntheticNodes = new ArrayList<>();
 				syntheticNodes.add(new RiverPathNode(startLocRI, riverLevel, new Random().nextLong(), RiverPathNode.EDGE_INDEX_NONE));
 				River syntheticRiver = new River(syntheticNodes);
@@ -3886,7 +4066,7 @@ public class LandWaterTool extends EditorTool
 
 			if (polygonRiverSnapStart != null || polygonRiverSnapEnd != null)
 			{
-				Point riverStartRI = riverStart.loc.mult(1.0 / mainWindow.displayQualityScale);
+				Point riverStartRI = start.loc.mult(1.0 / mainWindow.displayQualityScale);
 				Point endRI = end.loc.mult(1.0 / mainWindow.displayQualityScale);
 				for (River r : newRivers)
 				{
@@ -3939,8 +4119,11 @@ public class LandWaterTool extends EditorTool
 			Center end = updater.mapParts.graph.findClosestCenter(getPointOnGraph(e.getPoint()));
 			List<Edge> edges = updater.mapParts.graph.findShortestPath(roadStart, end, (ignored1, ignored2, distance) -> distance);
 			Point snapEndGraphPixels = polygonSnapEnd == null ? null : polygonSnapEnd.mult(mainWindow.displayQualityScale);
-			TrimmedRoadPath trimmed = trimRoadPathIfPathOvershootsMouse(edges, end, snapEndGraphPixels);
+			Point snapStartGraphPixels = polygonRoadSnapStart == null ? null
+					: polygonRoadSnapStart.mult(mainWindow.displayQualityScale);
+			TrimmedRoadPath trimmed = trimRoadPathIfPathOvershootsMouse(edges, roadStart, end, snapStartGraphPixels, snapEndGraphPixels);
 			edges = trimmed.path();
+			Center start = trimmed.start();
 			end = trimmed.end();
 
 			mapEditingPanel.clearHighlightedEdges();
@@ -3955,7 +4138,7 @@ public class LandWaterTool extends EditorTool
 			// to extend.
 			if (changed.isEmpty() && (polygonRoadSnapStart != null || polygonSnapEnd != null))
 			{
-				Point roadStartLocRI = roadStart.loc.mult(1.0 / mainWindow.displayQualityScale);
+				Point roadStartLocRI = start.loc.mult(1.0 / mainWindow.displayQualityScale);
 				List<RoadPathNode> syntheticNodes = new ArrayList<>();
 				syntheticNodes.add(new RoadPathNode(roadStartLocRI));
 				Road syntheticRoad = new Road(syntheticNodes);
@@ -3967,7 +4150,7 @@ public class LandWaterTool extends EditorTool
 			// Skip if the snap point already equals the center location (already the natural start/end of the Delaunay road).
 			if (polygonRoadSnapStart != null || polygonSnapEnd != null)
 			{
-				Point roadStartRI = roadStart.loc.mult(1.0 / mainWindow.displayQualityScale);
+				Point roadStartRI = start.loc.mult(1.0 / mainWindow.displayQualityScale);
 				Point endRI = end.loc.mult(1.0 / mainWindow.displayQualityScale);
 				for (Road road : changed)
 				{
@@ -4019,90 +4202,155 @@ public class LandWaterTool extends EditorTool
 	}
 
 	/**
-	 * Returns the river polygon path, trimmed by one Corner if the snap-bridge from {@code end} to {@code snapGraphPixels} would
-	 * backtrack the path. Backtracking is detected with a dot product: when the bridge direction ({@code snap - end}) points opposite
-	 * to the path-approach direction ({@code end - secondToLast}), the bridge forms a V — going past {@code end} and curving back to
-	 * the snap target. Trimming the final Corner makes the path end at {@code secondToLast} instead, so the bridge continues straight
-	 * from the path's approach direction.
+	 * Returns the river polygon path, trimmed by one Corner at the start and/or end if the snap-bridge there would backtrack the path.
+	 * Backtracking is detected with a dot product: at the end, when the bridge direction ({@code snap - end}) points opposite to the
+	 * path-approach direction ({@code end - secondToLast}), the bridge forms a V — going past {@code end} and curving back to the snap
+	 * target. The start mirrors this: when ({@code snap - start}) points opposite to ({@code start - secondFromStart}), the bridge into
+	 * {@code start} reverses the path's departure direction. In both cases the offending terminal Corner is dropped so the bridge
+	 * continues straight from the next interior Corner.
 	 *
-	 * <p>The trim only fires when a snap is present (no snap → no bridge → nothing to overshoot). It can reduce the path all the way
-	 * to empty — the caller's empty-path synthesis (1-node river bridged to snap) takes over from there.
+	 * <p>Each side's trim only fires when its snap is present (no snap → no bridge → nothing to overshoot). It can reduce the path all
+	 * the way to empty — the caller's empty-path synthesis (1-node river bridged to snap) takes over from there.
 	 */
-	private TrimmedRiverPath trimRiverPathIfPathOvershootsMouse(Set<Edge> path, Corner end, Point snapGraphPixels)
+	private TrimmedRiverPath trimRiverPathIfPathOvershootsMouse(Set<Edge> path, Corner start, Corner end,
+			Point snapStartGraphPixels, Point snapEndGraphPixels)
 	{
-		if (path == null || path.isEmpty() || end == null || snapGraphPixels == null)
+		if (path == null || path.isEmpty())
 		{
-			return new TrimmedRiverPath(path, end);
+			return new TrimmedRiverPath(path, start, end);
 		}
-		Edge lastEdge = null;
-		for (Edge edge : path)
+
+		Set<Edge> result = path;
+		boolean copied = false;
+
+		if (end != null && snapEndGraphPixels != null)
 		{
-			if (edge.v0 == end || edge.v1 == end)
+			Edge edgeAtEnd = findRiverEdgeTouching(result, end);
+			if (edgeAtEnd != null)
 			{
-				lastEdge = edge;
-				break;
+				Corner secondToLast = (edgeAtEnd.v0 == end) ? edgeAtEnd.v1 : edgeAtEnd.v0;
+				if (secondToLast != null && bridgeReversesPath(secondToLast.loc, end.loc, snapEndGraphPixels))
+				{
+					if (!copied)
+					{
+						result = new HashSet<>(result);
+						copied = true;
+					}
+					result.remove(edgeAtEnd);
+					end = secondToLast;
+				}
 			}
 		}
-		if (lastEdge == null)
+
+		if (start != null && snapStartGraphPixels != null && !result.isEmpty())
 		{
-			return new TrimmedRiverPath(path, end);
+			Edge edgeAtStart = findRiverEdgeTouching(result, start);
+			if (edgeAtStart != null)
+			{
+				Corner secondFromStart = (edgeAtStart.v0 == start) ? edgeAtStart.v1 : edgeAtStart.v0;
+				if (secondFromStart != null && bridgeReversesPath(secondFromStart.loc, start.loc, snapStartGraphPixels))
+				{
+					if (!copied)
+					{
+						result = new HashSet<>(result);
+						copied = true;
+					}
+					result.remove(edgeAtStart);
+					start = secondFromStart;
+				}
+			}
 		}
-		Corner secondToLast = (lastEdge.v0 == end) ? lastEdge.v1 : lastEdge.v0;
-		if (secondToLast == null)
-		{
-			return new TrimmedRiverPath(path, end);
-		}
-		// Dot product: (snap - end) · (end - secondToLast) < 0 means the bridge reverses the approach direction at end.
-		double approachX = end.loc.x - secondToLast.loc.x;
-		double approachY = end.loc.y - secondToLast.loc.y;
-		double bridgeX = snapGraphPixels.x - end.loc.x;
-		double bridgeY = snapGraphPixels.y - end.loc.y;
-		if (approachX * bridgeX + approachY * bridgeY >= 0)
-		{
-			return new TrimmedRiverPath(path, end);
-		}
-		Set<Edge> trimmed = new HashSet<>(path);
-		trimmed.remove(lastEdge);
-		return new TrimmedRiverPath(trimmed, secondToLast);
+
+		return new TrimmedRiverPath(result, start, end);
 	}
 
-	private record TrimmedRiverPath(Set<Edge> path, Corner end)
+	private static Edge findRiverEdgeTouching(Set<Edge> path, Corner corner)
+	{
+		for (Edge edge : path)
+		{
+			if (edge.v0 == corner || edge.v1 == corner)
+			{
+				return edge;
+			}
+		}
+		return null;
+	}
+
+	private record TrimmedRiverPath(Set<Edge> path, Corner start, Corner end)
 	{
 	}
 
 	/** Road counterpart of {@link #trimRiverPathIfPathOvershootsMouse}. See that method for the rationale. */
-	private TrimmedRoadPath trimRoadPathIfPathOvershootsMouse(List<Edge> path, Center end, Point snapGraphPixels)
+	private TrimmedRoadPath trimRoadPathIfPathOvershootsMouse(List<Edge> path, Center start, Center end,
+			Point snapStartGraphPixels, Point snapEndGraphPixels)
 	{
-		if (path == null || path.isEmpty() || end == null || snapGraphPixels == null)
+		if (path == null || path.isEmpty())
 		{
-			return new TrimmedRoadPath(path, end);
+			return new TrimmedRoadPath(path, start, end);
 		}
-		// findShortestPath builds the list by walking back from end, so path.get(0) is the edge touching end.
-		Edge lastEdge = path.get(0);
-		if (lastEdge.d0 != end && lastEdge.d1 != end)
+
+		List<Edge> result = path;
+		boolean copied = false;
+
+		// findShortestPath builds the list by walking back from end, so result.get(0) is the edge touching end
+		// and result.get(size - 1) is the edge touching start.
+		if (end != null && snapEndGraphPixels != null)
 		{
-			return new TrimmedRoadPath(path, end);
+			Edge edgeAtEnd = result.get(0);
+			if (edgeAtEnd.d0 == end || edgeAtEnd.d1 == end)
+			{
+				Center secondToLast = (edgeAtEnd.d0 == end) ? edgeAtEnd.d1 : edgeAtEnd.d0;
+				if (secondToLast != null && bridgeReversesPath(secondToLast.loc, end.loc, snapEndGraphPixels))
+				{
+					if (!copied)
+					{
+						result = new ArrayList<>(result);
+						copied = true;
+					}
+					result.remove(0);
+					end = secondToLast;
+				}
+			}
 		}
-		Center secondToLast = (lastEdge.d0 == end) ? lastEdge.d1 : lastEdge.d0;
-		if (secondToLast == null)
+
+		if (start != null && snapStartGraphPixels != null && !result.isEmpty())
 		{
-			return new TrimmedRoadPath(path, end);
+			Edge edgeAtStart = result.get(result.size() - 1);
+			if (edgeAtStart.d0 == start || edgeAtStart.d1 == start)
+			{
+				Center secondFromStart = (edgeAtStart.d0 == start) ? edgeAtStart.d1 : edgeAtStart.d0;
+				if (secondFromStart != null && bridgeReversesPath(secondFromStart.loc, start.loc, snapStartGraphPixels))
+				{
+					if (!copied)
+					{
+						result = new ArrayList<>(result);
+						copied = true;
+					}
+					result.remove(result.size() - 1);
+					start = secondFromStart;
+				}
+			}
 		}
-		double approachX = end.loc.x - secondToLast.loc.x;
-		double approachY = end.loc.y - secondToLast.loc.y;
-		double bridgeX = snapGraphPixels.x - end.loc.x;
-		double bridgeY = snapGraphPixels.y - end.loc.y;
-		if (approachX * bridgeX + approachY * bridgeY >= 0)
-		{
-			return new TrimmedRoadPath(path, end);
-		}
-		List<Edge> trimmed = new ArrayList<>(path);
-		trimmed.remove(0);
-		return new TrimmedRoadPath(trimmed, secondToLast);
+
+		return new TrimmedRoadPath(result, start, end);
 	}
 
-	private record TrimmedRoadPath(List<Edge> path, Center end)
+	private record TrimmedRoadPath(List<Edge> path, Center start, Center end)
 	{
+	}
+
+	/**
+	 * Dot product check for whether a snap-bridge at a terminal Corner reverses the path. {@code interior} is the path's neighbor of the
+	 * terminal, {@code terminal} is the path's start or end Corner, and {@code snap} is the snap-bridge target. Returns true when
+	 * {@code (terminal - interior) · (snap - terminal) < 0}, i.e. the bridge points back along the path.
+	 */
+	private static boolean bridgeReversesPath(Point interior, Point terminal, Point snap)
+	{
+		double approachX = terminal.x - interior.x;
+		double approachY = terminal.y - interior.y;
+		double bridgeX = snap.x - terminal.x;
+		double bridgeY = snap.y - terminal.y;
+		return approachX * bridgeX + approachY * bridgeY < 0;
 	}
 
 	@Override
@@ -4253,15 +4501,18 @@ public class LandWaterTool extends EditorTool
 				// they clicked on (or the one they're hovering near at the other end).
 				Point currentEndSnapPoint = computeSnapPointForType(e.getPoint(), LineType.RIVER);
 				Point snapEndGraphPixels = currentEndSnapPoint == null ? null : currentEndSnapPoint.mult(mainWindow.displayQualityScale);
-				TrimmedRiverPath trimmed = trimRiverPathIfPathOvershootsMouse(river, end, snapEndGraphPixels);
+				Point snapStartGraphPixels = polygonRiverSnapStart == null ? null
+						: polygonRiverSnapStart.mult(mainWindow.displayQualityScale);
+				TrimmedRiverPath trimmed = trimRiverPathIfPathOvershootsMouse(river, riverStart, end, snapStartGraphPixels, snapEndGraphPixels);
 				river = trimmed.path();
+				Corner start = trimmed.start();
 				end = trimmed.end();
 				mapEditingPanel.addHighlightedEdges(river, EdgeType.Voronoi);
-				Point riverStartRI = riverStart.loc.mult(1.0 / mainWindow.displayQualityScale);
+				Point riverStartRI = start == null ? null : start.loc.mult(1.0 / mainWindow.displayQualityScale);
 				Point endRI = end == null ? null : end.loc.mult(1.0 / mainWindow.displayQualityScale);
-				if (polygonRiverSnapStart != null && !polygonRiverSnapStart.isCloseEnough(riverStartRI))
+				if (polygonRiverSnapStart != null && start != null && !polygonRiverSnapStart.isCloseEnough(riverStartRI))
 				{
-					mapEditingPanel.addPolylinesToHighlight(List.of(polygonRiverSnapStart.mult(mainWindow.displayQualityScale), riverStart.loc));
+					mapEditingPanel.addPolylinesToHighlight(List.of(polygonRiverSnapStart.mult(mainWindow.displayQualityScale), start.loc));
 				}
 				if (currentEndSnapPoint != null && endRI != null && !currentEndSnapPoint.isCloseEnough(endRI))
 				{
@@ -4290,12 +4541,15 @@ public class LandWaterTool extends EditorTool
 				mapEditingPanel.clearHighlightedPolylines();
 				Center end = updater.mapParts.graph.findClosestCenter(getPointOnGraph(e.getPoint()));
 				List<Edge> edges = updater.mapParts.graph.findShortestPath(roadStart, end, (ignored1, ignored2, distance) -> distance);
-				Point roadStartRI = roadStart.loc.mult(1.0 / mainWindow.displayQualityScale);
 				Point currentEndSnapPoint = computeSnapPointForType(e.getPoint(), LineType.ROAD);
 				Point snapEndGraphPixels = currentEndSnapPoint == null ? null : currentEndSnapPoint.mult(mainWindow.displayQualityScale);
-				TrimmedRoadPath trimmed = trimRoadPathIfPathOvershootsMouse(edges, end, snapEndGraphPixels);
+				Point snapStartGraphPixels = polygonRoadSnapStart == null ? null
+						: polygonRoadSnapStart.mult(mainWindow.displayQualityScale);
+				TrimmedRoadPath trimmed = trimRoadPathIfPathOvershootsMouse(edges, roadStart, end, snapStartGraphPixels, snapEndGraphPixels);
 				edges = trimmed.path();
+				Center start = trimmed.start();
 				end = trimmed.end();
+				Point roadStartRI = start.loc.mult(1.0 / mainWindow.displayQualityScale);
 				Point endRI = end.loc.mult(1.0 / mainWindow.displayQualityScale);
 				boolean snapStartActive = polygonRoadSnapStart != null && !polygonRoadSnapStart.isCloseEnough(roadStartRI);
 				boolean snapEndActive = currentEndSnapPoint != null && !currentEndSnapPoint.isCloseEnough(endRI);
@@ -4311,7 +4565,7 @@ public class LandWaterTool extends EditorTool
 					}
 					if (snapStartActive)
 					{
-						mapEditingPanel.addPolylinesToHighlight(List.of(polygonRoadSnapStart.mult(mainWindow.displayQualityScale), roadStart.loc));
+						mapEditingPanel.addPolylinesToHighlight(List.of(polygonRoadSnapStart.mult(mainWindow.displayQualityScale), start.loc));
 					}
 				}
 				else
@@ -4321,11 +4575,11 @@ public class LandWaterTool extends EditorTool
 					mapEditingPanel.addHighlightedEdges(edges, EdgeType.Delaunay);
 					if (snapEndActive)
 					{
-						mapEditingPanel.addPolylinesToHighlight(List.of(roadStart.loc, currentEndSnapPoint.mult(mainWindow.displayQualityScale)));
+						mapEditingPanel.addPolylinesToHighlight(List.of(start.loc, currentEndSnapPoint.mult(mainWindow.displayQualityScale)));
 					}
 					if (snapStartActive)
 					{
-						mapEditingPanel.addPolylinesToHighlight(List.of(polygonRoadSnapStart.mult(mainWindow.displayQualityScale), roadStart.loc));
+						mapEditingPanel.addPolylinesToHighlight(List.of(polygonRoadSnapStart.mult(mainWindow.displayQualityScale), start.loc));
 					}
 				}
 				updateControlPointDisplay(e.getPoint(), LineType.ROAD);

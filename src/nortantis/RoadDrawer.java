@@ -426,6 +426,41 @@ public class RoadDrawer
 	}
 
 	/**
+	 * Attempts to merge each road in {@code candidates} with any other road in {@code roads} whose endpoint now matches. Used after edits
+	 * that may have changed a road's endpoints (control-point deletion, segment cut, erase) — a newly-exposed endpoint may coincide with
+	 * another existing road's endpoint, in which case the two should be one continuous road. When a merge succeeds the candidate is
+	 * removed from {@code roads} (its data has been folded into the matched road). A second join attempt is made on the extended result
+	 * in case it can also connect at its other end.
+	 *
+	 * @return The roads whose nodes were extended by absorbing a candidate.
+	 */
+	public static List<Road> mergeAdjacentRoads(java.util.Collection<Road> candidates, List<Road> roads)
+	{
+		List<Road> extended = new ArrayList<>();
+		for (Road candidate : candidates)
+		{
+			if (candidate == null || candidate.nodes.size() < 2 || !roads.contains(candidate))
+			{
+				continue;
+			}
+			Road joined = tryConnectingRoadToExistingRoad(candidate, roads);
+			if (joined == null)
+			{
+				continue;
+			}
+			roads.remove(candidate);
+			extended.add(joined);
+			Road joined2 = tryConnectingRoadToExistingRoad(joined, roads);
+			if (joined2 != null)
+			{
+				roads.remove(joined);
+				extended.add(joined2);
+			}
+		}
+		return extended;
+	}
+
+	/**
 	 * Attempts to join {@code roadToAdd} to an existing road in {@code roads} by matching endpoints. If a match is found, the existing
 	 * road's nodes are replaced with the merged node list (a single atomic volatile-field swap so concurrent readers don't see partial
 	 * state), {@code roadToAdd} is NOT added to {@code roads}, and the extended existing road is returned. Returns {@code null} if no
