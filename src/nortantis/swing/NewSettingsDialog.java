@@ -288,6 +288,15 @@ public class NewSettingsDialog extends JDialog
 		// GPU operations will be serialized through GPUExecutor.
 		mainWindow.clearOpenSettingsFilePath();
 		mainWindow.loadSettingsIntoGUI(settings);
+
+		// After this modal dialog closes, Swing leaves the main JFrame as the active window but
+		// without any of its components owning focus. WHEN_IN_FOCUSED_WINDOW keybindings (e.g.
+		// Delete on selected river/road CPs, Ctrl+C / Ctrl+V on the edit clipboard, the Icons-tool
+		// equivalents) won't fire in that state because KeyboardManager dispatches them through
+		// the focus owner's ancestor window. MapEditingPanel intentionally doesn't grab focus on
+		// click (see handleMousePressedOnMap), so without this nudge the user has to Tab, switch
+		// tool modes, or right-click before keyboard shortcuts start working on the new map.
+		SwingUtilities.invokeLater(() -> mainWindow.requestFocus());
 	}
 
 	private void createLeftPanel(JPanel generatorSettingsPanel)

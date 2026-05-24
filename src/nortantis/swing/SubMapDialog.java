@@ -916,6 +916,11 @@ public class SubMapDialog
 		mainWindow.enableOrDisableFieldsThatRequireMap(true, settings, true);
 		mainWindow.clearOpenSettingsFilePath();
 		mainWindow.loadSettingsIntoGUI(settings);
+
+		// Restore focus to the main window so WHEN_IN_FOCUSED_WINDOW keybindings (Delete, Ctrl+C,
+		// Ctrl+V) fire on the first action after the dialog closes. See the matching call in
+		// NewSettingsDialog.onCreateMap for the full explanation.
+		SwingUtilities.invokeLater(() -> mainWindow.requestFocus());
 	}
 
 	private void stopPreviewUpdater()
