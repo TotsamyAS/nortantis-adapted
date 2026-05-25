@@ -1950,7 +1950,7 @@ public class LandWaterTool extends EditorTool
 
 	private Integer regionIdToExpand;
 
-	private void handleMousePressOrDrag(MouseEvent e, boolean isMouseDrag)
+	private void handleSharedPressAndDragActions(MouseEvent e, boolean isMouseDrag)
 	{
 		if (!SwingUtilities.isLeftMouseButton(e))
 		{
@@ -2698,7 +2698,7 @@ public class LandWaterTool extends EditorTool
 			riverWidthSliderWithSpinner.commitEdit();
 		}
 
-		handleMousePressOrDrag(e, false);
+		handleSharedPressAndDragActions(e, false);
 
 		if (riversButton.isSelected() && modeWidget.isDrawMode() && !isFreeHandRiverDrawMode())
 		{
@@ -3444,10 +3444,6 @@ public class LandWaterTool extends EditorTool
 		boolean deselectMode = controlClickBehavior != null && controlClickBehavior.isUnselectMode();
 		int brushDiameter = getEditBrushDiameter();
 		List<LineHit> brushHits = multiBrushHitTest(e.getPoint(), activeType, brushDiameter);
-		if (brushHits.isEmpty())
-		{
-			return;
-		}
 		boolean removing = ctrlDown && deselectMode;
 		for (LineHit bh : brushHits)
 		{
@@ -3462,6 +3458,10 @@ public class LandWaterTool extends EditorTool
 				applySelectionDelta(line, bh.segmentIndex() + 1, removing);
 			}
 		}
+		// Always refresh, even when the brush is over empty space (no hits). The selection is unchanged in that case, but the brush
+		// circle's position was updated via showBrush in the caller and needs a repaint to keep following the cursor. Erase mode gets
+		// this for free because its drag path always runs highlightHoverCentersOrEdgesAndBrush, which repaints unconditionally; bailing
+		// out here without repainting was what froze the brush the moment it left a river/road.
 		refreshSelectionVisuals(e.getPoint(), activeType);
 	}
 
@@ -4595,110 +4595,135 @@ public class LandWaterTool extends EditorTool
 		if (dragInProgress && modeWidget.isEditMode() && (riversButton.isSelected() || roadsButton.isSelected()))
 		{
 			handleEditModeControlPointDrag(e);
-			return;
 		}
-		if (riversButton.isSelected() && modeWidget.isDrawMode() && !isFreeHandRiverDrawMode())
+		else if (riversButton.isSelected() && modeWidget.isDrawMode() && !isFreeHandRiverDrawMode())
 		{
-			if (riverStart != null)
-			{
-				mapEditingPanel.clearHighlightedEdges();
-				mapEditingPanel.clearHighlightedPolylines();
-				Corner end = updater.mapParts.graph.findClosestCorner(getPointOnGraph(e.getPoint()));
-				Set<Edge> river = filterOutOceanAndCoastEdges(updater.mapParts.graph.findPathGreedy(riverStart, end));
-				// Preview the snap-back connection that will be added when the mouse is released, so the
-				// user isn't surprised by the gap between the polygon path and the freehand control point
-				// they clicked on (or the one they're hovering near at the other end).
-				Point currentEndSnapPoint = computeSnapPointForType(e.getPoint(), LineType.RIVER);
-				Point snapEndGraphPixels = currentEndSnapPoint == null ? null : currentEndSnapPoint.mult(mainWindow.displayQualityScale);
-				Point snapStartGraphPixels = polygonRiverSnapStart == null ? null
-						: polygonRiverSnapStart.mult(mainWindow.displayQualityScale);
-				TrimmedRiverPath trimmed = trimRiverPathIfPathOvershootsMouse(river, riverStart, end, snapStartGraphPixels, snapEndGraphPixels);
-				river = trimmed.path();
-				Corner start = trimmed.start();
-				end = trimmed.end();
-				mapEditingPanel.addHighlightedEdges(river, EdgeType.Voronoi);
-				Point riverStartRI = start == null ? null : start.loc.mult(1.0 / mainWindow.displayQualityScale);
-				Point endRI = end == null ? null : end.loc.mult(1.0 / mainWindow.displayQualityScale);
-				if (polygonRiverSnapStart != null && start != null && !polygonRiverSnapStart.isCloseEnough(riverStartRI))
-				{
-					mapEditingPanel.addPolylinesToHighlight(List.of(polygonRiverSnapStart.mult(mainWindow.displayQualityScale), start.loc));
-				}
-				if (currentEndSnapPoint != null && endRI != null && !currentEndSnapPoint.isCloseEnough(endRI))
-				{
-					mapEditingPanel.addPolylinesToHighlight(List.of(end.loc, currentEndSnapPoint.mult(mainWindow.displayQualityScale)));
-				}
-				updateControlPointDisplay(e.getPoint(), LineType.RIVER);
-				mapEditingPanel.repaint();
-			}
+			previewPolygonRiverPath(e);
 		}
 		else if (riversButton.isSelected() && modeWidget.isDrawMode() && isFreeHandRiverDrawMode())
 		{
-			updateControlPointDisplay(e.getPoint(), LineType.RIVER);
-			mapEditingPanel.repaint();
+			previewFreeHandControlPoints(e, LineType.RIVER);
 		}
 		else if (roadsButton.isSelected() && modeWidget.isDrawMode() && isFreeHandDrawMode())
 		{
-			// Update control point snap display and the in-progress preview while the mouse moves.
-			updateControlPointDisplay(e.getPoint(), LineType.ROAD);
-			mapEditingPanel.repaint();
+			previewFreeHandControlPoints(e, LineType.ROAD);
 		}
 		else if (roadsButton.isSelected() && modeWidget.isDrawMode())
 		{
-			if (roadStart != null)
+			previewPolygonRoadPath(e);
+		}
+		else
+		{
+			handleSharedPressAndDragActions(e, true);
+		}
+	}
+
+	/**
+	 * Previews the Voronoi-edge river path from {@link #riverStart} to the cursor while the user drags in polygon (non-freehand) river
+	 * draw mode, including any snap-back bridges that will be added when the mouse is released.
+	 */
+	private void previewPolygonRiverPath(MouseEvent e)
+	{
+		if (riverStart == null)
+		{
+			return;
+		}
+		mapEditingPanel.clearHighlightedEdges();
+		mapEditingPanel.clearHighlightedPolylines();
+		Corner end = updater.mapParts.graph.findClosestCorner(getPointOnGraph(e.getPoint()));
+		Set<Edge> river = filterOutOceanAndCoastEdges(updater.mapParts.graph.findPathGreedy(riverStart, end));
+		// Preview the snap-back connection that will be added when the mouse is released, so the
+		// user isn't surprised by the gap between the polygon path and the freehand control point
+		// they clicked on (or the one they're hovering near at the other end).
+		Point currentEndSnapPoint = computeSnapPointForType(e.getPoint(), LineType.RIVER);
+		Point snapEndGraphPixels = currentEndSnapPoint == null ? null : currentEndSnapPoint.mult(mainWindow.displayQualityScale);
+		Point snapStartGraphPixels = polygonRiverSnapStart == null ? null
+				: polygonRiverSnapStart.mult(mainWindow.displayQualityScale);
+		TrimmedRiverPath trimmed = trimRiverPathIfPathOvershootsMouse(river, riverStart, end, snapStartGraphPixels, snapEndGraphPixels);
+		river = trimmed.path();
+		Corner start = trimmed.start();
+		end = trimmed.end();
+		mapEditingPanel.addHighlightedEdges(river, EdgeType.Voronoi);
+		Point riverStartRI = start == null ? null : start.loc.mult(1.0 / mainWindow.displayQualityScale);
+		Point endRI = end == null ? null : end.loc.mult(1.0 / mainWindow.displayQualityScale);
+		if (polygonRiverSnapStart != null && start != null && !polygonRiverSnapStart.isCloseEnough(riverStartRI))
+		{
+			mapEditingPanel.addPolylinesToHighlight(List.of(polygonRiverSnapStart.mult(mainWindow.displayQualityScale), start.loc));
+		}
+		if (currentEndSnapPoint != null && endRI != null && !currentEndSnapPoint.isCloseEnough(endRI))
+		{
+			mapEditingPanel.addPolylinesToHighlight(List.of(end.loc, currentEndSnapPoint.mult(mainWindow.displayQualityScale)));
+		}
+		updateControlPointDisplay(e.getPoint(), LineType.RIVER);
+		mapEditingPanel.repaint();
+	}
+
+	/**
+	 * Updates the control-point snap display and in-progress preview while the user drags in freehand draw mode for the given line type.
+	 */
+	private void previewFreeHandControlPoints(MouseEvent e, LineType type)
+	{
+		updateControlPointDisplay(e.getPoint(), type);
+		mapEditingPanel.repaint();
+	}
+
+	/**
+	 * Previews the Delaunay road path from {@link #roadStart} to the cursor while the user drags in polygon (non-freehand) road draw mode,
+	 * including any snap-back bridges that will be added when the mouse is released.
+	 */
+	private void previewPolygonRoadPath(MouseEvent e)
+	{
+		if (roadStart == null)
+		{
+			return;
+		}
+		mapEditingPanel.clearHighlightedEdges();
+		mapEditingPanel.clearHighlightedPolylines();
+		Center end = updater.mapParts.graph.findClosestCenter(getPointOnGraph(e.getPoint()));
+		List<Edge> edges = updater.mapParts.graph.findShortestPath(roadStart, end, (ignored1, ignored2, distance) -> distance);
+		Point currentEndSnapPoint = computeSnapPointForType(e.getPoint(), LineType.ROAD);
+		Point snapEndGraphPixels = currentEndSnapPoint == null ? null : currentEndSnapPoint.mult(mainWindow.displayQualityScale);
+		Point snapStartGraphPixels = polygonRoadSnapStart == null ? null
+				: polygonRoadSnapStart.mult(mainWindow.displayQualityScale);
+		TrimmedRoadPath trimmed = trimRoadPathIfPathOvershootsMouse(edges, roadStart, end, snapStartGraphPixels, snapEndGraphPixels);
+		edges = trimmed.path();
+		Center start = trimmed.start();
+		end = trimmed.end();
+		Point roadStartRI = start.loc.mult(1.0 / mainWindow.displayQualityScale);
+		Point endRI = end.loc.mult(1.0 / mainWindow.displayQualityScale);
+		boolean snapStartActive = polygonRoadSnapStart != null && !polygonRoadSnapStart.isCloseEnough(roadStartRI);
+		boolean snapEndActive = currentEndSnapPoint != null && !currentEndSnapPoint.isCloseEnough(endRI);
+		// Show the full Delaunay path AND any snap bridges. The actual road drawn at release keeps every Center on the path
+		// (the bridges are added as extra nodes BEYOND roadStart/end, not as replacements for them), so the preview must do
+		// the same — otherwise the preview hides Center crossings the user will actually see in the drawn road.
+		if (edges != null && !edges.isEmpty())
+		{
+			mapEditingPanel.addHighlightedEdges(edges, EdgeType.Delaunay);
+			if (snapEndActive)
 			{
-				mapEditingPanel.clearHighlightedEdges();
-				mapEditingPanel.clearHighlightedPolylines();
-				Center end = updater.mapParts.graph.findClosestCenter(getPointOnGraph(e.getPoint()));
-				List<Edge> edges = updater.mapParts.graph.findShortestPath(roadStart, end, (ignored1, ignored2, distance) -> distance);
-				Point currentEndSnapPoint = computeSnapPointForType(e.getPoint(), LineType.ROAD);
-				Point snapEndGraphPixels = currentEndSnapPoint == null ? null : currentEndSnapPoint.mult(mainWindow.displayQualityScale);
-				Point snapStartGraphPixels = polygonRoadSnapStart == null ? null
-						: polygonRoadSnapStart.mult(mainWindow.displayQualityScale);
-				TrimmedRoadPath trimmed = trimRoadPathIfPathOvershootsMouse(edges, roadStart, end, snapStartGraphPixels, snapEndGraphPixels);
-				edges = trimmed.path();
-				Center start = trimmed.start();
-				end = trimmed.end();
-				Point roadStartRI = start.loc.mult(1.0 / mainWindow.displayQualityScale);
-				Point endRI = end.loc.mult(1.0 / mainWindow.displayQualityScale);
-				boolean snapStartActive = polygonRoadSnapStart != null && !polygonRoadSnapStart.isCloseEnough(roadStartRI);
-				boolean snapEndActive = currentEndSnapPoint != null && !currentEndSnapPoint.isCloseEnough(endRI);
-				// Show the full Delaunay path AND any snap bridges. The actual road drawn at release keeps every Center on the path
-				// (the bridges are added as extra nodes BEYOND roadStart/end, not as replacements for them), so the preview must do
-				// the same — otherwise the preview hides Center crossings the user will actually see in the drawn road.
-				if (edges != null && !edges.isEmpty())
-				{
-					mapEditingPanel.addHighlightedEdges(edges, EdgeType.Delaunay);
-					if (snapEndActive)
-					{
-						mapEditingPanel.addPolylinesToHighlight(List.of(end.loc, currentEndSnapPoint.mult(mainWindow.displayQualityScale)));
-					}
-					if (snapStartActive)
-					{
-						mapEditingPanel.addPolylinesToHighlight(List.of(polygonRoadSnapStart.mult(mainWindow.displayQualityScale), start.loc));
-					}
-				}
-				else
-				{
-					// Empty-path case (roadStart == end): the release branch synthesizes a 1-node road and bridges to the snap point,
-					// so the preview should show that same bridge instead of an empty highlight.
-					mapEditingPanel.addHighlightedEdges(edges, EdgeType.Delaunay);
-					if (snapEndActive)
-					{
-						mapEditingPanel.addPolylinesToHighlight(List.of(start.loc, currentEndSnapPoint.mult(mainWindow.displayQualityScale)));
-					}
-					if (snapStartActive)
-					{
-						mapEditingPanel.addPolylinesToHighlight(List.of(polygonRoadSnapStart.mult(mainWindow.displayQualityScale), start.loc));
-					}
-				}
-				updateControlPointDisplay(e.getPoint(), LineType.ROAD);
-				mapEditingPanel.repaint();
+				mapEditingPanel.addPolylinesToHighlight(List.of(end.loc, currentEndSnapPoint.mult(mainWindow.displayQualityScale)));
+			}
+			if (snapStartActive)
+			{
+				mapEditingPanel.addPolylinesToHighlight(List.of(polygonRoadSnapStart.mult(mainWindow.displayQualityScale), start.loc));
 			}
 		}
 		else
 		{
-			handleMousePressOrDrag(e, true);
+			// Empty-path case (roadStart == end): the release branch synthesizes a 1-node road and bridges to the snap point,
+			// so the preview should show that same bridge instead of an empty highlight.
+			mapEditingPanel.addHighlightedEdges(edges, EdgeType.Delaunay);
+			if (snapEndActive)
+			{
+				mapEditingPanel.addPolylinesToHighlight(List.of(start.loc, currentEndSnapPoint.mult(mainWindow.displayQualityScale)));
+			}
+			if (snapStartActive)
+			{
+				mapEditingPanel.addPolylinesToHighlight(List.of(polygonRoadSnapStart.mult(mainWindow.displayQualityScale), start.loc));
+			}
 		}
+		updateControlPointDisplay(e.getPoint(), LineType.ROAD);
+		mapEditingPanel.repaint();
 	}
 
 	@Override
