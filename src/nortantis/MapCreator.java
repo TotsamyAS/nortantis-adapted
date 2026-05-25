@@ -1521,7 +1521,13 @@ public class MapCreator implements WarningLogger
 			opacityOfLastWave = 1.0;
 		}
 
-		List<List<Edge>> shoreEdges = graph.findShoreEdges(centersToDraw, settings.drawOceanEffectsInLakes, settings.brokenLinesForConcentricWaves);
+		// Always search the entire graph (not just centersToDraw) so the shore-edge polylines are built and ordered identically for
+		// incremental draws and full draws. Concentric waves smooth each shore polyline into a curve (edgeListToDrawPoints +
+		// CurveCreator.createCurve), and that curve's shape depends on where the polyline starts and which direction it runs. If an
+		// incremental update gathered only the centersToDraw portion of a coastline, the truncated/reordered polyline would produce a
+		// slightly different curve, and that difference gets amplified in the offset outer wave rings, leaving a visible jog where the
+		// updated region meets the rest of the map. (The plain coastline draws each edge independently, so it never has this problem.)
+		List<List<Edge>> shoreEdges = graph.findShoreEdges(centersToDraw, settings.drawOceanEffectsInLakes, true);
 		try (Painter p = oceanEffects.createPainter(DrawQuality.High))
 		{
 			for (int i : new Range(0, settings.concentricWaveCount))
