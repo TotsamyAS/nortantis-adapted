@@ -1152,7 +1152,12 @@ public class MapEditingPanel extends UnscaledImagePanel
 		{
 			return;
 		}
-		new RiverDrawer(rivers, resolution, lineStyle, graph).drawRivers(AwtFactory.wrap((Graphics2D) g), AwtBridge.fromAwtColor(waterHighlightColor));
+		// RiverDrawer sets thick strokes on the painter, which wraps this shared Graphics2D. Save and restore the stroke so the
+		// thick river width doesn't leak into subsequent draws (e.g. region boundary highlights, which rely on the default stroke).
+		Graphics2D g2 = (Graphics2D) g;
+		Stroke prevStroke = g2.getStroke();
+		new RiverDrawer(rivers, resolution, lineStyle, graph).drawRivers(AwtFactory.wrap(g2), AwtBridge.fromAwtColor(waterHighlightColor));
+		g2.setStroke(prevStroke);
 	}
 
 	public void setZoom(double zoom)
