@@ -10,18 +10,9 @@ import nortantis.geom.Point;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class NoisyEdges
 {
-	// Guards the curve/path maps as a group during incremental rebuilds. The incremental draw thread can
-	// rebuild many edges (via rebuildNoisyEdgesForCenter, while a region merge turns boundaries into
-	// non-boundaries) at the same time the EDT reads them to draw highlight/selection outlines. Making the
-	// individual maps concurrent stops corruption, but a reader can still observe a half-rebuilt *set* of
-	// edges — some already re-curved to straight, some still smooth — which flashes as a mangled boundary.
-	// Holding the write lock across the whole rebuild batch (see beginIncrementalRebuild) makes readers see
-	// either the fully-old or fully-new geometry, never an in-between mix.
-	private final ReentrantReadWriteLock rebuildLock = new ReentrantReadWriteLock();
 	final double NOISY_LINE_TRADEOFF = 0.5; // low: jagged v-edge; high: jagged
 											// d-edge
 
@@ -384,54 +375,14 @@ public class NoisyEdges
 
 	public List<Point> getNoisyEdge(int edgeIndex)
 	{
-		rebuildLock.readLock().lock();
-		try
+		if (lineStyle.equals(LineStyle.Splines) || lineStyle.equals(LineStyle.SplinesWithSmoothedCoastlines))
 		{
-			if (lineStyle.equals(LineStyle.Splines) || lineStyle.equals(LineStyle.SplinesWithSmoothedCoastlines))
-			{
-				return curves.get(edgeIndex);
-			}
-			else
-			{
-				return paths.get(edgeIndex);
-			}
+			return curves.get(edgeIndex);
 		}
-		finally
+		else
 		{
-			rebuildLock.readLock().unlock();
+			return paths.get(edgeIndex);
 		}
-	}
-
-	/**
-	 * Acquires the write lock so a caller can rebuild many edges as one atomic batch. Concurrent readers (e.g. the EDT drawing highlight
-	 * outlines via {@link #getNoisyEdge}) block until {@link #endIncrementalRebuild()} releases it, so they never observe a half-rebuilt
-	 * set of edges. Always pair with {@code endIncrementalRebuild()} in a finally block.
-	 */
-	public void beginIncrementalRebuild()
-	{
-		rebuildLock.writeLock().lock();
-	}
-
-	public void endIncrementalRebuild()
-	{
-		rebuildLock.writeLock().unlock();
-	}
-
-	/**
-	 * Acquires the read lock for the duration of a multi-edge read (e.g. drawing a whole region outline). Per-call locking in
-	 * {@link #getNoisyEdge} is not enough on its own: an incremental rebuild could still slip in between two edges of the same outline,
-	 * so the reader would draw some edges from the old geometry and some from the new and produce a mangled boundary. Hold this across the
-	 * entire read and the reader sees one consistent snapshot. The lock is reentrant, so nested {@code getNoisyEdge} calls are fine.
-	 * Always pair with {@link #unlockForRead()} in a finally block.
-	 */
-	public void lockForRead()
-	{
-		rebuildLock.readLock().lock();
-	}
-
-	public void unlockForRead()
-	{
-		rebuildLock.readLock().unlock();
 	}
 
 	public LineStyle getLineStyle()
