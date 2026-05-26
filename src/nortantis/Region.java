@@ -6,8 +6,8 @@ import nortantis.platform.Color;
 
 import java.util.Collection;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Represents a political region on the map.
@@ -29,7 +29,10 @@ public class Region
 
 	public Region()
 	{
-		this.centers = new HashSet<>();
+		// The set of centers is mutated by the background drawing thread (MapCreator.applyCenterEdits)
+		// while the EDT reads it (e.g. hover highlighting in LandWaterTool). A concurrent set lets
+		// readers iterate the unmodifiable view from getCenters() without a ConcurrentModificationException.
+		this.centers = ConcurrentHashMap.newKeySet();
 	}
 
 	public void addAll(Collection<Center> toAdd)
