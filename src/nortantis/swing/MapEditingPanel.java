@@ -52,8 +52,8 @@ public class MapEditingPanel extends UnscaledImagePanel
 	private List<Point> roadControlPointCircles = null;
 	private List<Point> selectedRoadControlPointCircles = null;
 	private List<Point> hoveredRoadControlPoints = null;
-	// True when the hovered CPs should be drawn as filled yellow disks (draw mode — single decisive snap target).
-	// False (default) draws them as stroked yellow rings (edit mode — selection preview, distinct from the filled selected CP).
+	// True when the hovered CPs are a decisive snap target (draw mode) and should be drawn with the yellow ring + dot selection glyph.
+	// False (default) draws them as orange rings (edit mode — a selection preview, distinct from the yellow selected/hovered glyph).
 	private boolean hoveredRoadControlPointsFilled = false;
 	private List<Point> freeHandPreviewPath = null;
 	private boolean highlightLakes;
@@ -245,9 +245,9 @@ public class MapEditingPanel extends UnscaledImagePanel
 	}
 
 	/**
-	 * Marks a single CP as hovered. {@code filled} = true draws a yellow disk (used in draw mode where hover is a single decisive
-	 * snap target); false draws a yellow ring (used in edit mode where hover is a selection preview and the filled style is reserved
-	 * for actually-selected CPs).
+	 * Marks a single CP as hovered. {@code filled} = true draws the yellow ring + dot selection glyph (used in draw mode where hover is a
+	 * single decisive snap target); false draws an orange ring (used in edit mode where hover is a selection preview, distinct from the
+	 * yellow glyph reserved for the decisive/selected state).
 	 */
 	public void setHoveredRoadControlPoint(Point point, boolean filled)
 	{
@@ -1023,7 +1023,7 @@ public class MapEditingPanel extends UnscaledImagePanel
 
 	private double getRoadControlPointRadiusExact()
 	{
-		return graph.getMeanCenterWidth() * 0.13;
+		return graph.getMeanCenterWidth() * 0.14;
 	}
 
 	/**
@@ -1033,7 +1033,7 @@ public class MapEditingPanel extends UnscaledImagePanel
 	 */
 	private float getRoadControlPointStrokeWidth()
 	{
-		return (float) (graph.getMeanCenterWidth() * 0.065);
+		return (float) (graph.getMeanCenterWidth() * 0.045);
 	}
 
 	private void drawRoadControlPoints(Graphics2D g2)
@@ -1051,19 +1051,16 @@ public class MapEditingPanel extends UnscaledImagePanel
 		g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 		float strokeWidth = getRoadControlPointStrokeWidth();
 		int r = getRoadControlPointRadiusInGraphPixels();
-		// Filled circles (hovered, selected) use this larger radius so their visible outer matches the stroked-orange outer edge
-		// (r + halfStroke) — without it, the filled disk would be smaller than the hit radius and create a "dead zone" where the
-		// cursor was visually off the CP but still hijacked by the CP hit-test. Use ceil rather than round so the fill always
-		// covers the antialiased outer pixels of the orange stroke underneath; otherwise a hairline of orange leaks through.
-		int filledR = (int) Math.ceil(r + strokeWidth / 2.0);
 		g2.setStroke(new BasicStroke(strokeWidth));
 
 		// CP visual hierarchy:
-		//   stroked orange ring  → CP is on a highlighted line, cursor not over it (and, in edit mode, also the hover indicator —
-		//                          would-be-added CPs already get this ring via setControlPointCircles, so the stroked hover variant
-		//                          simply re-draws in orange to keep the visual consistent)
-		//   filled  yellow disk  → cursor is hovering this CP and a click is a decisive action (draw mode hover, or selection)
-		// Drawn in that order so a hovered or selected CP's fill covers the underlying orange ring.
+		//   orange ring        → CP is on a highlighted line, cursor not over it (and, in edit mode, also the hover indicator —
+		//                        would-be-added CPs already get this ring via setControlPointCircles, so the stroked hover variant
+		//                        simply re-draws in orange to keep the visual consistent)
+		//   yellow ring + dot  → CP is selected, or is the decisive draw-mode hover target. Drawn as an open ring (so the river/road
+		//                        shows through the middle) with a small solid dot marking the exact point. The center dot keeps it
+		//                        distinct from the orange hover ring even without color.
+		// Drawn in that order so a hovered or selected CP's glyph covers the underlying orange ring.
 		if (roadControlPointCircles != null)
 		{
 			g2.setColor(processingColor);
@@ -1077,11 +1074,7 @@ public class MapEditingPanel extends UnscaledImagePanel
 		{
 			if (hoveredRoadControlPointsFilled)
 			{
-				g2.setColor(highlightEditColor);
-				for (Point p : hoveredRoadControlPoints)
-				{
-					g2.fillOval((int) p.x - filledR, (int) p.y - filledR, filledR * 2, filledR * 2);
-				}
+				drawSelectedControlPointGlyphs(g2, hoveredRoadControlPoints, r);
 			}
 			else
 			{
@@ -1095,11 +1088,7 @@ public class MapEditingPanel extends UnscaledImagePanel
 
 		if (hasSelected)
 		{
-			g2.setColor(highlightEditColor);
-			for (Point p : selectedRoadControlPointCircles)
-			{
-				g2.fillOval((int) p.x - filledR, (int) p.y - filledR, filledR * 2, filledR * 2);
-			}
+			drawSelectedControlPointGlyphs(g2, selectedRoadControlPointCircles, r);
 		}
 
 		if (freeHandPreviewPath != null && freeHandPreviewPath.size() >= 2)
@@ -1112,6 +1101,23 @@ public class MapEditingPanel extends UnscaledImagePanel
 
 		g2.setStroke(prevStroke);
 		g2.setRenderingHints(prevHints);
+	}
+
+	/**
+	 * Draws the "selected" control-point glyph for each point: a yellow open ring (same radius and stroke as the orange hover ring) with a
+	 * small solid center dot. Used both for selected CPs and for the decisive draw-mode hover so the two share one visual. Assumes the
+	 * caller has set the stroke to {@link #getRoadControlPointStrokeWidth()} and enabled antialiasing.
+	 */
+	private void drawSelectedControlPointGlyphs(Graphics2D g2, List<Point> points, int r)
+	{
+		// Center dot scales with the CP radius but stays well inside the open ring so the river/road still shows through.
+		int centerDotRadius = Math.max(1, Math.round(r * 0.3f));
+		g2.setColor(highlightEditColor);
+		for (Point p : points)
+		{
+			g2.drawOval((int) p.x - r, (int) p.y - r, r * 2, r * 2);
+			g2.fillOval((int) p.x - centerDotRadius, (int) p.y - centerDotRadius, centerDotRadius * 2, centerDotRadius * 2);
+		}
 	}
 
 	private void drawPolyline(Graphics g, List<Point> points)

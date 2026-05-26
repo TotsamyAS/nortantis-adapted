@@ -4018,7 +4018,6 @@ public class LandWaterTool extends EditorTool
 		updater.createAndShowMapIncrementalUsingCenters(centersToRedraw);
 		mapEditingPanel.clearHighlightedPolylines();
 		applySelectedSegmentsHighlight();
-		refreshSelectedControlPointCircles();
 		mapEditingPanel.repaint();
 	}
 
@@ -4092,7 +4091,6 @@ public class LandWaterTool extends EditorTool
 		updater.doWhenMapIsNotDrawing(() -> updater.createAndShowLowPriorityChanges());
 		mapEditingPanel.clearHighlightedPolylines();
 		applySelectedSegmentsHighlight();
-		refreshSelectedControlPointCircles();
 		mapEditingPanel.repaint();
 	}
 
@@ -4105,19 +4103,6 @@ public class LandWaterTool extends EditorTool
 	{
 		selectedRiverCPs.keySet().removeIf(r -> !mainWindow.edits.rivers.contains(r));
 		selectedRoadCPs.keySet().removeIf(r -> !mainWindow.edits.roads.contains(r));
-	}
-
-	/**
-	 * Re-publishes the selected-CP circle positions from the live selection state so visuals match after an edit that didn't go through
-	 * a hover refresh (e.g. right-click Delete Segment). Without this, the panel keeps drawing circles from the pre-edit selection,
-	 * leaving stale/missing dots at positions whose underlying CP changed.
-	 */
-	private void refreshSelectedControlPointCircles()
-	{
-		LineType activeType = riversButton.isSelected() ? LineType.RIVER : LineType.ROAD;
-		double scale = mainWindow.displayQualityScale;
-		List<Point> selectedCirclesGraphPixels = collectCPGraphLocations(selectedRiverCPs, selectedRoadCPs, activeType, scale);
-		mapEditingPanel.setSelectedControlPointCircles(selectedCirclesGraphPixels);
 	}
 
 	@Override
