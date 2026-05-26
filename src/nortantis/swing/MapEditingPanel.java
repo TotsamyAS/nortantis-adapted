@@ -1592,6 +1592,8 @@ public class MapEditingPanel extends UnscaledImagePanel
 
 		// Draw corner/edge handles.
 		g2.setColor(processingColor);
+		// Save the entry stroke so none of the strokes set below leak out to later draws (this method shares the panel's Graphics2D).
+		Stroke originalStroke = g2.getStroke();
 		g2.setStroke(new BasicStroke(1.5f));
 		BoxSelectHandle boxHandle = getSelectionBoxHandleMouseIsIn();
 
@@ -1629,11 +1631,9 @@ public class MapEditingPanel extends UnscaledImagePanel
 		g2.fillRect(x, y, width, height);
 
 		// Yellow border
-		Stroke prevStroke = g2.getStroke();
 		g2.setStroke(new BasicStroke(2.0f));
 		g2.setColor(highlightEditColor);
 		g2.drawRect(x, y, width, height);
-		g2.setStroke(prevStroke);
 
 		// Move icon centered in the box, only if it fits within the CENTER handle area
 		Rectangle centerHandle = getSelectionBoxHandleLocation(BoxSelectHandle.CENTER);
@@ -1643,6 +1643,8 @@ public class MapEditingPanel extends UnscaledImagePanel
 			int iconY = centerHandle.y + (int) Math.round(centerHandle.height / 2.0) - (int) Math.round(moveIconScaledSmall.getHeight() / 2.0);
 			g2.drawImage(moveIconScaledSmall, iconX, iconY, null);
 		}
+
+		g2.setStroke(originalStroke);
 	}
 
 	private IntRectangle getSelectionBoxScaledByResolution()
