@@ -1866,11 +1866,22 @@ public class MapCreator implements WarningLogger
 			}
 		}
 
-		needsRebuildNoisyEdges.addAll(graph.smoothCoastlinesAndRegionBoundariesIfNeeded(centersChanged, graph.noisyEdges.getLineStyle(), areRegionBoundariesVisible));
-
-		for (Center center : needsRebuildNoisyEdges)
+		// Hold the noisy-edge write lock across smoothing + the rebuild batch so the EDT, which reads these
+		// edges to draw highlight/selection outlines, sees either the fully-old or fully-new geometry rather
+		// than a half-rebuilt mix (which flashed as a mangled region boundary during region merges).
+		graph.noisyEdges.beginIncrementalRebuild();
+		try
 		{
-			graph.rebuildNoisyEdgesForCenter(center, needsRebuildNoisyEdges);
+			needsRebuildNoisyEdges.addAll(graph.smoothCoastlinesAndRegionBoundariesIfNeeded(centersChanged, graph.noisyEdges.getLineStyle(), areRegionBoundariesVisible));
+
+			for (Center center : needsRebuildNoisyEdges)
+			{
+				graph.rebuildNoisyEdgesForCenter(center, needsRebuildNoisyEdges);
+			}
+		}
+		finally
+		{
+			graph.noisyEdges.endIncrementalRebuild();
 		}
 
 		// Smoothing may have moved corners (a river edge no longer counts as a region boundary for

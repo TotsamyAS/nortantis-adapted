@@ -2110,6 +2110,13 @@ public class LandWaterTool extends EditorTool
 							mainWindow.edits.regionEdits.remove(region.id);
 							selectedRegion = null;
 							mapEditingPanel.clearSelectedCenters();
+							// Take the region-boundary highlights down before the redraw recomputes the noisy edges. The
+							// highlighted/selected outlines are drawn from the graph's noisy edges; once the merge dissolves the
+							// shared boundary, that edge stops being a region boundary and the rebuild re-curves it to a straight
+							// segment, which the stale highlight would briefly draw as a jagged line. Clearing and repainting now
+							// makes the highlight simply disappear instead of flashing jagged.
+							mapEditingPanel.clearHighlightedCenters();
+							mapEditingPanel.repaint();
 							handleMapChange(region.getCenters());
 						}
 					}

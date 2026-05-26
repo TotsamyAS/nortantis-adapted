@@ -9,13 +9,29 @@ import nortantis.MapSettings.LineStyle;
 import nortantis.geom.Point;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class NoisyEdges
 {
+	// Guards the curve/path maps as a group during incremental rebuilds. The incremental draw thread can
+	// rebuild many edges (via rebuildNoisyEdgesForCenter, while a region merge turns boundaries into
+	// non-boundaries) at the same time the EDT reads them to draw highlight/selection outlines. Making the
+	// individual maps concurrent stops corruption, but a reader can still observe a half-rebuilt *set* of
+	// edges — some already re-curved to straight, some still smooth — which flashes as a mangled boundary.
+	// Holding the write lock across the whole rebuild batch (see beginIncrementalRebuild) makes readers see
+	// either the fully-old or fully-new geometry, never an in-between mix.
+	private final ReentrantReadWriteLock rebuildLock = new ReentrantReadWriteLock();
 	final double NOISY_LINE_TRADEOFF = 0.5; // low: jagged v-edge; high: jagged
 											// d-edge
 
 	private LineStyle lineStyle;
+	// These maps are rebuilt incrementally by the background draw thread (via rebuildNoisyEdgesForCenter
+	// during applyCenterEdits) while the EDT reads them concurrently to draw highlight/selection outlines
+	// (MapEditingPanel.drawCenterOutlines -> WorldGraph.drawEdge -> getNoisyEdge). They must be concurrent
+	// maps: a get racing a put on a plain TreeMap can traverse a mid-rotation tree and return garbage
+	// points or null, which showed up as briefly-mangled region boundaries during region merges. With a
+	// ConcurrentHashMap a racing get returns either the complete old curve or the complete new one.
 	private Map<Integer, List<Point>> paths; // edge index -> List of points in
 												// that edge.
 
@@ -29,8 +45,8 @@ public class NoisyEdges
 	public NoisyEdges(double scaleMultiplier, LineStyle style, boolean isForFrayedBorder)
 	{
 		this.scaleMultiplier = scaleMultiplier;
-		paths = new TreeMap<>();
-		curves = new TreeMap<>();
+		paths = new ConcurrentHashMap<>();
+		curves = new ConcurrentHashMap<>();
 		lineStyle = style;
 		this.isForFrayedBorder = isForFrayedBorder;
 	}
@@ -368,14 +384,54 @@ public class NoisyEdges
 
 	public List<Point> getNoisyEdge(int edgeIndex)
 	{
-		if (lineStyle.equals(LineStyle.Splines) || lineStyle.equals(LineStyle.SplinesWithSmoothedCoastlines))
+		rebuildLock.readLock().lock();
+		try
 		{
-			return curves.get(edgeIndex);
+			if (lineStyle.equals(LineStyle.Splines) || lineStyle.equals(LineStyle.SplinesWithSmoothedCoastlines))
+			{
+				return curves.get(edgeIndex);
+			}
+			else
+			{
+				return paths.get(edgeIndex);
+			}
 		}
-		else
+		finally
 		{
-			return paths.get(edgeIndex);
+			rebuildLock.readLock().unlock();
 		}
+	}
+
+	/**
+	 * Acquires the write lock so a caller can rebuild many edges as one atomic batch. Concurrent readers (e.g. the EDT drawing highlight
+	 * outlines via {@link #getNoisyEdge}) block until {@link #endIncrementalRebuild()} releases it, so they never observe a half-rebuilt
+	 * set of edges. Always pair with {@code endIncrementalRebuild()} in a finally block.
+	 */
+	public void beginIncrementalRebuild()
+	{
+		rebuildLock.writeLock().lock();
+	}
+
+	public void endIncrementalRebuild()
+	{
+		rebuildLock.writeLock().unlock();
+	}
+
+	/**
+	 * Acquires the read lock for the duration of a multi-edge read (e.g. drawing a whole region outline). Per-call locking in
+	 * {@link #getNoisyEdge} is not enough on its own: an incremental rebuild could still slip in between two edges of the same outline,
+	 * so the reader would draw some edges from the old geometry and some from the new and produce a mangled boundary. Hold this across the
+	 * entire read and the reader sees one consistent snapshot. The lock is reentrant, so nested {@code getNoisyEdge} calls are fine.
+	 * Always pair with {@link #unlockForRead()} in a finally block.
+	 */
+	public void lockForRead()
+	{
+		rebuildLock.readLock().lock();
+	}
+
+	public void unlockForRead()
+	{
+		rebuildLock.readLock().unlock();
 	}
 
 	public LineStyle getLineStyle()

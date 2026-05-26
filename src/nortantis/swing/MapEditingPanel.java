@@ -649,29 +649,48 @@ public class MapEditingPanel extends UnscaledImagePanel
 
 		if (graph != null)
 		{
-			if (highlightLakes)
+			// Hold the noisy-edge read lock across the whole highlight pass so the incremental draw thread
+			// can't rebuild edges partway through drawing an outline. Without this, an outline could be drawn
+			// from a mix of old (smooth) and freshly-rebuilt (straight) edges, which flashed as a mangled
+			// region boundary highlight while merging regions. Captured once so we unlock the same instance.
+			nortantis.graph.voronoi.NoisyEdges noisyEdgesForHighlight = graph.noisyEdges;
+			if (noisyEdgesForHighlight != null)
 			{
-				drawLakes(g);
+				noisyEdgesForHighlight.lockForRead();
 			}
-
-			if (highlightRivers)
+			try
 			{
-				drawRivers(g);
+				if (highlightLakes)
+				{
+					drawLakes(g);
+				}
+
+				if (highlightRivers)
+				{
+					drawRivers(g);
+				}
+
+				g.setColor(highlightEditColor);
+				drawCenterOutlines(g, highlightedCenters);
+				// Hover polylines (orange) go below selected polylines (yellow) so a selected segment that also happens to be near the
+				// cursor shows the brighter selected color.
+				g.setColor(processingColor);
+				drawHoverPolylines(g);
+				g.setColor(getHighlightColor());
+				drawEdges(g, highlightedEdges);
+				drawPolylines(g);
+				drawRoadControlPoints((Graphics2D) g);
+
+				g.setColor(selectColor);
+				drawCenterOutlines(g, selectedCenters);
 			}
-
-			g.setColor(highlightEditColor);
-			drawCenterOutlines(g, highlightedCenters);
-			// Hover polylines (orange) go below selected polylines (yellow) so a selected segment that also happens to be near the cursor
-			// shows the brighter selected color.
-			g.setColor(processingColor);
-			drawHoverPolylines(g);
-			g.setColor(getHighlightColor());
-			drawEdges(g, highlightedEdges);
-			drawPolylines(g);
-			drawRoadControlPoints((Graphics2D) g);
-
-			g.setColor(selectColor);
-			drawCenterOutlines(g, selectedCenters);
+			finally
+			{
+				if (noisyEdgesForHighlight != null)
+				{
+					noisyEdgesForHighlight.unlockForRead();
+				}
+			}
 		}
 
 		drawSelectionBox((Graphics2D) g);
