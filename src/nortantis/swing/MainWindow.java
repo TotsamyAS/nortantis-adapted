@@ -147,6 +147,12 @@ public class MainWindow extends JFrame implements ILoggerTarget
 			enableOrDisableFieldsThatRequireMap(false, null, false);
 		}
 
+		String preferencesLoadError = UserPreferences.getInstance().getLoadErrorMessage();
+		if (preferencesLoadError != null)
+		{
+			JOptionPane.showMessageDialog(this, preferencesLoadError, "Error", JOptionPane.ERROR_MESSAGE);
+		}
+
 		launchNewVersionCheck();
 	}
 
