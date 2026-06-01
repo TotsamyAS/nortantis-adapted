@@ -10,6 +10,7 @@ import nortantis.graph.voronoi.Edge;
 import nortantis.geom.Point;
 import nortantis.geom.Rectangle;
 import nortantis.swing.SubMapDialog;
+import nortantis.util.OrderlessPair;
 import nortantis.platform.Image;
 import nortantis.platform.ImageHelper;
 import nortantis.platform.PlatformFactory;
@@ -20,8 +21,10 @@ import org.junit.jupiter.api.Test;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Paths;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import org.apache.commons.io.FileUtils;
@@ -194,6 +197,7 @@ public class SubMapCreatorTest
 		originalSettings.resolution = 0.5;
 
 		WorldGraph originalGraph = MapCreator.createGraphForUnitTests(originalSettings);
+		originalSettings.edits.initializeRiversFromGraph(originalGraph, originalSettings.resolution);
 
 		// Sub-map selection bounds in RI (resolution-invariant) coordinates.
 		Rectangle selectionBoundsRI = new Rectangle(1158, 1115, 1559, 1092);
@@ -206,6 +210,8 @@ public class SubMapCreatorTest
 		WorldGraph newGraph = MapCreator.createGraphForUnitTests(subMapSettings);
 
 		List<GraphRiver> rivers = newGraph.findRivers();
+
+		assertNoDuplicateRiverSegments(subMapSettings.edits.rivers, subMapSettings, "subMapTShapedRiverHasThreeMouths");
 
 		long mouthCount = rivers.stream().filter(river ->
 		{
@@ -340,6 +346,34 @@ public class SubMapCreatorTest
 				{
 					String failedMapPath = saveFailedMap(subMapSettings, testName);
 					fail("River " + ri + " has a loop: path point " + p + " appears more than once.\nFailed map written to: " + failedMapPath);
+				}
+			}
+		}
+	}
+
+	/**
+	 * Asserts that no two river segments across all rivers share the same pair of endpoints. A sub-map should never contain two segments with the same two control points: where river arms meet at a
+	 * confluence they should share a single segment, not duplicate it. A duplicate segment is drawn as two overlapping Catmull-Rom curves, which renders as a small loop even though the node path has no
+	 * topological loop. This catches the duplicated segment at the base of a T-junction.
+	 */
+	private void assertNoDuplicateRiverSegments(List<River> rivers, MapSettings subMapSettings, String testName) throws Exception
+	{
+		Map<OrderlessPair<Point>, Integer> segmentToRiver = new HashMap<>();
+		for (int ri = 0; ri < rivers.size(); ri++)
+		{
+			List<Point> path = nortantis.PathOperations.toLocationList(rivers.get(ri).nodes);
+			for (int i = 0; i + 1 < path.size(); i++)
+			{
+				Point a = path.get(i);
+				Point b = path.get(i + 1);
+				if (a.equals(b))
+					continue; // A zero-length segment is a separate degeneracy, not a duplicate.
+				Integer previousRiver = segmentToRiver.putIfAbsent(new OrderlessPair<>(a, b), ri);
+				if (previousRiver != null)
+				{
+					String failedMapPath = saveFailedMap(subMapSettings, testName);
+					fail("Duplicate river segment between " + a + " and " + b + " (first in river " + previousRiver + ", again in river " + ri
+							+ "). Arms meeting at a confluence should share one segment, not duplicate it.\nFailed map written to: " + failedMapPath);
 				}
 			}
 		}

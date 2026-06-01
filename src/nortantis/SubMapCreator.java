@@ -18,6 +18,7 @@ import nortantis.editor.River;
 import nortantis.editor.RiverPathNode;
 import nortantis.swing.MapEdits;
 
+import nortantis.util.OrderlessPair;
 import nortantis.util.Tuple2;
 
 import java.util.*;
@@ -608,6 +609,60 @@ public class SubMapCreator
 				}
 			}
 		}
+
+		removeDuplicateRiverSegments(newEdits.rivers);
+	}
+
+	/**
+	 * Removes duplicated segments where two transferred rivers overlap. Rivers are routed through the new graph independently, so where a
+	 * tributary meets a trunk its first or last segment can land on the same pair of corners the trunk already passes through. Drawn as two
+	 * overlapping Catmull-Rom curves, such a duplicate renders as a small loop at the confluence. Trimming the overlapping segment from the
+	 * tributary's end leaves the two rivers sharing a single confluence corner, which is the correct topology.
+	 */
+	private static void removeDuplicateRiverSegments(List<River> rivers)
+	{
+		// Count how many rivers use each undirected segment (keyed by its endpoint locations).
+		Map<OrderlessPair<Point>, Integer> segmentCounts = new HashMap<>();
+		for (River river : rivers)
+		{
+			List<RiverPathNode> nodes = river.nodes;
+			for (int i = 0; i + 1 < nodes.size(); i++)
+			{
+				segmentCounts.merge(new OrderlessPair<>(nodes.get(i).getLoc(), nodes.get(i + 1).getLoc()), 1, Integer::sum);
+			}
+		}
+
+		// Trim each river's leading and trailing segments while they are shared with another river. A shared segment is interior to exactly
+		// one river (the trunk) and terminal in the other (the tributary), so trimming ends removes the duplicate from the tributary only,
+		// never from the trunk. Decrementing as we trim keeps the surviving copy.
+		for (River river : rivers)
+		{
+			List<RiverPathNode> nodes = river.nodes;
+			while (nodes.size() >= 2 && isSegmentShared(segmentCounts, nodes.get(0).getLoc(), nodes.get(1).getLoc()))
+			{
+				decrementSegment(segmentCounts, nodes.get(0).getLoc(), nodes.get(1).getLoc());
+				nodes.remove(0);
+			}
+			while (nodes.size() >= 2 && isSegmentShared(segmentCounts, nodes.get(nodes.size() - 2).getLoc(), nodes.get(nodes.size() - 1).getLoc()))
+			{
+				decrementSegment(segmentCounts, nodes.get(nodes.size() - 2).getLoc(), nodes.get(nodes.size() - 1).getLoc());
+				nodes.remove(nodes.size() - 1);
+			}
+		}
+
+		// Drop any river trimmed below a drawable length.
+		rivers.removeIf(river -> river.nodes.size() < 2);
+	}
+
+	private static boolean isSegmentShared(Map<OrderlessPair<Point>, Integer> segmentCounts, Point a, Point b)
+	{
+		Integer count = segmentCounts.get(new OrderlessPair<>(a, b));
+		return count != null && count > 1;
+	}
+
+	private static void decrementSegment(Map<OrderlessPair<Point>, Integer> segmentCounts, Point a, Point b)
+	{
+		segmentCounts.merge(new OrderlessPair<>(a, b), -1, Integer::sum);
 	}
 
 	/**
