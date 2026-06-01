@@ -3,8 +3,10 @@ package nortantis.test;
 import nortantis.MapCreator;
 import nortantis.MapSettings;
 import nortantis.SubMapCreator;
+import nortantis.GraphRiver;
 import nortantis.editor.River;
 import nortantis.WorldGraph;
+import nortantis.graph.voronoi.Edge;
 import nortantis.geom.Point;
 import nortantis.geom.Rectangle;
 import nortantis.swing.SubMapDialog;
@@ -30,6 +32,10 @@ public class SubMapCreatorTest
 {
 	static final String failedMapsFolderName = "failed sub-maps";
 
+	// Set this to true to make every test write its result map to the failed sub-maps folder, so the actual results can be viewed even when
+	// the tests pass. The per-test flags below do the same for a single test.
+	private static final boolean forceWriteAllMaps = false;
+
 	// Set any of these to true to force that test to write its result map to the failed sub-maps folder.
 	private static final boolean forceWriteSubMapRiversFormConfluence = false;
 	private static final boolean forceWriteSubMapRiversHaveNoFingers = false;
@@ -47,9 +53,8 @@ public class SubMapCreatorTest
 	}
 
 	/**
-	 * Verifies that when a sub-map contains two rivers that form a confluence in the source map, those rivers are still connected via a
-	 * shared corner in the sub-map's edge edits. This is a regression test for a bug in SubMapCreator where the last edge of a tributary
-	 * was incorrectly removed by simplifyToPath, preventing the confluence from being transferred.
+	 * Verifies that when a sub-map contains two rivers that form a confluence in the source map, those rivers are still connected via a shared corner in the sub-map's edge edits. This is a regression
+	 * test for a bug in SubMapCreator where the last edge of a tributary was incorrectly removed by simplifyToPath, preventing the confluence from being transferred.
 	 */
 	@Test
 	public void subMapRiversFormConfluence() throws Exception
@@ -74,18 +79,18 @@ public class SubMapCreatorTest
 		assertEquals(2, rivers.size(), "Sub-map should contain exactly 2 rivers (expected a main river and a tributary)");
 
 		assertRiversAreAllConnected(rivers, subMapSettings, "subMapRiversFormConfluence");
-		if (forceWriteSubMapRiversFormConfluence)
+		if (forceWriteSubMapRiversFormConfluence || forceWriteAllMaps)
 		{
 			saveFailedMap(subMapSettings, "subMapRiversFormConfluence");
 		}
 	}
 
 	/**
-	 * Verifies that rivers in a sub-map contain no finger branches. A finger is a branch point — a corner with degree &gt; 2 in the
-	 * combined river edge graph — that was not present in the original map. The original map for this test case has no such branches.
+	 * Verifies that rivers in a sub-map contain no finger branches. A finger is a branch point — a corner with degree &gt; 2 in the combined river edge graph — that was not present in the original
+	 * map. The original map for this test case has no such branches.
 	 * <p>
-	 * Note: {@link WorldGraph#findRivers()} separates branch arms into distinct {@link River} objects, so checking degree within a single
-	 * river's edges would never detect fingers. Instead this test builds the degree map from the unique set of all edges across all rivers.
+	 * Note: {@link WorldGraph#findRivers()} separates branch arms into distinct {@link River} objects, so checking degree within a single river's edges would never detect fingers. Instead this test
+	 * builds the degree map from the unique set of all edges across all rivers.
 	 * </p>
 	 */
 	@Test
@@ -109,7 +114,7 @@ public class SubMapCreatorTest
 		List<River> rivers = subMapSettings.edits.rivers;
 
 		assertRiversHaveNoFingers(rivers, subMapSettings, "subMapRiversHaveNoFingers");
-		if (forceWriteSubMapRiversHaveNoFingers)
+		if (forceWriteSubMapRiversHaveNoFingers || forceWriteAllMaps)
 		{
 			saveFailedMap(subMapSettings, "subMapRiversHaveNoFingers");
 		}
@@ -140,15 +145,15 @@ public class SubMapCreatorTest
 
 		assertRiversHaveNoLoops(rivers, subMapSettings, "subMapComplexRiversHaveNoFingersOrLoops");
 		assertRiversHaveNoFingers(rivers, subMapSettings, "subMapComplexRiversHaveNoFingersOrLoops");
-		if (forceWriteSubMapComplexRiversHaveNoFingersOrLoops)
+		if (forceWriteSubMapComplexRiversHaveNoFingersOrLoops || forceWriteAllMaps)
 		{
 			saveFailedMap(subMapSettings, "subMapComplexRiversHaveNoFingersOrLoops");
 		}
 	}
 
 	/**
-	 * Verifies that rivers in a sub-map contain no loops. A loop exists when the river's edges form a cycle, detected by checking that the
-	 * edge count exceeds corner count minus one (the invariant for a simple path).
+	 * Verifies that rivers in a sub-map contain no loops. A loop exists when the river's edges form a cycle, detected by checking that the edge count exceeds corner count minus one (the invariant for
+	 * a simple path).
 	 */
 	@Test
 	public void subMapRiversHaveNoLoops() throws Exception
@@ -165,109 +170,99 @@ public class SubMapCreatorTest
 
 		int worldSize = SubMapDialog.computeDefaultWorldSize(originalSettings, selectionBoundsRI);
 
-		long seed = 1142346135L;
+		long seed = 384811022L;
 		MapSettings subMapSettings = SubMapCreator.createSubMapSettings(originalSettings, originalGraph, selectionBoundsRI, worldSize, originalSettings.resolution, seed, true);
 
 		List<River> rivers = subMapSettings.edits.rivers;
 
 		assertRiversHaveNoLoops(rivers, subMapSettings, "subMapRiversHaveNoLoops");
-		if (forceWriteSubMapRiversHaveNoLoops)
+		if (forceWriteSubMapRiversHaveNoLoops || forceWriteAllMaps)
 		{
 			saveFailedMap(subMapSettings, "subMapRiversHaveNoLoops");
 		}
 	}
 
-	// /**
-	// * Verifies that a T-shaped river in a sub-map has 3 mouths where it meets the ocean. Each mouth is counted when the first or last
-	// edge of a {@link River} has a coast or ocean corner endpoint.
-	// * This is a regression test for a bug where one arm of the T was incorrectly dropped, leaving only 2 mouths.
-	// */
-	// @Test
-	// public void subMapTShapedRiverHasThreeMouths() throws Exception
-	// {
-	// String originalSettingsPath = Paths.get("unit test files", "map settings", "riversForSubMaps.nort").toString();
-	// MapSettings originalSettings = new MapSettings(originalSettingsPath);
-	// originalSettings.resolution = 0.5;
-	//
-	// WorldGraph originalGraph = MapCreator.createGraphForUnitTests(originalSettings);
-	//
-	// // Sub-map selection bounds in RI (resolution-invariant) coordinates.
-	// Rectangle selectionBoundsRI = new Rectangle(661, 18, 2013, 4078);
-	//
-	// int worldSize = SubMapDialog.computeDefaultWorldSize(originalSettings, selectionBoundsRI);
-	//
-	// long seed = 1670082139L;
-	// MapSettings subMapSettings = SubMapCreator.createSubMapSettings(originalSettings, originalGraph, selectionBoundsRI, worldSize,
-	// originalSettings.resolution, seed, true);
-	//
-	// WorldGraph newGraph = MapCreator.createGraphForUnitTests(subMapSettings);
-	//
-	// List<River> rivers = newGraph.findRivers();
-	//
-	// System.err.println("DEBUG rivers=" + rivers.size());
-	// for (int _i = 0; _i < rivers.size(); _i++) {
-	// List<Edge> _re = rivers.get(_i).getEdges();
-	// if (!_re.isEmpty()) {
-	// Edge _f = _re.get(0), _l = _re.get(_re.size()-1);
-	// System.err.println(" R"+_i+" edges="+_re.size()+"
-	// first.v0="+(_f.v0==null?"null":"C="+_f.v0.isCoast+",O="+_f.v0.isOcean+",W="+_f.v0.isWater)+"
-	// first.v1="+(_f.v1==null?"null":"C="+_f.v1.isCoast+",O="+_f.v1.isOcean+",W="+_f.v1.isWater)+"
-	// last.v0="+(_l.v0==null?"null":"C="+_l.v0.isCoast+",O="+_l.v0.isOcean+",W="+_l.v0.isWater)+"
-	// last.v1="+(_l.v1==null?"null":"C="+_l.v1.isCoast+",O="+_l.v1.isOcean+",W="+_l.v1.isWater));
-	// }
-	// }
-	// long mouthCount = rivers.stream().filter(river ->
-	// {
-	// List<Edge> edges = river.getEdges();
-	// if (edges.isEmpty())
-	// return false;
-	// return edgeTouchesCoastOrOcean(edges.get(0)) || edgeTouchesCoastOrOcean(edges.get(edges.size() - 1));
-	// }).count();
-	//
-	// if (mouthCount != 3)
-	// {
-	// String failedMapPath = saveFailedMap(subMapSettings, "subMapTShapedRiverHasThreeMouths");
-	// fail("Expected the T-shaped river to have 3 mouths meeting the ocean, but found " + mouthCount
-	// + ".\nFailed map written to: " + failedMapPath);
-	// }
-	// else if (forceWriteSubMapTShapedRiverHasThreeMouths)
-	// {
-	// saveFailedMap(subMapSettings, "subMapTShapedRiverHasThreeMouths");
-	// }
-	// }
-	//
-	// /**
-	// * Verifies that a T-shaped river in a sub-map has all its arms connected at the junction. This is a regression test for a bug where
-	// one arm of the T was disconnected from the others.
-	// */
-	// @Test
-	// public void subMapRiversFormConfluence2() throws Exception
-	// {
-	// String originalSettingsPath = Paths.get("unit test files", "map settings", "riversForSubMaps.nort").toString();
-	// MapSettings originalSettings = new MapSettings(originalSettingsPath);
-	// originalSettings.resolution = 0.5;
-	//
-	// WorldGraph originalGraph = MapCreator.createGraphForUnitTests(originalSettings);
-	//
-	// // Sub-map selection bounds in RI (resolution-invariant) coordinates.
-	// Rectangle selectionBoundsRI = new Rectangle(661, 18, 2013, 4078);
-	//
-	// int worldSize = SubMapDialog.computeDefaultWorldSize(originalSettings, selectionBoundsRI);
-	//
-	// long seed = 1222331460L;
-	// MapSettings subMapSettings = SubMapCreator.createSubMapSettings(originalSettings, originalGraph, selectionBoundsRI, worldSize,
-	// originalSettings.resolution, seed, true);
-	//
-	// WorldGraph newGraph = MapCreator.createGraphForUnitTests(subMapSettings);
-	//
-	// List<River> rivers = newGraph.findRivers();
-	//
-	// assertRiversAreAllConnected(rivers, subMapSettings, "subMapRiversFormConfluence2");
-	// if (forceWriteSubMapRiversFormConfluence2)
-	// {
-	// saveFailedMap(subMapSettings, "subMapRiversFormConfluence2");
-	// }
-	// }
+	/**
+	 * Verifies that a T-shaped river in a sub-map has 3 mouths where it meets the ocean. Each mouth is counted when the first or last edge of a {@link GraphRiver} has a coast or ocean corner endpoint.
+	 * This is a regression test for a bug where one arm of the T was incorrectly dropped, leaving only 2 mouths.
+	 */
+	@Test
+	public void subMapTShapedRiverHasThreeMouths() throws Exception
+	{
+		String originalSettingsPath = Paths.get("unit test files", "map settings", "riversForSubMaps.nort").toString();
+		MapSettings originalSettings = new MapSettings(originalSettingsPath);
+		originalSettings.resolution = 0.5;
+
+		WorldGraph originalGraph = MapCreator.createGraphForUnitTests(originalSettings);
+
+		// Sub-map selection bounds in RI (resolution-invariant) coordinates.
+		Rectangle selectionBoundsRI = new Rectangle(1158, 1115, 1559, 1092);
+
+		int worldSize = SubMapDialog.computeDefaultWorldSize(originalSettings, selectionBoundsRI);
+
+		long seed = 595862260L;
+		MapSettings subMapSettings = SubMapCreator.createSubMapSettings(originalSettings, originalGraph, selectionBoundsRI, worldSize, originalSettings.resolution, seed, true);
+
+		WorldGraph newGraph = MapCreator.createGraphForUnitTests(subMapSettings);
+
+		List<GraphRiver> rivers = newGraph.findRivers();
+
+		long mouthCount = rivers.stream().filter(river ->
+		{
+			List<Edge> edges = river.getEdges();
+			if (edges.isEmpty())
+				return false;
+			return edgeTouchesCoastOrOcean(edges.get(0)) || edgeTouchesCoastOrOcean(edges.get(edges.size() - 1));
+		}).count();
+
+		if (mouthCount != 3)
+		{
+			String failedMapPath = saveFailedMap(subMapSettings, "subMapTShapedRiverHasThreeMouths");
+			fail("Expected the T-shaped river to have 3 mouths meeting the ocean, but found " + mouthCount + ".\nFailed map written to: " + failedMapPath);
+		}
+		else if (forceWriteSubMapTShapedRiverHasThreeMouths || forceWriteAllMaps)
+		{
+			saveFailedMap(subMapSettings, "subMapTShapedRiverHasThreeMouths");
+		}
+	}
+
+	/**
+	 * Verifies that a T-shaped river in a sub-map has all its arms connected at the junction. This is a regression test for a bug where one arm of the T was disconnected from the others.
+	 */
+	@Test
+	public void subMapRiversFormConfluence2() throws Exception
+	{
+		String originalSettingsPath = Paths.get("unit test files", "map settings", "riversForSubMaps.nort").toString();
+		MapSettings originalSettings = new MapSettings(originalSettingsPath);
+		originalSettings.resolution = 0.5;
+
+		WorldGraph originalGraph = MapCreator.createGraphForUnitTests(originalSettings);
+		originalSettings.edits.initializeRiversFromGraph(originalGraph, originalSettings.resolution);
+
+		// Sub-map selection bounds in RI (resolution-invariant) coordinates.
+		Rectangle selectionBoundsRI = new Rectangle(661, 18, 2013, 4078);
+
+		int worldSize = SubMapDialog.computeDefaultWorldSize(originalSettings, selectionBoundsRI);
+
+		long seed = 1222331460L;
+		MapSettings subMapSettings = SubMapCreator.createSubMapSettings(originalSettings, originalGraph, selectionBoundsRI, worldSize, originalSettings.resolution, seed, true);
+
+		List<River> rivers = subMapSettings.edits.rivers;
+
+		assertRiversAreAllConnected(rivers, subMapSettings, "subMapRiversFormConfluence2");
+		if (forceWriteSubMapRiversFormConfluence2 || forceWriteAllMaps)
+		{
+			saveFailedMap(subMapSettings, "subMapRiversFormConfluence2");
+		}
+	}
+
+	/**
+	 * Returns true if either endpoint of the edge is a coast or ocean corner, indicating the river reaches the ocean shore.
+	 */
+	private boolean edgeTouchesCoastOrOcean(Edge edge)
+	{
+		return (edge.v0 != null && (edge.v0.isCoast || edge.v0.isOcean)) || (edge.v1 != null && (edge.v1.isCoast || edge.v1.isOcean));
+	}
 
 	private String saveFailedMap(MapSettings subMapSettings, String testName) throws Exception
 	{
@@ -280,8 +275,8 @@ public class SubMapCreatorTest
 	}
 
 	/**
-	 * Asserts that all rivers form a single connected component, i.e. every river shares at least one path point with some other river.
-	 * Uses union-find on path-point sets to detect disconnected river arms.
+	 * Asserts that all rivers form a single connected component, i.e. every river shares at least one path point with some other river. Uses union-find on path-point sets to detect disconnected river
+	 * arms.
 	 */
 	private void assertRiversAreAllConnected(List<River> rivers, MapSettings subMapSettings, String testName) throws Exception
 	{
@@ -351,8 +346,8 @@ public class SubMapCreatorTest
 	}
 
 	/**
-	 * Asserts that each river's path has no branching. Since each {@link River} is a linear polyline this is trivially true, but this check
-	 * catches degenerate cases such as rivers with fewer than 2 points (which would be invisible and indicate a routing failure).
+	 * Asserts that each river's path has no branching. Since each {@link River} is a linear polyline this is trivially true, but this check catches degenerate cases such as rivers with fewer than 2
+	 * points (which would be invisible and indicate a routing failure).
 	 */
 	private void assertRiversHaveNoFingers(List<River> rivers, MapSettings subMapSettings, String testName) throws Exception
 	{
