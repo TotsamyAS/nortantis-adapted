@@ -36,16 +36,8 @@ public class SubMapCreatorTest
 	static final String failedMapsFolderName = "failed sub-maps";
 
 	// Set this to true to make every test write its result map to the failed sub-maps folder, so the actual results can be viewed even when
-	// the tests pass. The per-test flags below do the same for a single test.
+	// the tests pass. Each test also has a local forceWrite flag near its top that does the same for that single test.
 	private static final boolean forceWriteAllMaps = false;
-
-	// Set any of these to true to force that test to write its result map to the failed sub-maps folder.
-	private static final boolean forceWriteSubMapRiversFormConfluence = false;
-	private static final boolean forceWriteSubMapRiversHaveNoFingers = false;
-	private static final boolean forceWriteSubMapComplexRiversHaveNoFingersOrLoops = false;
-	private static final boolean forceWriteSubMapRiversHaveNoLoops = false;
-	private static final boolean forceWriteSubMapTShapedRiverHasThreeMouths = false;
-	private static final boolean forceWriteSubMapRiversFormConfluence2 = false;
 
 	@BeforeAll
 	public static void setUpBeforeClass() throws IOException
@@ -62,6 +54,9 @@ public class SubMapCreatorTest
 	@Test
 	public void subMapRiversFormConfluence() throws Exception
 	{
+		// Set to true to force this test to write its result map to the failed sub-maps folder, even when it passes.
+		boolean forceWrite = false;
+
 		String originalSettingsPath = Paths.get("unit test files", "map settings", "riversForSubMaps.nort").toString();
 		MapSettings originalSettings = new MapSettings(originalSettingsPath);
 		originalSettings.resolution = 0.5;
@@ -82,7 +77,7 @@ public class SubMapCreatorTest
 		assertEquals(2, rivers.size(), "Sub-map should contain exactly 2 rivers (expected a main river and a tributary)");
 
 		assertRiversAreAllConnected(rivers, subMapSettings, "subMapRiversFormConfluence");
-		if (forceWriteSubMapRiversFormConfluence || forceWriteAllMaps)
+		if (forceWrite || forceWriteAllMaps)
 		{
 			saveFailedMap(subMapSettings, "subMapRiversFormConfluence");
 		}
@@ -99,6 +94,9 @@ public class SubMapCreatorTest
 	@Test
 	public void subMapRiversHaveNoFingers() throws Exception
 	{
+		// Set to true to force this test to write its result map to the failed sub-maps folder, even when it passes.
+		boolean forceWrite = false;
+
 		String originalSettingsPath = Paths.get("unit test files", "map settings", "riversForSubMaps.nort").toString();
 		MapSettings originalSettings = new MapSettings(originalSettingsPath);
 		originalSettings.resolution = 0.5;
@@ -117,7 +115,7 @@ public class SubMapCreatorTest
 		List<River> rivers = subMapSettings.edits.rivers;
 
 		assertRiversHaveNoFingers(rivers, subMapSettings, "subMapRiversHaveNoFingers");
-		if (forceWriteSubMapRiversHaveNoFingers || forceWriteAllMaps)
+		if (forceWrite || forceWriteAllMaps)
 		{
 			saveFailedMap(subMapSettings, "subMapRiversHaveNoFingers");
 		}
@@ -129,6 +127,9 @@ public class SubMapCreatorTest
 	@Test
 	public void subMapComplexRiversHaveNoFingersOrLoops() throws Exception
 	{
+		// Set to true to force this test to write its result map to the failed sub-maps folder, even when it passes.
+		boolean forceWrite = false;
+
 		String originalSettingsPath = Paths.get("unit test files", "map settings", "riversForSubMaps.nort").toString();
 		MapSettings originalSettings = new MapSettings(originalSettingsPath);
 		originalSettings.resolution = 0.5;
@@ -148,7 +149,7 @@ public class SubMapCreatorTest
 
 		assertRiversHaveNoLoops(rivers, subMapSettings, "subMapComplexRiversHaveNoFingersOrLoops");
 		assertRiversHaveNoFingers(rivers, subMapSettings, "subMapComplexRiversHaveNoFingersOrLoops");
-		if (forceWriteSubMapComplexRiversHaveNoFingersOrLoops || forceWriteAllMaps)
+		if (forceWrite || forceWriteAllMaps)
 		{
 			saveFailedMap(subMapSettings, "subMapComplexRiversHaveNoFingersOrLoops");
 		}
@@ -161,6 +162,9 @@ public class SubMapCreatorTest
 	@Test
 	public void subMapRiversHaveNoLoops() throws Exception
 	{
+		// Set to true to force this test to write its result map to the failed sub-maps folder, even when it passes.
+		boolean forceWrite = false;
+
 		String originalSettingsPath = Paths.get("unit test files", "map settings", "riversForSubMaps.nort").toString();
 		MapSettings originalSettings = new MapSettings(originalSettingsPath);
 		originalSettings.resolution = 0.5;
@@ -179,7 +183,7 @@ public class SubMapCreatorTest
 		List<River> rivers = subMapSettings.edits.rivers;
 
 		assertRiversHaveNoLoops(rivers, subMapSettings, "subMapRiversHaveNoLoops");
-		if (forceWriteSubMapRiversHaveNoLoops || forceWriteAllMaps)
+		if (forceWrite || forceWriteAllMaps)
 		{
 			saveFailedMap(subMapSettings, "subMapRiversHaveNoLoops");
 		}
@@ -192,6 +196,9 @@ public class SubMapCreatorTest
 	@Test
 	public void subMapTShapedRiverHasThreeMouths() throws Exception
 	{
+		// Set to true to force this test to write its result map to the failed sub-maps folder, even when it passes.
+		boolean forceWrite = false;
+
 		String originalSettingsPath = Paths.get("unit test files", "map settings", "riversForSubMaps.nort").toString();
 		MapSettings originalSettings = new MapSettings(originalSettingsPath);
 		originalSettings.resolution = 0.5;
@@ -226,7 +233,7 @@ public class SubMapCreatorTest
 			String failedMapPath = saveFailedMap(subMapSettings, "subMapTShapedRiverHasThreeMouths");
 			fail("Expected the T-shaped river to have 3 mouths meeting the ocean, but found " + mouthCount + ".\nFailed map written to: " + failedMapPath);
 		}
-		else if (forceWriteSubMapTShapedRiverHasThreeMouths || forceWriteAllMaps)
+		else if (forceWrite || forceWriteAllMaps)
 		{
 			saveFailedMap(subMapSettings, "subMapTShapedRiverHasThreeMouths");
 		}
@@ -238,6 +245,9 @@ public class SubMapCreatorTest
 	@Test
 	public void subMapRiversFormConfluence2() throws Exception
 	{
+		// Set to true to force this test to write its result map to the failed sub-maps folder, even when it passes.
+		boolean forceWrite = false;
+
 		String originalSettingsPath = Paths.get("unit test files", "map settings", "riversForSubMaps.nort").toString();
 		MapSettings originalSettings = new MapSettings(originalSettingsPath);
 		originalSettings.resolution = 0.5;
@@ -256,9 +266,86 @@ public class SubMapCreatorTest
 		List<River> rivers = subMapSettings.edits.rivers;
 
 		assertRiversAreAllConnected(rivers, subMapSettings, "subMapRiversFormConfluence2");
-		if (forceWriteSubMapRiversFormConfluence2 || forceWriteAllMaps)
+		if (forceWrite || forceWriteAllMaps)
 		{
 			saveFailedMap(subMapSettings, "subMapRiversFormConfluence2");
+		}
+	}
+
+	/**
+	 * Verifies that a sub-map covering the entire source map at the original detail level (a 1× "Match source detail" sub-map) produces a clean river network: no duplicate segments, no loops, and no
+	 * degenerate single-point rivers. This exercises the full-map transfer path for {@code riversForSubMaps.nort}, where the selection covers the whole map so the sub-map's polygon count matches the
+	 * source's.
+	 */
+	@Test
+	public void subMapOfEntireMapAtOriginalDetailRivers() throws Exception
+	{
+		// Set to true to force this test to write its result map to the failed sub-maps folder, even when it passes.
+		boolean forceWrite = false;
+
+		String originalSettingsPath = Paths.get("unit test files", "map settings", "riversForSubMaps.nort").toString();
+		MapSettings originalSettings = new MapSettings(originalSettingsPath);
+		originalSettings.resolution = 0.5;
+
+		WorldGraph originalGraph = MapCreator.createGraphForUnitTests(originalSettings);
+		originalSettings.edits.initializeRiversFromGraph(originalGraph, originalSettings.resolution);
+
+		// Selection bounds covering the entire source map, in RI (resolution-invariant) coordinates.
+		Rectangle selectionBoundsRI = new Rectangle(0, 0, originalSettings.generatedWidth, originalSettings.generatedHeight);
+
+		// For a full-map selection this returns the original world size, i.e. the original detail level ("Match source detail").
+		int worldSize = SubMapDialog.computeDefaultWorldSize(originalSettings, selectionBoundsRI);
+		assertEquals(originalSettings.worldSize, worldSize, "A full-map selection should default to the source map's world size (original detail level)");
+
+		long seed = 1402779553L;
+		MapSettings subMapSettings = SubMapCreator.createSubMapSettings(originalSettings, originalGraph, selectionBoundsRI, worldSize, originalSettings.resolution, seed, true);
+
+		List<River> rivers = subMapSettings.edits.rivers;
+
+		assertNoDuplicateRiverSegments(rivers, subMapSettings, "subMapOfEntireMapAtOriginalDetailRivers");
+		assertRiversHaveNoLoops(rivers, subMapSettings, "subMapOfEntireMapAtOriginalDetailRivers");
+		assertRiversHaveNoFingers(rivers, subMapSettings, "subMapOfEntireMapAtOriginalDetailRivers");
+		if (forceWrite || forceWriteAllMaps)
+		{
+			saveFailedMap(subMapSettings, "subMapOfEntireMapAtOriginalDetailRivers");
+		}
+	}
+
+	/**
+	 * Verifies that a sub-map covering the entire source map at the original detail level (a 1× "Match source detail" sub-map) produces a clean river network for {@code simpleSmallWorld.nort}: no
+	 * duplicate segments, no loops, and no degenerate single-point rivers.
+	 */
+	@Test
+	public void subMapOfEntireMapAtOriginalDetailSimpleSmallWorld() throws Exception
+	{
+		// Set to true to force this test to write its result map to the failed sub-maps folder, even when it passes.
+		boolean forceWrite = false;
+
+		String originalSettingsPath = Paths.get("unit test files", "map settings", "simpleSmallWorld.nort").toString();
+		MapSettings originalSettings = new MapSettings(originalSettingsPath);
+		originalSettings.resolution = 0.5;
+
+		WorldGraph originalGraph = MapCreator.createGraphForUnitTests(originalSettings);
+		originalSettings.edits.initializeRiversFromGraph(originalGraph, originalSettings.resolution);
+
+		// Selection bounds covering the entire source map, in RI (resolution-invariant) coordinates.
+		Rectangle selectionBoundsRI = new Rectangle(0, 0, originalSettings.generatedWidth, originalSettings.generatedHeight);
+
+		// For a full-map selection this returns the original world size, i.e. the original detail level ("Match source detail").
+		int worldSize = SubMapDialog.computeDefaultWorldSize(originalSettings, selectionBoundsRI);
+		assertEquals(originalSettings.worldSize, worldSize, "A full-map selection should default to the source map's world size (original detail level)");
+
+		long seed = 768241095L;
+		MapSettings subMapSettings = SubMapCreator.createSubMapSettings(originalSettings, originalGraph, selectionBoundsRI, worldSize, originalSettings.resolution, seed, true);
+
+		List<River> rivers = subMapSettings.edits.rivers;
+
+		assertNoDuplicateRiverSegments(rivers, subMapSettings, "subMapOfEntireMapAtOriginalDetailSimpleSmallWorld");
+		assertRiversHaveNoLoops(rivers, subMapSettings, "subMapOfEntireMapAtOriginalDetailSimpleSmallWorld");
+		assertRiversHaveNoFingers(rivers, subMapSettings, "subMapOfEntireMapAtOriginalDetailSimpleSmallWorld");
+		if (forceWrite || forceWriteAllMaps)
+		{
+			saveFailedMap(subMapSettings, "subMapOfEntireMapAtOriginalDetailSimpleSmallWorld");
 		}
 	}
 
