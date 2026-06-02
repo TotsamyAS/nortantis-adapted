@@ -163,8 +163,7 @@ public class RiverDrawerTest
 		River existing = river(WIDTH, a, b);
 		List<River> rivers = new ArrayList<>(Arrays.asList(existing));
 		assertTrue(RiverDrawer.updateExistingRiverWidthsForPointPairs(rivers, Collections.emptySet(), 99).isEmpty());
-		assertTrue(RiverDrawer.updateExistingRiverWidthsForPointPairs(Collections.emptyList(),
-				new HashSet<>(Collections.singletonList(new OrderlessPair<>(a, b))), 99).isEmpty());
+		assertTrue(RiverDrawer.updateExistingRiverWidthsForPointPairs(Collections.emptyList(), new HashSet<>(Collections.singletonList(new OrderlessPair<>(a, b))), 99).isEmpty());
 		assertTrue(RiverDrawer.updateExistingRiverWidthsForPointPairs(null, new HashSet<>(Collections.singletonList(new OrderlessPair<>(a, b))), 99).isEmpty());
 	}
 

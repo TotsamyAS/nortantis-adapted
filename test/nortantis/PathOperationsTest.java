@@ -389,7 +389,7 @@ public class PathOperationsTest
 	{
 		Point a = new Point(0, 0);
 		Point b = new Point(1, 0);
-		List<List<RoadPathNode>> paths = Arrays.asList(Collections.<RoadPathNode> emptyList(), road(a));
+		List<List<RoadPathNode>> paths = Arrays.asList(Collections.<RoadPathNode>emptyList(), road(a));
 		List<List<Point>> removed = Arrays.asList(Arrays.asList(a, b));
 		// Empty and single-node paths must be ignored rather than throwing on out-of-bounds access.
 		assertTrue(PathOperations.findInnerNeighborsOfCutEndpoints(paths, removed).isEmpty());
@@ -581,8 +581,7 @@ public class PathOperationsTest
 		for (int idx = -1; idx <= nodes.size(); idx++)
 		{
 			assertEquals(PathOperations.nodeLocationsAround(nodes, idx, PathOperations.CATMULL_ROM_PROPAGATION_RADIUS),
-					PathOperations.pointsAround(points, idx, PathOperations.CATMULL_ROM_PROPAGATION_RADIUS),
-					"slices differ at index " + idx);
+					PathOperations.pointsAround(points, idx, PathOperations.CATMULL_ROM_PROPAGATION_RADIUS), "slices differ at index " + idx);
 		}
 	}
 }

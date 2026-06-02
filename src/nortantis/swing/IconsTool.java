@@ -398,8 +398,8 @@ public class IconsTool extends EditorTool
 			clearScaleButton.setToolTipText(Translation.get("iconsTool.resetScale.tooltip"));
 			clearScaleButton.addActionListener(ev -> clearScaleOnSelectedIcons());
 
-			EditClipboardButtonsWidget editButtons = new EditClipboardButtonsWidget(this::copySelectedIcons, this::pasteSelectedIcons,
-					this::deleteSelectedIcons, Translation.get("iconsTool.delete.tooltip"));
+			EditClipboardButtonsWidget editButtons = new EditClipboardButtonsWidget(this::copySelectedIcons, this::pasteSelectedIcons, this::deleteSelectedIcons,
+					Translation.get("iconsTool.delete.tooltip"));
 			deleteCopyPasteIconButtonsHider = editButtons.addToOrganizer(organizer, Arrays.asList(clearScaleButton));
 		}
 

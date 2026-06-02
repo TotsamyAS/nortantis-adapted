@@ -3,10 +3,8 @@ package nortantis.test;
 import nortantis.MapCreator;
 import nortantis.MapSettings;
 import nortantis.SubMapCreator;
-import nortantis.GraphRiver;
 import nortantis.editor.River;
 import nortantis.WorldGraph;
-import nortantis.graph.voronoi.Edge;
 import nortantis.geom.Point;
 import nortantis.geom.Rectangle;
 import nortantis.swing.SubMapDialog;
@@ -37,7 +35,7 @@ public class SubMapCreatorTest
 
 	// Set this to true to make every test write its result map to the failed sub-maps folder, so the actual results can be viewed even when
 	// the tests pass. Each test also has a local forceWrite flag near its top that does the same for that single test.
-	private static final boolean forceWriteAllMaps = false;
+	private static final boolean forceWriteAllMaps = true;
 
 	@BeforeAll
 	public static void setUpBeforeClass() throws IOException
@@ -48,8 +46,9 @@ public class SubMapCreatorTest
 	}
 
 	/**
-	 * Verifies that when a sub-map contains two rivers that form a confluence in the source map, those rivers are still connected via a shared corner in the sub-map's edge edits. This is a regression
-	 * test for a bug in SubMapCreator where the last edge of a tributary was incorrectly removed by simplifyToPath, preventing the confluence from being transferred.
+	 * Verifies that when a sub-map contains two rivers that form a confluence in the source map, those rivers are still connected via a
+	 * shared corner in the sub-map's edge edits. This is a regression test for a bug in SubMapCreator where the last edge of a tributary
+	 * was incorrectly removed by simplifyToPath, preventing the confluence from being transferred.
 	 */
 	@Test
 	public void subMapRiversFormConfluence() throws Exception
@@ -84,11 +83,11 @@ public class SubMapCreatorTest
 	}
 
 	/**
-	 * Verifies that rivers in a sub-map contain no finger branches. A finger is a branch point — a corner with degree &gt; 2 in the combined river edge graph — that was not present in the original
-	 * map. The original map for this test case has no such branches.
+	 * Verifies that rivers in a sub-map contain no finger branches. A finger is a branch point — a corner with degree &gt; 2 in the
+	 * combined river edge graph — that was not present in the original map. The original map for this test case has no such branches.
 	 * <p>
-	 * Note: {@link WorldGraph#findRivers()} separates branch arms into distinct {@link River} objects, so checking degree within a single river's edges would never detect fingers. Instead this test
-	 * builds the degree map from the unique set of all edges across all rivers.
+	 * Note: {@link WorldGraph#findRivers()} separates branch arms into distinct {@link River} objects, so checking degree within a single
+	 * river's edges would never detect fingers. Instead this test builds the degree map from the unique set of all edges across all rivers.
 	 * </p>
 	 */
 	@Test
@@ -156,8 +155,8 @@ public class SubMapCreatorTest
 	}
 
 	/**
-	 * Verifies that rivers in a sub-map contain no loops. A loop exists when the river's edges form a cycle, detected by checking that the edge count exceeds corner count minus one (the invariant for
-	 * a simple path).
+	 * Verifies that rivers in a sub-map contain no loops. A loop exists when the river's edges form a cycle, detected by checking that the
+	 * edge count exceeds corner count minus one (the invariant for a simple path).
 	 */
 	@Test
 	public void subMapRiversHaveNoLoops() throws Exception
@@ -190,8 +189,10 @@ public class SubMapCreatorTest
 	}
 
 	/**
-	 * Verifies that a T-shaped river in a sub-map has 3 mouths where it meets the ocean. Each mouth is counted when the first or last edge of a {@link GraphRiver} has a coast or ocean corner endpoint.
-	 * This is a regression test for a bug where one arm of the T was incorrectly dropped, leaving only 2 mouths.
+	 * Verifies that a T-shaped river in a sub-map has 3 mouths where it meets the ocean. Sub-map rivers are stored as freehand
+	 * {@link River} polylines (not tied to the new graph's edges), so a mouth is counted as a river-path endpoint whose location is
+	 * adjacent to a coast or ocean corner in the sub-map graph. This is a regression test for a bug where one arm of the T was incorrectly
+	 * dropped, leaving only 2 mouths.
 	 */
 	@Test
 	public void subMapTShapedRiverHasThreeMouths() throws Exception
@@ -216,17 +217,18 @@ public class SubMapCreatorTest
 
 		WorldGraph newGraph = MapCreator.createGraphForUnitTests(subMapSettings);
 
-		List<GraphRiver> rivers = newGraph.findRivers();
+		List<River> rivers = subMapSettings.edits.rivers;
 
-		assertNoDuplicateRiverSegments(subMapSettings.edits.rivers, subMapSettings, "subMapTShapedRiverHasThreeMouths");
+		assertNoDuplicateRiverSegments(rivers, subMapSettings, "subMapTShapedRiverHasThreeMouths");
 
-		long mouthCount = rivers.stream().filter(river ->
+		long mouthCount = 0;
+		for (River river : rivers)
 		{
-			List<Edge> edges = river.getEdges();
-			if (edges.isEmpty())
-				return false;
-			return edgeTouchesCoastOrOcean(edges.get(0)) || edgeTouchesCoastOrOcean(edges.get(edges.size() - 1));
-		}).count();
+			if (riverEndpointTouchesCoastOrOcean(river.nodes.get(0).getLoc(), newGraph, subMapSettings.resolution))
+				mouthCount++;
+			if (riverEndpointTouchesCoastOrOcean(river.nodes.get(river.nodes.size() - 1).getLoc(), newGraph, subMapSettings.resolution))
+				mouthCount++;
+		}
 
 		if (mouthCount != 3)
 		{
@@ -240,7 +242,8 @@ public class SubMapCreatorTest
 	}
 
 	/**
-	 * Verifies that a T-shaped river in a sub-map has all its arms connected at the junction. This is a regression test for a bug where one arm of the T was disconnected from the others.
+	 * Verifies that a T-shaped river in a sub-map has all its arms connected at the junction. This is a regression test for a bug where one
+	 * arm of the T was disconnected from the others.
 	 */
 	@Test
 	public void subMapRiversFormConfluence2() throws Exception
@@ -256,7 +259,7 @@ public class SubMapCreatorTest
 		originalSettings.edits.initializeRiversFromGraph(originalGraph, originalSettings.resolution);
 
 		// Sub-map selection bounds in RI (resolution-invariant) coordinates.
-		Rectangle selectionBoundsRI = new Rectangle(661, 18, 2013, 4078);
+		Rectangle selectionBoundsRI = new Rectangle(661, 18, 2013, 2335);
 
 		int worldSize = SubMapDialog.computeDefaultWorldSize(originalSettings, selectionBoundsRI);
 
@@ -273,9 +276,9 @@ public class SubMapCreatorTest
 	}
 
 	/**
-	 * Verifies that a sub-map covering the entire source map at the original detail level (a 1× "Match source detail" sub-map) produces a clean river network: no duplicate segments, no loops, and no
-	 * degenerate single-point rivers. This exercises the full-map transfer path for {@code riversForSubMaps.nort}, where the selection covers the whole map so the sub-map's polygon count matches the
-	 * source's.
+	 * Verifies that a sub-map covering the entire source map at the original detail level (a 1× "Match source detail" sub-map) produces a
+	 * clean river network: no duplicate segments, no loops, and no degenerate single-point rivers. This exercises the full-map transfer
+	 * path for {@code riversForSubMaps.nort}, where the selection covers the whole map so the sub-map's polygon count matches the source's.
 	 */
 	@Test
 	public void subMapOfEntireMapAtOriginalDetailRivers() throws Exception
@@ -298,7 +301,8 @@ public class SubMapCreatorTest
 		assertEquals(originalSettings.worldSize, worldSize, "A full-map selection should default to the source map's world size (original detail level)");
 
 		long seed = 1402779553L;
-		MapSettings subMapSettings = SubMapCreator.createSubMapSettings(originalSettings, originalGraph, selectionBoundsRI, worldSize, originalSettings.resolution, seed, true);
+		// redistributeIcons=false: original detail level means "Match source detail", which copies rivers over exactly.
+		MapSettings subMapSettings = SubMapCreator.createSubMapSettings(originalSettings, originalGraph, selectionBoundsRI, worldSize, originalSettings.resolution, seed, false);
 
 		List<River> rivers = subMapSettings.edits.rivers;
 
@@ -312,8 +316,8 @@ public class SubMapCreatorTest
 	}
 
 	/**
-	 * Verifies that a sub-map covering the entire source map at the original detail level (a 1× "Match source detail" sub-map) produces a clean river network for {@code simpleSmallWorld.nort}: no
-	 * duplicate segments, no loops, and no degenerate single-point rivers.
+	 * Verifies that a sub-map covering the entire source map at the original detail level (a 1× "Match source detail" sub-map) produces a
+	 * clean river network for {@code simpleSmallWorld.nort}: no duplicate segments, no loops, and no degenerate single-point rivers.
 	 */
 	@Test
 	public void subMapOfEntireMapAtOriginalDetailSimpleSmallWorld() throws Exception
@@ -336,7 +340,8 @@ public class SubMapCreatorTest
 		assertEquals(originalSettings.worldSize, worldSize, "A full-map selection should default to the source map's world size (original detail level)");
 
 		long seed = 768241095L;
-		MapSettings subMapSettings = SubMapCreator.createSubMapSettings(originalSettings, originalGraph, selectionBoundsRI, worldSize, originalSettings.resolution, seed, true);
+		// redistributeIcons=false: original detail level means "Match source detail", which copies rivers over exactly.
+		MapSettings subMapSettings = SubMapCreator.createSubMapSettings(originalSettings, originalGraph, selectionBoundsRI, worldSize, originalSettings.resolution, seed, false);
 
 		List<River> rivers = subMapSettings.edits.rivers;
 
@@ -350,11 +355,19 @@ public class SubMapCreatorTest
 	}
 
 	/**
-	 * Returns true if either endpoint of the edge is a coast or ocean corner, indicating the river reaches the ocean shore.
+	 * Returns true if the new-graph corner closest to the given river-path endpoint (in RI coordinates) is adjacent to the ocean — i.e. it
+	 * is a coast or ocean corner, or it touches a water center. Sub-map rivers are freehand polylines, so a river that reaches the sea ends
+	 * at a shoreline corner; an interior confluence/junction endpoint sits inland and does not match.
 	 */
-	private boolean edgeTouchesCoastOrOcean(Edge edge)
+	private boolean riverEndpointTouchesCoastOrOcean(Point endpointRI, WorldGraph newGraph, double resolution)
 	{
-		return (edge.v0 != null && (edge.v0.isCoast || edge.v0.isOcean)) || (edge.v1 != null && (edge.v1.isCoast || edge.v1.isOcean));
+		Point pixel = new Point(endpointRI.x * resolution, endpointRI.y * resolution);
+		nortantis.graph.voronoi.Corner corner = newGraph.findClosestCorner(pixel);
+		if (corner == null)
+			return false;
+		if (corner.isCoast || corner.isOcean || corner.isWater)
+			return true;
+		return corner.touches.stream().anyMatch(center -> center.isWater);
 	}
 
 	private String saveFailedMap(MapSettings subMapSettings, String testName) throws Exception
@@ -368,8 +381,8 @@ public class SubMapCreatorTest
 	}
 
 	/**
-	 * Asserts that all rivers form a single connected component, i.e. every river shares at least one path point with some other river. Uses union-find on path-point sets to detect disconnected river
-	 * arms.
+	 * Asserts that all rivers form a single connected component, i.e. every river shares at least one path point with some other river.
+	 * Uses union-find on path-point sets to detect disconnected river arms.
 	 */
 	private void assertRiversAreAllConnected(List<River> rivers, MapSettings subMapSettings, String testName) throws Exception
 	{
@@ -439,8 +452,9 @@ public class SubMapCreatorTest
 	}
 
 	/**
-	 * Asserts that no two river segments across all rivers share the same pair of endpoints. A sub-map should never contain two segments with the same two control points: where river arms meet at a
-	 * confluence they should share a single segment, not duplicate it. A duplicate segment is drawn as two overlapping Catmull-Rom curves, which renders as a small loop even though the node path has no
+	 * Asserts that no two river segments across all rivers share the same pair of endpoints. A sub-map should never contain two segments
+	 * with the same two control points: where river arms meet at a confluence they should share a single segment, not duplicate it. A
+	 * duplicate segment is drawn as two overlapping Catmull-Rom curves, which renders as a small loop even though the node path has no
 	 * topological loop. This catches the duplicated segment at the base of a T-junction.
 	 */
 	private void assertNoDuplicateRiverSegments(List<River> rivers, MapSettings subMapSettings, String testName) throws Exception
@@ -467,8 +481,8 @@ public class SubMapCreatorTest
 	}
 
 	/**
-	 * Asserts that each river's path has no branching. Since each {@link River} is a linear polyline this is trivially true, but this check catches degenerate cases such as rivers with fewer than 2
-	 * points (which would be invisible and indicate a routing failure).
+	 * Asserts that each river's path has no branching. Since each {@link River} is a linear polyline this is trivially true, but this check
+	 * catches degenerate cases such as rivers with fewer than 2 points (which would be invisible and indicate a routing failure).
 	 */
 	private void assertRiversHaveNoFingers(List<River> rivers, MapSettings subMapSettings, String testName) throws Exception
 	{

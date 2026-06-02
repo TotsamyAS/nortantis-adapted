@@ -112,7 +112,8 @@ public class SubMapCreator
 		newSettings.riverFont = scaleFontSize(newSettings.riverFont, fontScale);
 		// Initialize fresh empty edits so createGraphForUnitTests will create elevation (isInitialized=false).
 		newSettings.edits = new MapEdits();
-		// The graph must use originalResolution so buildRiverFromEdgePath's division by originalResolution gives correct sub-map RI.
+		// The sub-map graph must be built at originalResolution so the RI ↔ pixel conversions used when transferring rivers and icons
+		// (which divide graph-pixel coordinates by originalResolution) land in the correct sub-map RI space.
 		newSettings.resolution = originalResolution;
 
 		// Build the WorldGraph for the sub-map (to get center positions and count).
@@ -573,9 +574,20 @@ public class SubMapCreator
 	/**
 	 * Transfers rivers from the original map into {@code newEdits.rivers}.
 	 * <p>
-	 * When {@code redistributeIcons} is {@code false}, each river path is clipped to the selection bounds and transformed directly into
-	 * sub-map RI coordinates (same coordinate transform used for roads). When {@code redistributeIcons} is {@code true}, each river is
-	 * re-routed through the new graph using greedy pathfinding so that river paths align with the new polygon topology.
+	 * <b>This is intended, load-bearing behavior — do not collapse the two branches.</b> {@code redistributeIcons} mirrors the detail-level
+	 * choice in {@link nortantis.swing.SubMapDialog}: it is {@code false} for "Match source detail" and {@code true} for the custom
+	 * "Choose" detail level (more polygons than the source). The two cases deliberately differ:
+	 * </p>
+	 * <ul>
+	 * <li><b>Match source detail ({@code redistributeIcons == false}):</b> each river path is clipped to the selection and transformed
+	 * directly into sub-map RI coordinates (the same coordinate transform used for roads), preserving the original river shape exactly as a
+	 * freehand {@link River} polyline. {@link #removeLoops} drops any self-touching loop inherited from the source data.</li>
+	 * <li><b>Choose / custom detail ({@code redistributeIcons == true}):</b> rivers are <em>redistributed</em> — re-routed through the
+	 * sub-map's finer graph via {@link #transferPolylineToSubMap} so they follow the new polygon topology, matching how icons are
+	 * redistributed across the new polygons in this mode. This is why the Choose detail level looks different from a magnified copy.</li>
+	 * </ul>
+	 * <p>
+	 * Either way {@link #removeDuplicateRiverSegments} trims overlaps where arms meet at a confluence.
 	 * </p>
 	 */
 	private static void transferRivers(WorldGraph originalGraph, MapEdits originalEdits, WorldGraph newGraph, Rectangle selectionBoundsRI, MapEdits newEdits, double originalResolution,
@@ -590,16 +602,22 @@ public class SubMapCreator
 
 		if (!redistributeIcons)
 		{
+			// Match source detail: copy each river over exactly, preserving its shape.
 			for (River river : originalEdits.rivers)
 			{
 				for (River clippedRiver : clipRiverPath(river, selectionBoundsRI, newGenWidth, newGenHeight, riverLevelScale))
 				{
-					newEdits.rivers.add(clippedRiver);
+					River simpleRiver = removeLoops(clippedRiver);
+					if (simpleRiver != null)
+					{
+						newEdits.rivers.add(simpleRiver);
+					}
 				}
 			}
 		}
 		else
 		{
+			// Choose / custom detail: redistribute rivers by re-routing them through the new, finer graph.
 			for (River river : originalEdits.rivers)
 			{
 				River transferredRiver = transferPolylineToSubMap(river, riverLevelScale, selectionBoundsRI, newGraph, originalGraph, originalEdits, newEdits, originalResolution);
@@ -652,6 +670,54 @@ public class SubMapCreator
 
 		// Drop any river trimmed below a drawable length.
 		rivers.removeIf(river -> river.nodes.size() < 2);
+	}
+
+	/**
+	 * Returns a copy of {@code river} with any loops removed, or {@code river} itself if it has none. A loop is a path point that repeats:
+	 * the original map's river-finding can produce a cyclic edge chain (see {@code WorldGraph.followRiver}, which closes the loop by adding
+	 * a final edge back to an already-visited corner), and {@code GraphRiver.getOrderedCorners} then linearizes that cycle into a path
+	 * whose last leg returns to an earlier point. Such a loop draws as a small overlapping curl. We excise it by dropping the path points
+	 * between the two occurrences of the repeated location, bridging the kept point to the segment that continued past the duplicate.
+	 * Returns {@code null} if the river is reduced below a drawable length.
+	 */
+	private static River removeLoops(River river)
+	{
+		List<RiverPathNode> nodes = new ArrayList<>(river.nodes);
+		boolean changed = false;
+		boolean foundLoop = true;
+		while (foundLoop)
+		{
+			foundLoop = false;
+			Map<Point, Integer> firstIndexByLoc = new HashMap<>();
+			for (int j = 0; j < nodes.size(); j++)
+			{
+				Point loc = nodes.get(j).getLoc();
+				Integer i = firstIndexByLoc.get(loc);
+				if (i != null)
+				{
+					// Bridge the kept point (index i) to whatever followed the duplicate (index j), using the
+					// duplicate's outgoing segment metadata, then drop the cycle body (indexes i+1 .. j).
+					RiverPathNode duplicate = nodes.get(j);
+					RiverPathNode kept = nodes.get(i);
+					nodes.set(i, new RiverPathNode(kept.getLoc(), duplicate.getWidthLevelToNext(), duplicate.getSeedToNext(), duplicate.getEdgeIndexToNext()));
+					nodes.subList(i + 1, j + 1).clear();
+					changed = true;
+					foundLoop = true;
+					break;
+				}
+				firstIndexByLoc.put(loc, j);
+			}
+		}
+
+		if (!changed)
+		{
+			return river;
+		}
+		if (nodes.size() < 2)
+		{
+			return null;
+		}
+		return new River(nodes);
 	}
 
 	private static boolean isSegmentShared(Map<OrderlessPair<Point>, Integer> segmentCounts, Point a, Point b)
@@ -782,12 +848,14 @@ public class SubMapCreator
 			}
 		}
 
-		// Replace the final per-polyline finger prune with a path-simplification that also eliminates
-		// loops introduced when consecutive segment paths partially overlap in the new graph.
-		// Falls back to per-component simplification when the polyline has a gap (disconnected
-		// segments from a failed routing), cleaning up branches and cycles within each piece.
-		simplifyToPath(polylineEdgeLevels, firstCorner, lastCorner);
+		// Merge the loop-closing edges in first, then reduce the whole edge set to a single simple path
+		// from firstCorner to lastCorner. simplifyToPath does a shortest-edge BFS, so any branches or
+		// switchbacks introduced where consecutive segment sub-paths overlap in the new graph are
+		// discarded here. This must run AFTER the merge: if loop-closing edges are added back after
+		// simplification, buildRiverFromEdgePath walks a non-simple graph and detours through them,
+		// producing tight switchbacks that render as polygon-sized loops in the drawn river.
 		loopClosingEdgeLevels.forEach((k, v) -> polylineEdgeLevels.merge(k, v, Math::max));
+		simplifyToPath(polylineEdgeLevels, firstCorner, lastCorner);
 
 		return buildRiverFromEdgePath(polylineEdgeLevels, firstCorner, lastCorner, originalResolution);
 	}
@@ -1053,10 +1121,10 @@ public class SubMapCreator
 	 * Returns a list of {@link River} sub-paths (each with ≥ 2 points) in new-map RI coordinates, with width levels scaled by
 	 * {@code riverLevelScale} and capped at {@link GraphRiver#MAX_RIVER_LEVEL}.
 	 * <p>
-	 * Edge indices on the original river's {@link RiverPathNode}s are intentionally <em>not</em> propagated to the result: this path runs
-	 * when the sub-map preserves the original control points exactly (preserve-detail mode), but the sub-map has its own independent
-	 * {@link WorldGraph} so original edge indices would point at the wrong edges (or out of range). {@link River#fromLocationsAndWidths}
-	 * creates nodes with {@link RiverPathNode#EDGE_INDEX_NONE}, which is the correct value here.
+	 * Edge indices on the original river's {@link RiverPathNode}s are intentionally <em>not</em> propagated to the result: the sub-map has
+	 * its own independent {@link WorldGraph} so original edge indices would point at the wrong edges (or out of range).
+	 * {@link River#fromLocationsAndWidths} creates nodes with {@link RiverPathNode#EDGE_INDEX_NONE}, which is the correct value here — the
+	 * resulting sub-map river is a freehand polyline that {@link nortantis.RiverDrawer} renders directly.
 	 * </p>
 	 */
 	private static List<River> clipRiverPath(River river, Rectangle selectionBounds, int newWidth, int newHeight, double riverLevelScale)

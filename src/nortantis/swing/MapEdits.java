@@ -60,17 +60,15 @@ public class MapEdits implements Serializable
 	public boolean bakeGeneratedTextAsEdits;
 
 	/**
-	 * Not stored. True when the line1Bounds/line2Bounds on the MapText entries in {@link #text}
-	 * cannot be trusted to match the current rendering resolution — either because this MapEdits
-	 * was just constructed, just deep-copied (e.g. an undo snapshot being restored), or has not
-	 * yet been the subject of a full-bounds text draw. Set to false by {@link nortantis.TextDrawer}
-	 * after a full-bounds pass; reset to true by {@link #deepCopy()}.
-	 * {@link nortantis.TextDrawer#updateTextBoundsIfNeeded} consults this flag at the end of every
+	 * Not stored. True when the line1Bounds/line2Bounds on the MapText entries in {@link #text} cannot be trusted to match the current
+	 * rendering resolution — either because this MapEdits was just constructed, just deep-copied (e.g. an undo snapshot being restored), or
+	 * has not yet been the subject of a full-bounds text draw. Set to false by {@link nortantis.TextDrawer} after a full-bounds pass; reset
+	 * to true by {@link #deepCopy()}. {@link nortantis.TextDrawer#updateTextBoundsIfNeeded} consults this flag at the end of every
 	 * incremental draw to decide whether to recompute bounds. Excluded from {@link #equals(Object)}.
 	 *
-	 * Polarity note: defaults to true (Java's default for boolean is false, so we set it true in the
-	 * constructor and in deepCopy). That keeps "needs refresh" as the safe default — a freshly
-	 * constructed MapEdits has null bounds and must be refreshed before its bounds are trusted.
+	 * Polarity note: defaults to true (Java's default for boolean is false, so we set it true in the constructor and in deepCopy). That
+	 * keeps "needs refresh" as the safe default — a freshly constructed MapEdits has null bounds and must be refreshed before its bounds
+	 * are trusted.
 	 */
 	public boolean textBoundsNeedRefresh;
 

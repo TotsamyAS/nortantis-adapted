@@ -205,9 +205,9 @@ public class MapEditingPanel extends UnscaledImagePanel
 	}
 
 	/**
-	 * "Hover" polylines, drawn in the control-point outline color (orange) rather than the brighter selection color. Used to visualize
-	 * the straight inter-CP segments of a river/road as the mouse approaches them, so the user can see the click target geometry
-	 * without confusing it with an actual selection.
+	 * "Hover" polylines, drawn in the control-point outline color (orange) rather than the brighter selection color. Used to visualize the
+	 * straight inter-CP segments of a river/road as the mouse approaches them, so the user can see the click target geometry without
+	 * confusing it with an actual selection.
 	 */
 	public void addHoverPolyline(List<Point> line)
 	{
@@ -230,9 +230,9 @@ public class MapEditingPanel extends UnscaledImagePanel
 	}
 
 	/**
-	 * Sets the control-point locations that should be drawn as filled (rather than outlined) circles to indicate selection. These are
-	 * the road/river CPs the user has actively selected in edit mode for multi-select operations (move, width change, delete). Pass null
-	 * or empty to clear the selected visual.
+	 * Sets the control-point locations that should be drawn as filled (rather than outlined) circles to indicate selection. These are the
+	 * road/river CPs the user has actively selected in edit mode for multi-select operations (move, width change, delete). Pass null or
+	 * empty to clear the selected visual.
 	 */
 	public void setSelectedControlPointCircles(List<Point> circles)
 	{
@@ -256,8 +256,8 @@ public class MapEditingPanel extends UnscaledImagePanel
 	}
 
 	/**
-	 * Replaces the hover-ring set with the given points. Used when more than one CP should show the yellow hover indicator
-	 * (e.g. when a wide edit brush covers several CPs at once). See {@link #setHoveredRoadControlPoint} for {@code filled} semantics.
+	 * Replaces the hover-ring set with the given points. Used when more than one CP should show the yellow hover indicator (e.g. when a
+	 * wide edit brush covers several CPs at once). See {@link #setHoveredRoadControlPoint} for {@code filled} semantics.
 	 */
 	public void setHoveredRoadControlPoints(List<Point> points, boolean filled)
 	{
@@ -1040,8 +1040,7 @@ public class MapEditingPanel extends UnscaledImagePanel
 	{
 		boolean hasSelected = selectedRoadControlPointCircles != null && !selectedRoadControlPointCircles.isEmpty();
 		boolean hasHovered = hoveredRoadControlPoints != null && !hoveredRoadControlPoints.isEmpty();
-		if ((roadControlPointCircles == null || roadControlPointCircles.isEmpty()) && !hasSelected && !hasHovered
-				&& freeHandPreviewPath == null)
+		if ((roadControlPointCircles == null || roadControlPointCircles.isEmpty()) && !hasSelected && !hasHovered && freeHandPreviewPath == null)
 		{
 			return;
 		}
@@ -1054,12 +1053,12 @@ public class MapEditingPanel extends UnscaledImagePanel
 		g2.setStroke(new BasicStroke(strokeWidth));
 
 		// CP visual hierarchy:
-		//   orange ring        → CP is on a highlighted line, cursor not over it (and, in edit mode, also the hover indicator —
-		//                        would-be-added CPs already get this ring via setControlPointCircles, so the stroked hover variant
-		//                        simply re-draws in orange to keep the visual consistent)
-		//   yellow ring + dot  → CP is selected, or is the decisive draw-mode hover target. Drawn as an open ring (so the river/road
-		//                        shows through the middle) with a small solid dot marking the exact point. The center dot keeps it
-		//                        distinct from the orange hover ring even without color.
+		// orange ring → CP is on a highlighted line, cursor not over it (and, in edit mode, also the hover indicator —
+		// would-be-added CPs already get this ring via setControlPointCircles, so the stroked hover variant
+		// simply re-draws in orange to keep the visual consistent)
+		// yellow ring + dot → CP is selected, or is the decisive draw-mode hover target. Drawn as an open ring (so the river/road
+		// shows through the middle) with a small solid dot marking the exact point. The center dot keeps it
+		// distinct from the orange hover ring even without color.
 		// Drawn in that order so a hovered or selected CP's glyph covers the underlying orange ring.
 		if (roadControlPointCircles != null)
 		{
@@ -1256,8 +1255,8 @@ public class MapEditingPanel extends UnscaledImagePanel
 
 	/**
 	 * Returns true if the given screen point falls inside the multi-icon selection bounding box currently drawn around the icons being
-	 * edited. Returns false when no such box is visible (e.g. nothing selected, or a single icon is selected — that case shows a small
-	 * tool overlay rather than a group bounding box).
+	 * edited. Returns false when no such box is visible (e.g. nothing selected, or a single icon is selected — that case shows a small tool
+	 * overlay rather than a group bounding box).
 	 */
 	public boolean isPointInsideMultiIconSelectionBox(java.awt.Point screenPoint)
 	{

@@ -76,8 +76,8 @@ public final class PathOperations
 	}
 
 	/**
-	 * Removes every segment in {@code removedSegments} from {@code path}, returning the remaining sub-paths (each with at least 2 nodes).
-	 * A segment matches by its unordered endpoint-location pair, so paths drawn in either direction are handled.
+	 * Removes every segment in {@code removedSegments} from {@code path}, returning the remaining sub-paths (each with at least 2 nodes). A
+	 * segment matches by its unordered endpoint-location pair, so paths drawn in either direction are handled.
 	 *
 	 * <p>
 	 * Paths that share only a node <em>location</em> with a removed segment (e.g. another river branching off a junction whose segment
@@ -128,15 +128,14 @@ public final class PathOperations
 	 * the path is split at each, and the last node of each fragment ending at a removed edge has its "to-next" metadata cleared.</li>
 	 * <li>{@code isolatedNodesToRemove} indexes nodes to drop with a stitch (the surviving CP before the removed CP has its "to-next"
 	 * metadata replaced via {@link NodeMetadataOps#withStitchedToNextMetadata}, since the new bridging segment doesn't follow a single
-	 * Voronoi edge anymore). If the removed node was the original path's last surviving node in its fragment, the new last node's
-	 * metadata is fully cleared instead.</li>
+	 * Voronoi edge anymore). If the removed node was the original path's last surviving node in its fragment, the new last node's metadata
+	 * is fully cleared instead.</li>
 	 * </ul>
 	 *
 	 * The two sets are independent — a node can be removed without its surrounding edges being in {@code edgesToRemove}, and vice versa.
 	 * Fragments with fewer than 2 surviving nodes are dropped (orphan CPs aren't a representable path).
 	 */
-	public static <T extends PathNode> List<List<T>> applySelectionDeletes(List<T> originalNodes, Set<Integer> isolatedNodesToRemove,
-			Set<Integer> edgesToRemove, NodeMetadataOps<T> ops)
+	public static <T extends PathNode> List<List<T>> applySelectionDeletes(List<T> originalNodes, Set<Integer> isolatedNodesToRemove, Set<Integer> edgesToRemove, NodeMetadataOps<T> ops)
 	{
 		List<List<T>> fragments = new ArrayList<>();
 		if (originalNodes == null || originalNodes.isEmpty())
@@ -192,11 +191,11 @@ public final class PathOperations
 	 *
 	 * <p>
 	 * The reason: when a path is split, the segments that used to flank the cut become new end segments. End segments are typically
-	 * rendered with a synthetic reflection control point in place of the real neighbor (see {@code RiverDrawer.buildSegmentPathPixels}
-	 * and {@code CurveCreator.createCurve(List)}), which changes the Catmull-Rom curve shape along the whole new end segment. The redraw
-	 * bounds must therefore cover both endpoints of each new end segment — otherwise the curve drawn inside the bounds (new shape) tears
-	 * from the unchanged pixels outside (old shape from the previous full draw). Multi-path junctions are handled: a path that merely
-	 * happened to start/end at a cut point also gets split, so its inner neighbor needs to be reported too.
+	 * rendered with a synthetic reflection control point in place of the real neighbor (see {@code RiverDrawer.buildSegmentPathPixels} and
+	 * {@code CurveCreator.createCurve(List)}), which changes the Catmull-Rom curve shape along the whole new end segment. The redraw bounds
+	 * must therefore cover both endpoints of each new end segment — otherwise the curve drawn inside the bounds (new shape) tears from the
+	 * unchanged pixels outside (old shape from the previous full draw). Multi-path junctions are handled: a path that merely happened to
+	 * start/end at a cut point also gets split, so its inner neighbor needs to be reported too.
 	 *
 	 * @param pathsAfterSplit
 	 *            the node lists of all paths after the split has been applied
@@ -413,7 +412,8 @@ public final class PathOperations
 	 * Returns up to {@code 2*radius+1} node locations from {@code path}, centered on {@code centerIndex} and clamped to the path's bounds.
 	 * Returns an empty list for null/empty paths or when the clamped range is empty.
 	 *
-	 * <p>For incremental-redraw bounds covering one control-point edit, pass {@link #CATMULL_ROM_PROPAGATION_RADIUS} as {@code radius}.
+	 * <p>
+	 * For incremental-redraw bounds covering one control-point edit, pass {@link #CATMULL_ROM_PROPAGATION_RADIUS} as {@code radius}.
 	 */
 	public static List<Point> nodeLocationsAround(List<? extends PathNode> path, int centerIndex, int radius)
 	{

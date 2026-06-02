@@ -16,7 +16,8 @@ import java.util.List;
  * builds three {@link JButton}s with their shortcut keys (Ctrl+C / Ctrl+V / Delete) already bound, wired to caller-supplied actions, and
  * exposes a single {@link #addToOrganizer} entry point that places them in a tool's options panel and returns the row hider.
  *
- * <p>Callers that need an extra tool-specific button alongside (e.g. IconsTool's "Reset Scale") pass it via the overload that accepts
+ * <p>
+ * Callers that need an extra tool-specific button alongside (e.g. IconsTool's "Reset Scale") pass it via the overload that accepts
  * additional components — they get rendered in the same row as the standard three.
  */
 public class EditClipboardButtonsWidget

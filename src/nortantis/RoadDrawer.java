@@ -434,9 +434,9 @@ public class RoadDrawer
 	/**
 	 * Attempts to merge each road in {@code candidates} with any other road in {@code roads} whose endpoint now matches. Used after edits
 	 * that may have changed a road's endpoints (control-point deletion, segment cut, erase) — a newly-exposed endpoint may coincide with
-	 * another existing road's endpoint, in which case the two should be one continuous road. When a merge succeeds the candidate is
-	 * removed from {@code roads} (its data has been folded into the matched road). A second join attempt is made on the extended result
-	 * in case it can also connect at its other end.
+	 * another existing road's endpoint, in which case the two should be one continuous road. When a merge succeeds the candidate is removed
+	 * from {@code roads} (its data has been folded into the matched road). A second join attempt is made on the extended result in case it
+	 * can also connect at its other end.
 	 *
 	 * @return The roads whose nodes were extended by absorbing a candidate.
 	 */

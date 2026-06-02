@@ -120,6 +120,7 @@ public class LandWaterTool extends EditorTool
 	private List<MovingCP> dragMovingCPs = null;
 	// Before-drag snapshots of every line that has any moving CP. Used to compute redraw bounds covering the pre-drag curve shape.
 	private Map<Object, List<Point>> dragBeforeSnapshots = null;
+
 	/** A control point participating in a move-drag — line + index, plus its position at drag-start so we can apply the cursor delta. */
 	private record MovingCP(Object line, int nodeIndex, Point startLocRI)
 	{
@@ -152,9 +153,8 @@ public class LandWaterTool extends EditorTool
 	}
 
 	/**
-	 * Result of hit-testing the cursor against rivers (or roads): the closest control point or
-	 * segment if one is in range, or null at the call site. Exactly one of {@code river} or
-	 * {@code road} is non-null. Exactly one of {@code controlPointIndex} or {@code segmentIndex}
+	 * Result of hit-testing the cursor against rivers (or roads): the closest control point or segment if one is in range, or null at the
+	 * call site. Exactly one of {@code river} or {@code road} is non-null. Exactly one of {@code controlPointIndex} or {@code segmentIndex}
 	 * is &gt;= 0.
 	 */
 	private record LineHit(River river, Road road, int controlPointIndex, int segmentIndex)
@@ -320,9 +320,7 @@ public class LandWaterTool extends EditorTool
 			});
 			// Each spinner click is an atomic edit — snapshot the prior widths before applying it, then commit an undo point after. The
 			// slider's mouse listener handles the drag analogue; without this, spinner clicks change widths but never push undo points.
-			riverWidthSliderWithSpinner.setSpinnerEditHooks(
-					() -> sliderEditWidthsBeforeDrag = captureSelectedRiverSegmentWidths(),
-					() -> commitSliderEditIfChanged());
+			riverWidthSliderWithSpinner.setSpinnerEditHooks(() -> sliderEditWidthsBeforeDrag = captureSelectedRiverSegmentWidths(), () -> commitSliderEditIfChanged());
 		}
 
 		// River draw style (graph vs. free-hand)
@@ -562,7 +560,9 @@ public class LandWaterTool extends EditorTool
 
 	// -------------------- Selection helpers --------------------
 
-	/** True if any control point of the active line type is selected. Null-safe (the maps may not be initialized yet during construction). */
+	/**
+	 * True if any control point of the active line type is selected. Null-safe (the maps may not be initialized yet during construction).
+	 */
 	private boolean hasAnySelection()
 	{
 		return (selectedRiverCPs != null && !selectedRiverCPs.isEmpty()) || (selectedRoadCPs != null && !selectedRoadCPs.isEmpty());
@@ -761,8 +761,8 @@ public class LandWaterTool extends EditorTool
 	 * <li>Pairs of selected consecutive CPs are treated as a "selected segment" and dropped like right-click Delete Segment (the two
 	 * endpoint CPs survive unless they become orphans, which the &lt;2-node fragment drop handles).</li>
 	 * <li>A selected CP whose neighbors are <em>not</em> also selected is "isolated" and dropped like right-click Delete CP: the path is
-	 * stitched between its previous and next surviving CPs (predecessor's edge-index metadata cleared because the bridge no longer
-	 * follows a single Voronoi edge).</li>
+	 * stitched between its previous and next surviving CPs (predecessor's edge-index metadata cleared because the bridge no longer follows
+	 * a single Voronoi edge).</li>
 	 * </ul>
 	 * Pre-edit selection is cleared (mapping indices across multi-fragment splits would be brittle and the user can re-select what
 	 * survives).
@@ -801,8 +801,7 @@ public class LandWaterTool extends EditorTool
 			{
 				continue;
 			}
-			List<List<RiverPathNode>> fragments = PathOperations.applySelectionDeletes(originalNodes, plan.isolatedNodes, plan.edges,
-					RiverDrawer.RIVER_OPS);
+			List<List<RiverPathNode>> fragments = PathOperations.applySelectionDeletes(originalNodes, plan.isolatedNodes, plan.edges, RiverDrawer.RIVER_OPS);
 			applyRiverFragments(river, fragments, changedRivers);
 		}
 
@@ -821,8 +820,7 @@ public class LandWaterTool extends EditorTool
 			{
 				continue;
 			}
-			List<List<RoadPathNode>> fragments = PathOperations.applySelectionDeletes(originalNodes, plan.isolatedNodes, plan.edges,
-					RoadDrawer.ROAD_OPS);
+			List<List<RoadPathNode>> fragments = PathOperations.applySelectionDeletes(originalNodes, plan.isolatedNodes, plan.edges, RoadDrawer.ROAD_OPS);
 			applyRoadFragments(road, fragments, changedRoads);
 		}
 
@@ -912,8 +910,8 @@ public class LandWaterTool extends EditorTool
 
 	/**
 	 * Replaces {@code river}'s nodes with the first surviving fragment (if any) and pushes the rest as new River objects. Removes
-	 * {@code river} from edits when no fragments survive. Every River the caller still has a reference to (modified or freshly added)
-	 * is appended to {@code changed} so the merge + redraw pass can find them.
+	 * {@code river} from edits when no fragments survive. Every River the caller still has a reference to (modified or freshly added) is
+	 * appended to {@code changed} so the merge + redraw pass can find them.
 	 */
 	private void applyRiverFragments(River river, List<List<RiverPathNode>> fragments, List<River> changed)
 	{
@@ -1034,9 +1032,9 @@ public class LandWaterTool extends EditorTool
 	}
 
 	/**
-	 * Pastes the clipboard as new lines of the same type. When the mouse is over the map, the bounding box of the copied CPs is centered
-	 * on the cursor. When the mouse isn't over the map (e.g. the user clicked the Paste button), the copies are translated by a small
-	 * fixed offset so they don't land exactly on top of the originals — matches IconsTool's paste behavior.
+	 * Pastes the clipboard as new lines of the same type. When the mouse is over the map, the bounding box of the copied CPs is centered on
+	 * the cursor. When the mouse isn't over the map (e.g. the user clicked the Paste button), the copies are translated by a small fixed
+	 * offset so they don't land exactly on top of the originals — matches IconsTool's paste behavior.
 	 */
 	private void pasteCopiedCPs()
 	{
@@ -1061,10 +1059,14 @@ public class LandWaterTool extends EditorTool
 			{
 				for (Point p : run)
 				{
-					if (p.x < minX) minX = p.x;
-					if (p.x > maxX) maxX = p.x;
-					if (p.y < minY) minY = p.y;
-					if (p.y > maxY) maxY = p.y;
+					if (p.x < minX)
+						minX = p.x;
+					if (p.x > maxX)
+						maxX = p.x;
+					if (p.y < minY)
+						minY = p.y;
+					if (p.y > maxY)
+						maxY = p.y;
 				}
 			}
 			Point center = new Point((minX + maxX) / 2.0, (minY + maxY) / 2.0);
@@ -1139,8 +1141,8 @@ public class LandWaterTool extends EditorTool
 	}
 
 	/**
-	 * Distance threshold (in graph pixels) for showing the hover highlight on a river/road. The right-click context-menu hit-test uses
-	 * the same threshold so the menu becomes available exactly when the line is visually highlighted.
+	 * Distance threshold (in graph pixels) for showing the hover highlight on a river/road. The right-click context-menu hit-test uses the
+	 * same threshold so the menu becomes available exactly when the line is visually highlighted.
 	 */
 	private double getHoverHighlightThresholdInGraphPixels()
 	{
@@ -1428,10 +1430,10 @@ public class LandWaterTool extends EditorTool
 
 	/**
 	 * @param customSegmentThresholdGraphPixels
-	 *            When non-negative, overrides the default {@code controlPointRadius * 2.0} segment hit threshold. Used by the
-	 *            right-click context-menu hit-test, which wants to match the on-screen hover highlight range so the menu is available
-	 *            whenever the line is visually highlighted (avoiding the confusing case where the highlight is shown but right-click
-	 *            does nothing because the cursor isn't close enough to the centerline). Pass {@code -1} for the default threshold.
+	 *            When non-negative, overrides the default {@code controlPointRadius * 2.0} segment hit threshold. Used by the right-click
+	 *            context-menu hit-test, which wants to match the on-screen hover highlight range so the menu is available whenever the line
+	 *            is visually highlighted (avoiding the confusing case where the highlight is shown but right-click does nothing because the
+	 *            cursor isn't close enough to the centerline). Pass {@code -1} for the default threshold.
 	 */
 	private LineHit editModeHitTest(java.awt.Point panelPoint, LineType activeType, River scopeRiver, Road scopeRoad, double customSegmentThresholdGraphPixels)
 	{
@@ -1544,8 +1546,8 @@ public class LandWaterTool extends EditorTool
 	}
 
 	/**
-	 * Refreshes the river-width slider's visibility based on the current mode and selection state. Should be called after any change to
-	 * the selection or mode.
+	 * Refreshes the river-width slider's visibility based on the current mode and selection state. Should be called after any change to the
+	 * selection or mode.
 	 */
 	private void refreshRiverWidthSliderVisibility()
 	{
@@ -1560,8 +1562,8 @@ public class LandWaterTool extends EditorTool
 
 	/**
 	 * Refreshes the edit-mode hover visuals: outlined circles for control points on any line near the cursor, filled circles for
-	 * currently-selected control points (which are always drawn regardless of cursor distance), and a narrow hover ring on the
-	 * single CP directly under the cursor (if any).
+	 * currently-selected control points (which are always drawn regardless of cursor distance), and a narrow hover ring on the single CP
+	 * directly under the cursor (if any).
 	 */
 	private void updateEditModeHoverDisplay(java.awt.Point mouseLocation, LineType type)
 	{
@@ -1569,8 +1571,8 @@ public class LandWaterTool extends EditorTool
 	}
 
 	/**
-	 * Refreshes the edit-mode hover preview. The highlighted CPs and segments are exactly what a press at the current cursor position
-	 * would select, so the preview is never out-of-sync with the press behavior (both call {@link #computePressOutcome}).
+	 * Refreshes the edit-mode hover preview. The highlighted CPs and segments are exactly what a press at the current cursor position would
+	 * select, so the preview is never out-of-sync with the press behavior (both call {@link #computePressOutcome}).
 	 */
 	private void updateEditModeHoverDisplay(java.awt.Point mouseLocation, LineType type, boolean ctrlDown)
 	{
@@ -1660,8 +1662,8 @@ public class LandWaterTool extends EditorTool
 	}
 
 	/**
-	 * Adds a hover polyline for every segment that would be implicitly selected by the press (both endpoints in {@code preview}) but
-	 * isn't already (so {@link #applySelectedSegmentsHighlight} would draw it yellow). Keeps preview-orange polylines distinct from
+	 * Adds a hover polyline for every segment that would be implicitly selected by the press (both endpoints in {@code preview}) but isn't
+	 * already (so {@link #applySelectedSegmentsHighlight} would draw it yellow). Keeps preview-orange polylines distinct from
 	 * selection-yellow polylines.
 	 */
 	private void addHoverPolylinesForNewImplicitSegments(LineType activeType, PressOutcome preview, double scale)
@@ -1839,9 +1841,9 @@ public class LandWaterTool extends EditorTool
 	}
 
 	/**
-	 * Whenever the slider value changes AND we're in edit mode with a river segment selected, rewrite every selected segment's width
-	 * level live. The change listener also fires when the slider is synced programmatically from selection;
-	 * {@link #syncingSliderToSelection} suppresses the rewrite in that case.
+	 * Whenever the slider value changes AND we're in edit mode with a river segment selected, rewrite every selected segment's width level
+	 * live. The change listener also fires when the slider is synced programmatically from selection; {@link #syncingSliderToSelection}
+	 * suppresses the rewrite in that case.
 	 */
 	private void handleRiverWidthSliderChanged()
 	{
@@ -2135,8 +2137,7 @@ public class LandWaterTool extends EditorTool
 
 				if (!riverSegmentsToRemove.isEmpty())
 				{
-					List<List<Point>> centerPaths = new ArrayList<>(
-							pointsToCoverInRedrawAfterPathCut(mainWindow.edits.rivers, r -> r.nodes, riverSegmentsToRemove));
+					List<List<Point>> centerPaths = new ArrayList<>(pointsToCoverInRedrawAfterPathCut(mainWindow.edits.rivers, r -> r.nodes, riverSegmentsToRemove));
 					for (River ext : extended)
 					{
 						centerPaths.add(PathOperations.toLocationList(ext.nodes));
@@ -2160,8 +2161,7 @@ public class LandWaterTool extends EditorTool
 				RoadDrawer.removeEmptyOrSinglePointRoads(mainWindow.edits.roads);
 				List<Road> extended = RoadDrawer.mergeAdjacentRoads(changed, mainWindow.edits.roads);
 				mapEditingPanel.clearHighlightedPolylines();
-				List<List<Point>> centerPaths = new ArrayList<>(
-						pointsToCoverInRedrawAfterPathCut(mainWindow.edits.roads, r -> r.nodes, roadSegmentsToRemove));
+				List<List<Point>> centerPaths = new ArrayList<>(pointsToCoverInRedrawAfterPathCut(mainWindow.edits.roads, r -> r.nodes, roadSegmentsToRemove));
 				for (Road ext : extended)
 				{
 					centerPaths.add(PathOperations.toLocationList(ext.nodes));
@@ -2480,9 +2480,9 @@ public class LandWaterTool extends EditorTool
 
 	/**
 	 * Bridges the river's natural endpoint(s) to {@code snapStart}/{@code snapEnd} by appending (or prepending) a new node, rather than
-	 * replacing the natural endpoint. This is what the drag preview shows — a polygon path that walks Voronoi corners then bridges from
-	 * the last/first corner to the snap point. Replacing the natural endpoint (the old behavior) made the polygon river end short of the
-	 * snap target when the target was a middle control point of another river (no merge possible, no bridge drawn).
+	 * replacing the natural endpoint. This is what the drag preview shows — a polygon path that walks Voronoi corners then bridges from the
+	 * last/first corner to the snap point. Replacing the natural endpoint (the old behavior) made the polygon river end short of the snap
+	 * target when the target was a middle control point of another river (no merge possible, no bridge drawn).
 	 *
 	 * <p>
 	 * The bridge segment inherits the polygon path's width and gets a fresh seed; its edge index is cleared because the bridge doesn't
@@ -2764,8 +2764,8 @@ public class LandWaterTool extends EditorTool
 	/**
 	 * Edit-mode press handler. Dispatches to one of three modes based on where the click landed and whether the modifier key is held:
 	 * <ul>
-	 * <li><b>Move-drag</b> — press on a CP (with brush 1) or in the brush radius of a CP — replaces the selection with that CP (or
-	 * extends it when Ctrl is held), then arms a move-drag so any subsequent cursor motion translates every selected CP.</li>
+	 * <li><b>Move-drag</b> — press on a CP (with brush 1) or in the brush radius of a CP — replaces the selection with that CP (or extends
+	 * it when Ctrl is held), then arms a move-drag so any subsequent cursor motion translates every selected CP.</li>
 	 * <li><b>Paint-drag (from segment)</b> — press on a segment's centerline — selects both endpoint CPs of the segment, then arms a
 	 * paint-drag so subsequent motion extends the selection with the brush. Does not move the line on accidental drag.</li>
 	 * <li><b>Paint-drag (from empty)</b> — press in empty space — clears the selection (unless Ctrl is held), then arms a paint-drag.</li>
@@ -2819,8 +2819,9 @@ public class LandWaterTool extends EditorTool
 	 * and consumed both by the press handler (which applies it) and the hover-display handler (which renders it as a preview, so the
 	 * highlighted CPs/segments are always exactly the things the press would actually select).
 	 *
-	 * <p>{@code riverCPsAfter} / {@code roadCPsAfter} are independent copies — applying the outcome means clearing the field maps and
-	 * putting these in. {@code isMoveDrag} distinguishes the move-drag arm path from the paint-drag arm path. {@code moveAnchorLine} +
+	 * <p>
+	 * {@code riverCPsAfter} / {@code roadCPsAfter} are independent copies — applying the outcome means clearing the field maps and putting
+	 * these in. {@code isMoveDrag} distinguishes the move-drag arm path from the paint-drag arm path. {@code moveAnchorLine} +
 	 * {@code moveAnchorIdx} are the CP to drag from (one of the selected CPs); they are unset for non-move outcomes.
 	 */
 	private record PressOutcome(Map<River, Set<Integer>> riverCPsAfter, Map<Road, Set<Integer>> roadCPsAfter, boolean isMoveDrag, Object moveAnchorLine, int moveAnchorIdx)
@@ -2828,9 +2829,9 @@ public class LandWaterTool extends EditorTool
 	}
 
 	/**
-	 * Computes what a press at {@code point} would do, without mutating the live selection state. The press handler applies the result;
-	 * the hover-display handler uses it to render a preview that exactly matches what a press would actually do. Keeping a single source
-	 * of truth here is the whole point — otherwise the preview and the press can diverge (which previously led to "I see the segment
+	 * Computes what a press at {@code point} would do, without mutating the live selection state. The press handler applies the result; the
+	 * hover-display handler uses it to render a preview that exactly matches what a press would actually do. Keeping a single source of
+	 * truth here is the whole point — otherwise the preview and the press can diverge (which previously led to "I see the segment
 	 * highlighted but the click selects the CP instead").
 	 */
 	private PressOutcome computePressOutcome(java.awt.Point point, boolean ctrlDown, boolean deselectMode, int brushDiameter, LineType activeType)
@@ -2910,8 +2911,7 @@ public class LandWaterTool extends EditorTool
 		// selection — making the user have to re-select before they could drag again.
 		if (!ctrlDown)
 		{
-			double cpGrabRadius = Math.max(Math.max(mapEditingPanel.getRoadControlPointHitRadiusInGraphPixels(), getEditSegmentHitThresholdInGraphPixels()),
-					brushRadiusGraphPixels);
+			double cpGrabRadius = Math.max(Math.max(mapEditingPanel.getRoadControlPointHitRadiusInGraphPixels(), getEditSegmentHitThresholdInGraphPixels()), brushRadiusGraphPixels);
 			double segGrabRadius = Math.max(getEditSegmentHitThresholdInGraphPixels(), brushRadiusGraphPixels);
 			SelectedCPRef grab = findNearestSelectedCP(point, activeType, cpGrabRadius);
 			if (grab == null)
@@ -3010,8 +3010,8 @@ public class LandWaterTool extends EditorTool
 	}
 
 	/**
-	 * Returns the currently-selected CP closest to {@code panelPoint} (of the active type) within {@code maxDistanceGraphPixels}, or
-	 * null if none is within range. Used by the press handler to decide whether a click should grab the existing multi-selection.
+	 * Returns the currently-selected CP closest to {@code panelPoint} (of the active type) within {@code maxDistanceGraphPixels}, or null
+	 * if none is within range. Used by the press handler to decide whether a click should grab the existing multi-selection.
 	 */
 	private SelectedCPRef findNearestSelectedCP(java.awt.Point panelPoint, LineType activeType, double maxDistanceGraphPixels)
 	{
@@ -3147,8 +3147,8 @@ public class LandWaterTool extends EditorTool
 
 	/**
 	 * If the CP at (line, idx) is in the current selection, captures the locations of every selected CP and arms a move-drag. Y-junction
-	 * shared CPs (CPs of OTHER lines at the same locations as selected CPs) are also captured so they move in lockstep. If the CP isn't
-	 * in the selection (e.g. user clicked-then-Ctrl-removed it), no drag is armed.
+	 * shared CPs (CPs of OTHER lines at the same locations as selected CPs) are also captured so they move in lockstep. If the CP isn't in
+	 * the selection (e.g. user clicked-then-Ctrl-removed it), no drag is armed.
 	 */
 	private void armMoveDragIfApplicable(Object line, int idx)
 	{
@@ -3332,10 +3332,10 @@ public class LandWaterTool extends EditorTool
 	/**
 	 * Drag tick. Two flavors:
 	 * <ul>
-	 * <li><b>Move-drag</b> ({@code dragIsPaint == false}) — translates every CP in {@link #dragMovingCPs} by the cursor delta and
-	 * redraws the affected map regions. The undo point is set only on release.</li>
-	 * <li><b>Paint-drag</b> ({@code dragIsPaint == true}) — accumulates CPs/segments under the brush into the selection (without Ctrl)
-	 * or into a deselection (with Ctrl in deselect mode). Does not modify any line geometry.</li>
+	 * <li><b>Move-drag</b> ({@code dragIsPaint == false}) — translates every CP in {@link #dragMovingCPs} by the cursor delta and redraws
+	 * the affected map regions. The undo point is set only on release.</li>
+	 * <li><b>Paint-drag</b> ({@code dragIsPaint == true}) — accumulates CPs/segments under the brush into the selection (without Ctrl) or
+	 * into a deselection (with Ctrl in deselect mode). Does not modify any line geometry.</li>
 	 * </ul>
 	 */
 	private void handleEditModeControlPointDrag(MouseEvent e)
@@ -3427,9 +3427,9 @@ public class LandWaterTool extends EditorTool
 	}
 
 	/**
-	 * Refreshes the live-selection visuals (filled CP circles + selected-segment polylines) and clears every hover-preview visual
-	 * (orange CP outlines, yellow hover rings, hover-color segment polylines). Used during a move-drag, where the hover preview is
-	 * misleading because the user can't switch the selection mid-drag.
+	 * Refreshes the live-selection visuals (filled CP circles + selected-segment polylines) and clears every hover-preview visual (orange
+	 * CP outlines, yellow hover rings, hover-color segment polylines). Used during a move-drag, where the hover preview is misleading
+	 * because the user can't switch the selection mid-drag.
 	 */
 	private void renderSelectionOnlyVisuals(LineType activeType)
 	{
@@ -3490,8 +3490,8 @@ public class LandWaterTool extends EditorTool
 
 	/**
 	 * Commits a move-drag: records the undo point and triggers a normal-priority redraw scoped to each moved CP's neighborhood, plus a
-	 * low-priority full-line redraw for any roads that had CPs moved (so the dashed pattern is rephased across the whole road).
-	 * No-op for paint-drags (they don't modify geometry).
+	 * low-priority full-line redraw for any roads that had CPs moved (so the dashed pattern is rephased across the whole road). No-op for
+	 * paint-drags (they don't modify geometry).
 	 */
 	private void handleEditModeControlPointDragEnd()
 	{
@@ -3569,9 +3569,9 @@ public class LandWaterTool extends EditorTool
 	}
 
 	/**
-	 * Re-runs the cursor hit-test and shows a context menu targeted at whatever is under the cursor. Items are context-dependent:
-	 * Delete Control Point when on a control point; Delete Segment, Insert Control Point, and (in edit mode only) Select Segment when on
-	 * a segment. Returns without showing a menu when nothing is in range.
+	 * Re-runs the cursor hit-test and shows a context menu targeted at whatever is under the cursor. Items are context-dependent: Delete
+	 * Control Point when on a control point; Delete Segment, Insert Control Point, and (in edit mode only) Select Segment when on a
+	 * segment. Returns without showing a menu when nothing is in range.
 	 */
 	private void showRiverRoadContextMenu(MouseEvent e)
 	{
@@ -3619,11 +3619,10 @@ public class LandWaterTool extends EditorTool
 	}
 
 	/**
-	 * Deletes the control point identified by {@code hit} (must be a control-point hit). The sticky
-	 * selection is preserved across the edit: if the deleted CP belongs to the sticky river/road,
-	 * the selection is adjusted so the user's other selected CPs on the line keep tracking the same geometric points after the shift.
-	 * If the line drops below 2 control points, the line is removed and any sticky selection on it
-	 * is cleared.
+	 * Deletes the control point identified by {@code hit} (must be a control-point hit). The sticky selection is preserved across the edit:
+	 * if the deleted CP belongs to the sticky river/road, the selection is adjusted so the user's other selected CPs on the line keep
+	 * tracking the same geometric points after the shift. If the line drops below 2 control points, the line is removed and any sticky
+	 * selection on it is cleared.
 	 */
 	private void deleteControlPoint(LineHit hit)
 	{
@@ -3669,9 +3668,9 @@ public class LandWaterTool extends EditorTool
 
 	/**
 	 * Deletes the segment identified by {@code hit} (must be a segment hit). Splits the line at that segment into a "first half" and a
-	 * "second half". The first half mutates the existing line in place; the second half (if non-degenerate) becomes a new line. The
-	 * sticky selection follows the segment when possible: if the sticky segment was before the deleted segment it stays in the first half;
-	 * if it was after it moves to the second half. The deleted segment itself can't be sticky after the operation.
+	 * "second half". The first half mutates the existing line in place; the second half (if non-degenerate) becomes a new line. The sticky
+	 * selection follows the segment when possible: if the sticky segment was before the deleted segment it stays in the first half; if it
+	 * was after it moves to the second half. The deleted segment itself can't be sticky after the operation.
 	 */
 	private void deleteSegment(LineHit hit)
 	{
@@ -3844,8 +3843,8 @@ public class LandWaterTool extends EditorTool
 	}
 
 	/**
-	 * Shifts indices in the selection set of {@code line} after a control point was inserted at index {@code splitSegmentIdx + 1}.
-	 * Indices > splitSegmentIdx shift up by 1.
+	 * Shifts indices in the selection set of {@code line} after a control point was inserted at index {@code splitSegmentIdx + 1}. Indices
+	 * > splitSegmentIdx shift up by 1.
 	 */
 	private void adjustSelectionAfterControlPointInsert(Object line, int splitSegmentIdx)
 	{
@@ -3877,8 +3876,8 @@ public class LandWaterTool extends EditorTool
 	}
 
 	/**
-	 * Splits the selection of {@code modifiedLine} after a segment-cut. Indices &le; deletedSegIdx stay; indices &gt; deletedSegIdx move
-	 * to {@code newLine} (with shifted index). Indices at exactly the cut endpoints (deletedSegIdx, deletedSegIdx+1) stay on whichever
+	 * Splits the selection of {@code modifiedLine} after a segment-cut. Indices &le; deletedSegIdx stay; indices &gt; deletedSegIdx move to
+	 * {@code newLine} (with shifted index). Indices at exactly the cut endpoints (deletedSegIdx, deletedSegIdx+1) stay on whichever
 	 * surviving piece they belong to.
 	 */
 	private void adjustSelectionAfterSegmentDelete(Object modifiedLine, Object newLine, int deletedSegIdx)
@@ -3948,8 +3947,8 @@ public class LandWaterTool extends EditorTool
 	/**
 	 * Commits a modified river's node list in place and triggers a redraw scoped to the segments affected by changing a single control
 	 * point. Pass the deleted/inserted/moved index in {@code beforeChangedIndex} (relative to {@code beforePath}) and the corresponding
-	 * index in the new node list in {@code afterChangedIndex}. The slice radius is {@link PathOperations#CATMULL_ROM_PROPAGATION_RADIUS}
-	 * so the visible curve-shape change is fully covered. Preserves sticky selection.
+	 * index in the new node list in {@code afterChangedIndex}. The slice radius is {@link PathOperations#CATMULL_ROM_PROPAGATION_RADIUS} so
+	 * the visible curve-shape change is fully covered. Preserves sticky selection.
 	 */
 	private void commitRiverEdit(River line, List<Point> beforePath, List<RiverPathNode> newNodes, int beforeChangedIndex, int afterChangedIndex)
 	{
@@ -3977,8 +3976,8 @@ public class LandWaterTool extends EditorTool
 
 	/**
 	 * Attempts to merge {@code modifiedLine} (if non-null) with any existing river whose endpoint now matches and, when a merge happens,
-	 * appends the extended river's full node list to {@code centerPaths} so the incremental redraw covers the join point. The newly
-	 * merged spline curves around the join in a way the candidate's local pre-edit scope would not have covered.
+	 * appends the extended river's full node list to {@code centerPaths} so the incremental redraw covers the join point. The newly merged
+	 * spline curves around the join in a way the candidate's local pre-edit scope would not have covered.
 	 */
 	private void mergeRiverWithNeighborsAndExpandRedrawScope(River modifiedLine, List<List<Point>> centerPaths)
 	{
@@ -4000,8 +3999,7 @@ public class LandWaterTool extends EditorTool
 	 */
 	private void commitRiverCut(List<List<Point>> removedSegments, List<River> changed)
 	{
-		List<List<Point>> centerPaths = new ArrayList<>(
-				pointsToCoverInRedrawAfterPathCut(mainWindow.edits.rivers, r -> r.nodes, removedSegments));
+		List<List<Point>> centerPaths = new ArrayList<>(pointsToCoverInRedrawAfterPathCut(mainWindow.edits.rivers, r -> r.nodes, removedSegments));
 		// The cut may have exposed new endpoints that match an existing river's endpoint — merge to keep splines continuous.
 		List<River> extended = RiverDrawer.mergeAdjacentRivers(changed, mainWindow.edits.rivers);
 		for (River ext : extended)
@@ -4043,8 +4041,7 @@ public class LandWaterTool extends EditorTool
 		}
 		// If the edit changed an endpoint, the line's new endpoint may now match an existing road's endpoint — merge so the spline
 		// continues smoothly across the join. Replace the redraw target with the surviving (extended) road in that case.
-		List<Road> extended = removed ? Collections.emptyList()
-				: RoadDrawer.mergeAdjacentRoads(Collections.singletonList(line), mainWindow.edits.roads);
+		List<Road> extended = removed ? Collections.emptyList() : RoadDrawer.mergeAdjacentRoads(Collections.singletonList(line), mainWindow.edits.roads);
 		if (!extended.isEmpty())
 		{
 			changed = new ArrayList<>(extended);
@@ -4059,8 +4056,7 @@ public class LandWaterTool extends EditorTool
 	/** Road counterpart of {@link #commitRiverCut}. */
 	private void commitRoadCut(List<List<Point>> removedSegments, List<Road> changed)
 	{
-		List<List<Point>> centerPaths = new ArrayList<>(
-				pointsToCoverInRedrawAfterPathCut(mainWindow.edits.roads, r -> r.nodes, removedSegments));
+		List<List<Point>> centerPaths = new ArrayList<>(pointsToCoverInRedrawAfterPathCut(mainWindow.edits.roads, r -> r.nodes, removedSegments));
 		List<Road> extended = RoadDrawer.mergeAdjacentRoads(changed, mainWindow.edits.roads);
 		if (!extended.isEmpty())
 		{
@@ -4134,8 +4130,7 @@ public class LandWaterTool extends EditorTool
 			Point polygonRiverSnapEnd = computeSnapPointForType(e.getPoint(), LineType.RIVER);
 			Set<Edge> river = filterOutOceanAndCoastEdges(updater.mapParts.graph.findPathGreedy(riverStart, end));
 			Point snapEndGraphPixels = polygonRiverSnapEnd == null ? null : polygonRiverSnapEnd.mult(mainWindow.displayQualityScale);
-			Point snapStartGraphPixels = polygonRiverSnapStart == null ? null
-					: polygonRiverSnapStart.mult(mainWindow.displayQualityScale);
+			Point snapStartGraphPixels = polygonRiverSnapStart == null ? null : polygonRiverSnapStart.mult(mainWindow.displayQualityScale);
 			TrimmedRiverPath trimmed = trimRiverPathIfPathOvershootsMouse(river, riverStart, end, snapStartGraphPixels, snapEndGraphPixels);
 			river = trimmed.path();
 			Corner start = trimmed.start();
@@ -4220,8 +4215,7 @@ public class LandWaterTool extends EditorTool
 			Center end = updater.mapParts.graph.findClosestCenter(getPointOnGraph(e.getPoint()));
 			List<Edge> edges = updater.mapParts.graph.findShortestPath(roadStart, end, (ignored1, ignored2, distance) -> distance);
 			Point snapEndGraphPixels = polygonSnapEnd == null ? null : polygonSnapEnd.mult(mainWindow.displayQualityScale);
-			Point snapStartGraphPixels = polygonRoadSnapStart == null ? null
-					: polygonRoadSnapStart.mult(mainWindow.displayQualityScale);
+			Point snapStartGraphPixels = polygonRoadSnapStart == null ? null : polygonRoadSnapStart.mult(mainWindow.displayQualityScale);
 			TrimmedRoadPath trimmed = trimRoadPathIfPathOvershootsMouse(edges, roadStart, end, snapStartGraphPixels, snapEndGraphPixels);
 			edges = trimmed.path();
 			Center start = trimmed.start();
@@ -4307,14 +4301,14 @@ public class LandWaterTool extends EditorTool
 	 * Backtracking is detected with a dot product: at the end, when the bridge direction ({@code snap - end}) points opposite to the
 	 * path-approach direction ({@code end - secondToLast}), the bridge forms a V — going past {@code end} and curving back to the snap
 	 * target. The start mirrors this: when ({@code snap - start}) points opposite to ({@code start - secondFromStart}), the bridge into
-	 * {@code start} reverses the path's departure direction. In both cases the offending terminal Corner is dropped so the bridge
-	 * continues straight from the next interior Corner.
+	 * {@code start} reverses the path's departure direction. In both cases the offending terminal Corner is dropped so the bridge continues
+	 * straight from the next interior Corner.
 	 *
-	 * <p>Each side's trim only fires when its snap is present (no snap → no bridge → nothing to overshoot). It can reduce the path all
-	 * the way to empty — the caller's empty-path synthesis (1-node river bridged to snap) takes over from there.
+	 * <p>
+	 * Each side's trim only fires when its snap is present (no snap → no bridge → nothing to overshoot). It can reduce the path all the way
+	 * to empty — the caller's empty-path synthesis (1-node river bridged to snap) takes over from there.
 	 */
-	private TrimmedRiverPath trimRiverPathIfPathOvershootsMouse(Set<Edge> path, Corner start, Corner end,
-			Point snapStartGraphPixels, Point snapEndGraphPixels)
+	private TrimmedRiverPath trimRiverPathIfPathOvershootsMouse(Set<Edge> path, Corner start, Corner end, Point snapStartGraphPixels, Point snapEndGraphPixels)
 	{
 		if (path == null || path.isEmpty())
 		{
@@ -4382,8 +4376,7 @@ public class LandWaterTool extends EditorTool
 	}
 
 	/** Road counterpart of {@link #trimRiverPathIfPathOvershootsMouse}. See that method for the rationale. */
-	private TrimmedRoadPath trimRoadPathIfPathOvershootsMouse(List<Edge> path, Center start, Center end,
-			Point snapStartGraphPixels, Point snapEndGraphPixels)
+	private TrimmedRoadPath trimRoadPathIfPathOvershootsMouse(List<Edge> path, Center start, Center end, Point snapStartGraphPixels, Point snapEndGraphPixels)
 	{
 		if (path == null || path.isEmpty())
 		{
@@ -4611,8 +4604,8 @@ public class LandWaterTool extends EditorTool
 	}
 
 	/**
-	 * Previews the Voronoi-edge river path from {@link #riverStart} to the cursor while the user drags in polygon (non-freehand) river
-	 * draw mode, including any snap-back bridges that will be added when the mouse is released.
+	 * Previews the Voronoi-edge river path from {@link #riverStart} to the cursor while the user drags in polygon (non-freehand) river draw
+	 * mode, including any snap-back bridges that will be added when the mouse is released.
 	 */
 	private void previewPolygonRiverPath(MouseEvent e)
 	{
@@ -4629,8 +4622,7 @@ public class LandWaterTool extends EditorTool
 		// they clicked on (or the one they're hovering near at the other end).
 		Point currentEndSnapPoint = computeSnapPointForType(e.getPoint(), LineType.RIVER);
 		Point snapEndGraphPixels = currentEndSnapPoint == null ? null : currentEndSnapPoint.mult(mainWindow.displayQualityScale);
-		Point snapStartGraphPixels = polygonRiverSnapStart == null ? null
-				: polygonRiverSnapStart.mult(mainWindow.displayQualityScale);
+		Point snapStartGraphPixels = polygonRiverSnapStart == null ? null : polygonRiverSnapStart.mult(mainWindow.displayQualityScale);
 		TrimmedRiverPath trimmed = trimRiverPathIfPathOvershootsMouse(river, riverStart, end, snapStartGraphPixels, snapEndGraphPixels);
 		river = trimmed.path();
 		Corner start = trimmed.start();
@@ -4675,8 +4667,7 @@ public class LandWaterTool extends EditorTool
 		List<Edge> edges = updater.mapParts.graph.findShortestPath(roadStart, end, (ignored1, ignored2, distance) -> distance);
 		Point currentEndSnapPoint = computeSnapPointForType(e.getPoint(), LineType.ROAD);
 		Point snapEndGraphPixels = currentEndSnapPoint == null ? null : currentEndSnapPoint.mult(mainWindow.displayQualityScale);
-		Point snapStartGraphPixels = polygonRoadSnapStart == null ? null
-				: polygonRoadSnapStart.mult(mainWindow.displayQualityScale);
+		Point snapStartGraphPixels = polygonRoadSnapStart == null ? null : polygonRoadSnapStart.mult(mainWindow.displayQualityScale);
 		TrimmedRoadPath trimmed = trimRoadPathIfPathOvershootsMouse(edges, roadStart, end, snapStartGraphPixels, snapEndGraphPixels);
 		edges = trimmed.path();
 		Center start = trimmed.start();

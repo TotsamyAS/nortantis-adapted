@@ -108,7 +108,7 @@ public final class Edge
 			_rightVertex = v;
 		}
 	}
-	
+
 	// Once clipVertices() is called, this Dictionary will hold two Points
 	// representing the clipped coordinates of the left and right ends...
 	private HashMap<LR, Point> _clippedVertices;

@@ -1342,13 +1342,11 @@ public class TextDrawer
 	}
 
 	/**
-	 * Recomputes the bounds on every MapText in {@link MapEdits#text} if
-	 * {@link MapEdits#textBoundsNeedRefresh} is true. Called at the end of every incremental
-	 * draw (see {@link MapCreator#incrementalUpdateBounds}) so that:
-	 *  - texts on an edits-from-disk MapEdits get bounds before the first interactive click,
-	 *  - undo/redo restorations get fresh bounds at the current resolution (the just-restored
-	 *    bounds may have been computed at a different displayQualityScale, or may be null for
-	 *    a text that was pasted into a snapshot before its bounds were ever drawn).
+	 * Recomputes the bounds on every MapText in {@link MapEdits#text} if {@link MapEdits#textBoundsNeedRefresh} is true. Called at the end
+	 * of every incremental draw (see {@link MapCreator#incrementalUpdateBounds}) so that: - texts on an edits-from-disk MapEdits get bounds
+	 * before the first interactive click, - undo/redo restorations get fresh bounds at the current resolution (the just-restored bounds may
+	 * have been computed at a different displayQualityScale, or may be null for a text that was pasted into a snapshot before its bounds
+	 * were ever drawn).
 	 */
 	public void updateTextBoundsIfNeeded(WorldGraph graph)
 	{

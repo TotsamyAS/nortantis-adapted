@@ -106,8 +106,7 @@ public class UserPreferences
 		}
 		if (props.containsKey("defaultCustomImagesPath"))
 		{
-			tryLoad(props, "defaultCustomImagesPath",
-					() -> defaultCustomImagesPath = FileHelper.replaceHomeFolderWithPlaceholder(props.getProperty("defaultCustomImagesPath")));
+			tryLoad(props, "defaultCustomImagesPath", () -> defaultCustomImagesPath = FileHelper.replaceHomeFolderWithPlaceholder(props.getProperty("defaultCustomImagesPath")));
 		}
 
 		// I used the wrong name when creating this property, but changing it now would make the popup show up for existing users,
@@ -137,8 +136,7 @@ public class UserPreferences
 		}
 		if (props.containsKey("lastVersionCheckTime"))
 		{
-			tryLoad(props, "lastVersionCheckTime",
-					() -> lastVersionCheckTime = LocalDateTime.parse(props.getProperty("lastVersionCheckTime"), DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+			tryLoad(props, "lastVersionCheckTime", () -> lastVersionCheckTime = LocalDateTime.parse(props.getProperty("lastVersionCheckTime"), DateTimeFormatter.ISO_LOCAL_DATE_TIME));
 		}
 
 		if (props.containsKey("lookAndFeel") && !StringUtils.isEmpty(props.getProperty("lookAndFeel")))
@@ -158,8 +156,7 @@ public class UserPreferences
 
 		if (props.containsKey("hideGridOverlaySeizureWarning"))
 		{
-			tryLoad(props, "hideGridOverlaySeizureWarning",
-					() -> hideGridOverlaySeizureWarning = Boolean.parseBoolean(props.getProperty("hideGridOverlaySeizureWarning")));
+			tryLoad(props, "hideGridOverlaySeizureWarning", () -> hideGridOverlaySeizureWarning = Boolean.parseBoolean(props.getProperty("hideGridOverlaySeizureWarning")));
 		}
 
 		if (props.containsKey("language"))
@@ -172,7 +169,8 @@ public class UserPreferences
 			tryLoad(props, "hideThemeChangedMessage", () -> hideThemeChangedMessage = Boolean.parseBoolean(props.getProperty("hideThemeChangedMessage")));
 		}
 
-		// If anything failed to load, preserve a copy of the original file so the user can recover values that we are about to overwrite the
+		// If anything failed to load, preserve a copy of the original file so the user can recover values that we are about to overwrite
+		// the
 		// next time preferences are saved.
 		if (!loadErrorMessages.isEmpty())
 		{
@@ -204,8 +202,7 @@ public class UserPreferences
 	 */
 	private static String createLoadErrorMessage(String preferenceName, String badValue)
 	{
-		return "The user preference '" + preferenceName + "' could not be loaded from the value '" + badValue
-				+ "' and may have been reset to its default.";
+		return "The user preference '" + preferenceName + "' could not be loaded from the value '" + badValue + "' and may have been reset to its default.";
 	}
 
 	private void backUpCorruptedFile(Path filePath)

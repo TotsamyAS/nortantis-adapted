@@ -6,8 +6,8 @@ import java.util.Arrays;
 public class SliderWithSpinner
 {
 	/**
-	 * Idle window after the last spinner change before we treat a burst (rapid arrow clicks, held button, typing digits) as finished
-	 * and fire the after-hook. JSpinner has no {@code getValueIsAdjusting()} equivalent, so we infer the end of an edit by waiting for
+	 * Idle window after the last spinner change before we treat a burst (rapid arrow clicks, held button, typing digits) as finished and
+	 * fire the after-hook. JSpinner has no {@code getValueIsAdjusting()} equivalent, so we infer the end of an edit by waiting for
 	 * inactivity.
 	 */
 	private static final int SPINNER_BURST_IDLE_MS = 400;
@@ -91,8 +91,8 @@ public class SliderWithSpinner
 	}
 
 	/**
-	 * Immediately ends any in-progress spinner burst, firing the after-hook (typically an undo-point commit). Safe to call when no
-	 * burst is in progress — it's a no-op then.
+	 * Immediately ends any in-progress spinner burst, firing the after-hook (typically an undo-point commit). Safe to call when no burst is
+	 * in progress — it's a no-op then.
 	 */
 	public void flushPendingSpinnerEdit()
 	{
@@ -111,8 +111,8 @@ public class SliderWithSpinner
 	}
 
 	/**
-	 * Registers hooks that fire for user-initiated spinner edits (not slider-driven syncs), debounced to one (before, after) pair per
-	 * burst of consecutive ticks. {@code beforeSpinnerEdit} runs once when a burst starts — use it to snapshot pre-edit state.
+	 * Registers hooks that fire for user-initiated spinner edits (not slider-driven syncs), debounced to one (before, after) pair per burst
+	 * of consecutive ticks. {@code beforeSpinnerEdit} runs once when a burst starts — use it to snapshot pre-edit state.
 	 * {@code afterSpinnerEdit} runs once when the burst ends ({@value #SPINNER_BURST_IDLE_MS} ms of inactivity OR an explicit
 	 * {@link #flushPendingSpinnerEdit()} / {@link #commitEdit()}) — use it to commit an undo point if anything changed.
 	 */

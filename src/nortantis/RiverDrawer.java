@@ -46,8 +46,7 @@ public class RiverDrawer
 		@Override
 		public RiverPathNode withStitchedToNextMetadata(RiverPathNode original)
 		{
-			return new RiverPathNode(original.getLoc(), original.getWidthLevelToNext(), original.getSeedToNext(),
-					RiverPathNode.EDGE_INDEX_NONE);
+			return new RiverPathNode(original.getLoc(), original.getWidthLevelToNext(), original.getSeedToNext(), RiverPathNode.EDGE_INDEX_NONE);
 		}
 	};
 
@@ -479,9 +478,9 @@ public class RiverDrawer
 	}
 
 	/**
-	 * For each segment in {@code rivers} whose {@code edgeIndexToNext} is in {@code edges}, updates its width level to {@code newWidthLevel}
-	 * if different. Returns the rivers whose width was actually changed. Used so that drawing a polygon-mode river over an existing river at
-	 * a different width retunes the existing segments instead of leaving them at the old width.
+	 * For each segment in {@code rivers} whose {@code edgeIndexToNext} is in {@code edges}, updates its width level to
+	 * {@code newWidthLevel} if different. Returns the rivers whose width was actually changed. Used so that drawing a polygon-mode river
+	 * over an existing river at a different width retunes the existing segments instead of leaving them at the old width.
 	 */
 	public static List<River> updateExistingRiverWidthsForEdges(List<River> rivers, Set<Edge> edges, int newWidthLevel)
 	{
@@ -535,9 +534,9 @@ public class RiverDrawer
 	/**
 	 * Clips {@code pathRI} at ocean and lake centers (dropping water sub-paths so the river ends at the coastline), splits the remaining
 	 * land sub-paths at any segments that already exist in {@code rivers}, adds the resulting sub-rivers to {@code rivers}, and returns the
-	 * changed rivers. A river that passes through one or more bodies of water becomes multiple sub-rivers. If the new freehand path
-	 * exactly retraces a segment of an existing river at a different width (possible via the snap-to-control-point feature), the existing
-	 * segment's {@code widthLevelToNext} is updated to {@code riverLevel} so re-drawing at a different width takes effect. Analogous to
+	 * changed rivers. A river that passes through one or more bodies of water becomes multiple sub-rivers. If the new freehand path exactly
+	 * retraces a segment of an existing river at a different width (possible via the snap-to-control-point feature), the existing segment's
+	 * {@code widthLevelToNext} is updated to {@code riverLevel} so re-drawing at a different width takes effect. Analogous to
 	 * {@link RoadDrawer#addFreeHandRoadFromPoints}.
 	 */
 	public static List<River> addFreeHandRiverFromPoints(List<Point> pathRI, int riverLevel, List<River> rivers, nortantis.WorldGraph graph, double resolutionScale)
@@ -960,11 +959,11 @@ public class RiverDrawer
 
 	/**
 	 * Attempts to merge each river in {@code candidates} with any other river in {@code rivers} whose endpoint now matches. Used after
-	 * edits that may have changed a river's endpoints (control-point deletion, segment cut, erase) — a newly-exposed endpoint may
-	 * coincide with another existing river's endpoint, in which case the two should be one continuous river. Mirrors
-	 * {@link #connectAndAddRivers}'s join logic but for rivers already in {@code rivers}: when a merge succeeds the candidate is removed
-	 * from {@code rivers} (its data has been folded into the matched river). A second join attempt is made on the extended result in
-	 * case it can also connect at its other end.
+	 * edits that may have changed a river's endpoints (control-point deletion, segment cut, erase) — a newly-exposed endpoint may coincide
+	 * with another existing river's endpoint, in which case the two should be one continuous river. Mirrors {@link #connectAndAddRivers}'s
+	 * join logic but for rivers already in {@code rivers}: when a merge succeeds the candidate is removed from {@code rivers} (its data has
+	 * been folded into the matched river). A second join attempt is made on the extended result in case it can also connect at its other
+	 * end.
 	 *
 	 * @return The rivers whose nodes were extended by absorbing a candidate.
 	 */
