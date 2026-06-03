@@ -277,6 +277,50 @@ public class SubMapCreatorTest
 	}
 
 	/**
+	 * Verifies that a T-shaped river in a sub-map forms its intersection: the three arms meet at a shared junction in the interior of the
+	 * map rather than ending as disconnected rivers. Same source map and selection as {@link #subMapTShapedRiverHasThreeMouths}, but a
+	 * different seed whose finer graph routes the arms so they come close in the middle without connecting. The arms reach the coast (3
+	 * mouths), so a mouth-count check alone would pass; this asserts the rivers form a single connected network so the missing junction is
+	 * caught.
+	 */
+	@Test
+	public void subMapTShapedRiverFormsIntersection() throws Exception
+	{
+		// Set to true to force this test to write its result map to the failed sub-maps folder, even when it passes.
+		boolean forceWrite = false;
+
+		String originalSettingsPath = Paths.get("unit test files", "map settings", "riversForSubMaps.nort").toString();
+		MapSettings originalSettings = new MapSettings(originalSettingsPath);
+		originalSettings.resolution = 0.5;
+
+		WorldGraph originalGraph = MapCreator.createGraphForUnitTests(originalSettings);
+		// Match the UI/full-draw path: only derive rivers from the graph if the map hasn't already. These
+		// .nort files store initialized rivers (hasInitializedRivers == true), and initializeRiversFromGraph
+		// appends rather than replaces, so calling it unconditionally would add a second, re-derived copy of
+		// every river. Those overlapping duplicate rivers render as extra segments and loops in the sub-map.
+		if (!originalSettings.edits.hasInitializedRivers)
+		{
+			originalSettings.edits.initializeRiversFromGraph(originalGraph, originalSettings.resolution);
+		}
+
+		// Sub-map selection bounds in RI (resolution-invariant) coordinates.
+		Rectangle selectionBoundsRI = new Rectangle(1158, 1115, 1559, 1092);
+
+		int worldSize = SubMapDialog.computeDefaultWorldSize(originalSettings, selectionBoundsRI);
+
+		long seed = 1791199644L;
+		MapSettings subMapSettings = SubMapCreator.createSubMapSettings(originalSettings, originalGraph, selectionBoundsRI, worldSize, originalSettings.resolution, seed, true);
+
+		List<River> rivers = subMapSettings.edits.rivers;
+
+		assertRiversAreAllConnected(rivers, subMapSettings, "subMapTShapedRiverFormsIntersection");
+		if (forceWrite || forceWriteAllMaps)
+		{
+			saveFailedMap(subMapSettings, "subMapTShapedRiverFormsIntersection");
+		}
+	}
+
+	/**
 	 * Verifies that a T-shaped river in a sub-map has all its arms connected at the junction. This is a regression test for a bug where one
 	 * arm of the T was disconnected from the others.
 	 */
