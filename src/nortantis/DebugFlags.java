@@ -53,7 +53,7 @@ public class DebugFlags
 	 * routes each river, and drawn by {@link MapCreator}. Because the sub-map's render graph is built with the same seed and parameters as
 	 * the graph used during sub-map creation, corner indexes line up between the two.
 	 */
-	private static boolean highlightSubMapRiverWaypoints = true;
+	private static boolean highlightSubMapRiverWaypoints = false;
 
 	/**
 	 * New-graph corner indexes of the waypoints used by the most recent sub-map river re-routing, populated by {@link SubMapCreator} when

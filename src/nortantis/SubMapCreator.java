@@ -723,11 +723,13 @@ public class SubMapCreator
 	}
 
 	/**
-	 * Maximum ratio of a routed leg's length to the straight-line distance between its two waypoints before the leg is replaced by a direct
-	 * freehand hop. A greedy route that wanders far past this ratio is detouring (e.g. around a coastal mouth it cannot reach, or across a
-	 * gap where the source isthmus vanished in the finer graph); hopping straight is both simpler and closer to the source river's intent.
+	 * Cost multiplier applied to a freehand jump (a straight segment that follows no Voronoi edge) in the global river router's A* search,
+	 * relative to the jump's straight-line length. The search prefers graph routes whenever an all-graph route through the remaining
+	 * waypoints costs less than {@code freehandJumpPenalty}× the jump it would replace, so it only jumps where the land is genuinely
+	 * disconnected or a graph detour would be more than this many times longer. Higher values make jumps rarer (and allow the search to
+	 * take longer graph detours, including rerouting an earlier leg, to avoid one).
 	 */
-	private static final double riverLegLengthCapRatio = 3.0;
+	private static final double freehandJumpPenalty = 5.0;
 
 	/**
 	 * Re-routes one clipped sub-path of a source river through the new graph as a single freehand {@link River}.
@@ -738,12 +740,12 @@ public class SubMapCreator
 	 * whose corner was already used earlier in this river, are dropped so the waypoint list stays simple.
 	 * </p>
 	 * <p>
-	 * Each consecutive waypoint pair is then routed with {@link WorldGraph#findPathGreedy}, avoiding coast/ocean/water corners <em>and</em>
-	 * every corner already used by an earlier leg of this river (except the current leg's start). Because each greedy result is a simple
-	 * path and later legs cannot reuse earlier corners, the concatenation is simple by construction — no finger-pruning or loop-closing
-	 * cleanup is needed. If a leg is unroutable or wanders past {@link #riverLegLengthCapRatio} times the straight-line distance, the two
-	 * waypoints are connected by a direct freehand hop instead (this also subsumes the old {@code attachMouths} pass: a mouth corner the
-	 * greedy router cannot reach is connected with a short hop, exactly a river's final approach to the sea).
+	 * The waypoints are then threaded by a single global A* search (see {@link #routeWaypointsGlobally}) rather than routing each
+	 * consecutive pair independently. Independent per-leg routing can wall itself off — an earlier leg's locally-optimal path can consume
+	 * the only graph corridor a later leg needs, forcing an unnecessary freehand jump — and no per-leg search can fix that because it
+	 * cannot trade a longer earlier leg against a blocked later one. The global search minimizes total cost across the whole river, so it
+	 * will make an earlier leg longer to keep a later one routable, and only emits a freehand jump where the land is genuinely
+	 * disconnected.
 	 * </p>
 	 * Returns the built {@link River}, or {@code null} if fewer than two distinct waypoints survive.
 	 */
@@ -818,163 +820,207 @@ public class SubMapCreator
 			return null;
 		}
 
-		// --- Route each consecutive waypoint pair, building one simple corner sequence. ---
-		List<Corner> pathCorners = new ArrayList<>();
-		// Edge index and width level for the segment leaving pathCorners[i]; the final node has no outgoing segment.
-		List<Integer> pathEdgeIndices = new ArrayList<>();
-		List<Integer> pathWidths = new ArrayList<>();
-		Set<Corner> usedCorners = new HashSet<>();
-		pathCorners.add(waypoints.get(0));
-		usedCorners.add(waypoints.get(0));
-
-		boolean truncated = false;
-		for (int k = 0; k + 1 < waypoints.size() && !truncated; k++)
+		List<RiverPathNode> nodes = routeWaypointsGlobally(waypoints, waypointWidths, newGraph, resolution);
+		if (nodes == null || nodes.size() < 2)
 		{
-			Corner legStart = pathCorners.get(pathCorners.size() - 1);
-			Corner legEnd = waypoints.get(k + 1);
-			int legWidth = waypointWidths.get(k);
-			if (legStart.equals(legEnd))
+			return null;
+		}
+		return new River(nodes);
+	}
+
+	/**
+	 * A* search node for the global river router: a {@code (corner, nextWaypointIndex)} state keyed for the open set, ordered by f-score.
+	 */
+	private record WaypointSearchNode(long stateKey, double fScore)
+	{
+	}
+
+	/**
+	 * Threads a river through its ordered {@code waypoints} with a single global A* search over the new graph, instead of routing each
+	 * consecutive pair independently.
+	 * <p>
+	 * The search state is {@code (corner, t)} where {@code t} is the index of the next waypoint still to reach. From a state the search may
+	 * step to a graph-adjacent corner (cost = the edge's geometric length; water corners are skipped unless the corner is the next waypoint
+	 * itself, so coastal-mouth endpoints stay reachable), advancing {@code t} when it lands on waypoint {@code t}; or it may take a
+	 * <em>freehand jump</em> straight to waypoint {@code t} at cost {@link #freehandJumpPenalty}× the straight-line distance. Minimizing
+	 * total cost lets the search make an earlier leg longer to keep a later one routable on the graph — the cross-leg trade-off that no
+	 * per-leg search can make — and emits a jump only where the land is genuinely disconnected or any graph detour would cost more than the
+	 * penalty. The heuristic is the straight-line distance to waypoint {@code t} plus the straight-line distances through the remaining
+	 * waypoints, which is admissible because every graph step and every penalized jump costs at least its straight-line length.
+	 * </p>
+	 * Returns the river's RI-space nodes (per-segment width = the leg's source width, edge index = the routed Voronoi edge or
+	 * {@link RiverPathNode#EDGE_INDEX_NONE} for a jump), or {@code null} if no route reaches the final waypoint.
+	 */
+	private static List<RiverPathNode> routeWaypointsGlobally(List<Corner> waypoints, List<Integer> waypointWidths, WorldGraph newGraph, double resolution)
+	{
+		int waypointCount = waypoints.size();
+		// remainingStraight[t] = straight-line distance from waypoint t through all later waypoints to the last one.
+		double[] remainingStraight = new double[waypointCount];
+		for (int i = waypointCount - 2; i >= 0; i--)
+		{
+			remainingStraight[i] = remainingStraight[i + 1] + waypoints.get(i).loc.distanceTo(waypoints.get(i + 1).loc);
+		}
+
+		// State key = cornerIndex * keyBase + t, with t in 0..waypointCount (waypointCount == reached the last waypoint = goal).
+		final long keyBase = waypointCount + 1;
+		Corner startCorner = waypoints.get(0);
+		long startKey = startCorner.index * keyBase + 1;
+
+		Map<Long, Double> gScore = new HashMap<>();
+		// cameFrom[stateKey] = { previousStateKey, edgeIndexOfIncomingSegment }.
+		Map<Long, long[]> cameFrom = new HashMap<>();
+		gScore.put(startKey, 0.0);
+
+		PriorityQueue<WaypointSearchNode> open = new PriorityQueue<>((a, b) -> Double.compare(a.fScore(), b.fScore()));
+		open.add(new WaypointSearchNode(startKey, heuristic(startCorner, 1, waypoints, remainingStraight)));
+
+		long goalKey = -1;
+		while (!open.isEmpty())
+		{
+			WaypointSearchNode current = open.poll();
+			long stateKey = current.stateKey();
+			int cornerIndex = (int) (stateKey / keyBase);
+			int t = (int) (stateKey % keyBase);
+
+			if (t == waypointCount)
+			{
+				goalKey = stateKey;
+				break;
+			}
+
+			double gCurrent = gScore.get(stateKey);
+			// Skip stale queue entries left over from a since-improved g-score.
+			if (current.fScore() > gCurrent + heuristic(newGraph.corners.get(cornerIndex), t, waypoints, remainingStraight) + 1e-6)
 			{
 				continue;
 			}
 
-			// Avoid water, every corner already used by an earlier leg, and every other waypoint corner, except this leg's
-			// own start (so the search can leave it) and end. Blocking the other waypoints as intermediates is what keeps
-			// each waypoint touched exactly once, as a leg endpoint: without it a greedy leg could overshoot through a later
-			// waypoint (e.g. a coastal mouth), and the leg that should terminate there would then re-enter the path and lose
-			// that endpoint. findPathGreedy always allows reaching the destination, so the leg's own water-adjacent mouth end
-			// stays reachable.
-			final Corner legStartFinal = legStart;
-			final Corner legEndFinal = legEnd;
-			Predicate<Corner> avoid = c -> (c.isCoast || c.isOcean || c.isWater || usedCorners.contains(c) || waypointCorners.contains(c)) && !c.equals(legStartFinal) && !c.equals(legEndFinal);
-			Set<Edge> legEdges = newGraph.findPathGreedy(legStart, legEnd, avoid, null);
+			Corner corner = newGraph.corners.get(cornerIndex);
+			Corner target = waypoints.get(t);
 
-			List<Corner> legCorners = reconstructLegCorners(legEdges, legStart, legEnd);
-			boolean useDirectHop = legCorners == null || cornerPathLength(legCorners) > riverLegLengthCapRatio * legStart.loc.distanceTo(legEnd.loc);
+			// Graph steps to adjacent land corners (the target waypoint is allowed even if it is water-adjacent).
+			for (Edge edge : corner.protrudes)
+			{
+				Corner neighbor = edgeOtherCorner(edge, corner);
+				if (neighbor == null)
+				{
+					continue;
+				}
+				boolean isTarget = neighbor.equals(target);
+				if (!isTarget && (neighbor.isCoast || neighbor.isOcean || neighbor.isWater))
+				{
+					continue;
+				}
+				int nextT = isTarget ? t + 1 : t;
+				double tentative = gCurrent + corner.loc.distanceTo(neighbor.loc);
+				relaxWaypointState(neighbor, nextT, tentative, stateKey, edge.index, keyBase, gScore, cameFrom, open, waypoints, remainingStraight);
+			}
 
-			if (useDirectHop)
-			{
-				// Connect the two waypoints directly (no Voronoi edge), covering unreachable coastal mouths and vanished isthmuses.
-				if (usedCorners.contains(legEnd))
-				{
-					truncated = true;
-					break;
-				}
-				pathCorners.add(legEnd);
-				pathEdgeIndices.add(RiverPathNode.EDGE_INDEX_NONE);
-				pathWidths.add(legWidth);
-				usedCorners.add(legEnd);
-			}
-			else
-			{
-				for (int ci = 1; ci < legCorners.size(); ci++)
-				{
-					Corner to = legCorners.get(ci);
-					// Safety net: a leg that re-enters the existing path (a rare overshoot through a later waypoint) would
-					// create a loop. Stop the river at the previous corner rather than close the loop.
-					if (usedCorners.contains(to))
-					{
-						truncated = true;
-						break;
-					}
-					Edge edge = findEdgeBetween(legEdges, legCorners.get(ci - 1), to);
-					pathCorners.add(to);
-					pathEdgeIndices.add(edge != null ? edge.index : RiverPathNode.EDGE_INDEX_NONE);
-					pathWidths.add(legWidth);
-					usedCorners.add(to);
-				}
-			}
+			// Freehand jump straight to the next waypoint (no Voronoi edge), penalized so it is a last resort.
+			double jumpCost = gCurrent + corner.loc.distanceTo(target.loc) * freehandJumpPenalty;
+			relaxWaypointState(target, t + 1, jumpCost, stateKey, RiverPathNode.EDGE_INDEX_NONE, keyBase, gScore, cameFrom, open, waypoints, remainingStraight);
 		}
 
-		if (pathCorners.size() < 2)
+		if (goalKey < 0)
 		{
 			return null;
 		}
 
-		// --- Build the River from the concatenated corner sequence. ---
-		List<RiverPathNode> nodes = new ArrayList<>(pathCorners.size());
-		Random random = new Random();
-		for (int i = 0; i < pathCorners.size(); i++)
+		// Reconstruct the state sequence from start to goal.
+		List<Long> stateKeys = new ArrayList<>();
+		for (long key = goalKey; key != startKey; key = cameFrom.get(key)[0])
 		{
-			Point ri = pathCorners.get(i).loc.mult(1.0 / resolution);
-			if (i + 1 < pathCorners.size())
+			stateKeys.add(key);
+		}
+		stateKeys.add(startKey);
+		Collections.reverse(stateKeys);
+
+		// Build the river nodes. The segment leaving state i carries that segment's edge index and the width of the leg it belongs to
+		// (the leg toward waypoint t uses the width leaving waypoint t-1).
+		List<RiverPathNode> nodes = new ArrayList<>(stateKeys.size());
+		Random random = new Random();
+		for (int i = 0; i < stateKeys.size(); i++)
+		{
+			long key = stateKeys.get(i);
+			Corner corner = newGraph.corners.get((int) (key / keyBase));
+			Point ri = corner.loc.mult(1.0 / resolution);
+			if (i + 1 < stateKeys.size())
 			{
-				nodes.add(new RiverPathNode(ri, pathWidths.get(i), random.nextLong(), pathEdgeIndices.get(i)));
+				long nextKey = stateKeys.get(i + 1);
+				int edgeIndex = (int) cameFrom.get(nextKey)[1];
+				int sourceT = (int) (key % keyBase);
+				int width = waypointWidths.get(sourceT - 1);
+				nodes.add(new RiverPathNode(ri, width, random.nextLong(), edgeIndex));
 			}
 			else
 			{
 				nodes.add(new RiverPathNode(ri, 0, 0L, RiverPathNode.EDGE_INDEX_NONE));
 			}
 		}
-		return new River(nodes);
+		return removeCornerRevisits(nodes);
 	}
 
 	/**
-	 * Reconstructs the ordered corner sequence of a single routed leg from the unordered {@code legEdges} returned by
-	 * {@link WorldGraph#findPathGreedy}, walking from {@code legStart} to {@code legEnd}. The greedy result is a simple back-pointer chain,
-	 * so the walk visits each corner once. Returns {@code [legStart, …, legEnd]}, or {@code null} if {@code legEdges} is empty or does not
-	 * form a connected chain from start to end.
+	 * Excises any corner the route visits more than once, keeping the river a simple path. The global router minimizes total cost over the
+	 * {@code (corner, waypointIndex)} state space, so it can legitimately pass the same corner twice (e.g. through a chokepoint while
+	 * threading waypoints in order); drawn as one polyline that renders as a loop. When a corner reappears, the span between the two visits
+	 * is dropped and the surviving earlier node inherits the second visit's outgoing segment — which leaves that node by the same Voronoi
+	 * edge the second visit used, so the join stays on the graph (no freehand jump is introduced). Node identity is by location, which is
+	 * derived deterministically from the corner.
 	 */
-	private static List<Corner> reconstructLegCorners(Set<Edge> legEdges, Corner legStart, Corner legEnd)
+	private static List<RiverPathNode> removeCornerRevisits(List<RiverPathNode> nodes)
 	{
-		if (legEdges.isEmpty())
+		Map<Point, Integer> firstPosition = new HashMap<>();
+		List<RiverPathNode> simple = new ArrayList<>(nodes.size());
+		for (RiverPathNode node : nodes)
 		{
-			return null;
-		}
-		List<Corner> corners = new ArrayList<>();
-		corners.add(legStart);
-		Set<Corner> visited = new HashSet<>();
-		visited.add(legStart);
-		Corner current = legStart;
-		while (!current.equals(legEnd))
-		{
-			Corner next = null;
-			for (Edge e : legEdges)
+			Integer priorPosition = firstPosition.get(node.getLoc());
+			if (priorPosition == null)
 			{
-				Corner neighbor = edgeOtherCorner(e, current);
-				if (neighbor != null && !visited.contains(neighbor))
-				{
-					next = neighbor;
-					break;
-				}
+				firstPosition.put(node.getLoc(), simple.size());
+				simple.add(node);
+				continue;
 			}
-			if (next == null)
+			// Revisit: drop the loop (everything after the earlier occurrence) and give the surviving node this visit's outgoing segment.
+			for (int idx = simple.size() - 1; idx > priorPosition; idx--)
 			{
-				return null;
+				firstPosition.remove(simple.remove(idx).getLoc());
 			}
-			corners.add(next);
-			visited.add(next);
-			current = next;
+			RiverPathNode survivor = simple.get(priorPosition);
+			simple.set(priorPosition, new RiverPathNode(survivor.getLoc(), node.getWidthLevelToNext(), node.getSeedToNext(), node.getEdgeIndexToNext()));
 		}
-		return corners;
+		return simple;
 	}
 
 	/**
-	 * Returns the edge in {@code edges} connecting corners {@code a} and {@code b}, or {@code null} if none does.
+	 * Admissible heuristic for {@link #routeWaypointsGlobally}: straight-line distance from {@code corner} to the next waypoint plus the
+	 * straight-line distances through all remaining waypoints. Returns 0 once the last waypoint has been reached.
 	 */
-	private static Edge findEdgeBetween(Set<Edge> edges, Corner a, Corner b)
+	private static double heuristic(Corner corner, int t, List<Corner> waypoints, double[] remainingStraight)
 	{
-		for (Edge e : edges)
+		if (t >= waypoints.size())
 		{
-			if (e.v0 != null && e.v1 != null && ((e.v0.equals(a) && e.v1.equals(b)) || (e.v0.equals(b) && e.v1.equals(a))))
-			{
-				return e;
-			}
+			return 0;
 		}
-		return null;
+		return corner.loc.distanceTo(waypoints.get(t).loc) + remainingStraight[t];
 	}
 
 	/**
-	 * Returns the total straight-line length along the given corner sequence.
+	 * Relaxes a candidate {@code (corner, nextT)} state in {@link #routeWaypointsGlobally}: if {@code tentativeG} improves on the best
+	 * known cost to that state, records the new cost and back-pointer (with the incoming segment's edge index) and enqueues it.
 	 */
-	private static double cornerPathLength(List<Corner> corners)
+	private static void relaxWaypointState(Corner corner, int nextT, double tentativeG, long fromStateKey, int edgeIndex, long keyBase, Map<Long, Double> gScore, Map<Long, long[]> cameFrom,
+			PriorityQueue<WaypointSearchNode> open, List<Corner> waypoints, double[] remainingStraight)
 	{
-		double total = 0;
-		for (int i = 1; i < corners.size(); i++)
+		long newKey = corner.index * keyBase + nextT;
+		Double existing = gScore.get(newKey);
+		if (existing != null && tentativeG >= existing - 1e-6)
 		{
-			total += corners.get(i - 1).loc.distanceTo(corners.get(i).loc);
+			return;
 		}
-		return total;
+		gScore.put(newKey, tentativeG);
+		cameFrom.put(newKey, new long[] { fromStateKey, edgeIndex });
+		open.add(new WaypointSearchNode(newKey, tentativeG + heuristic(corner, nextT, waypoints, remainingStraight)));
 	}
 
 
