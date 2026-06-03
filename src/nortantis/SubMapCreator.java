@@ -780,6 +780,16 @@ public class SubMapCreator
 			{
 				continue;
 			}
+			// Drop an interior waypoint that snapped onto a coast/ocean/water corner. The greedy router refuses to route
+			// through such corners (only a start/end mouth is allowed to sit on one), so keeping it as an intermediate forces
+			// the search into a dead-end turn followed by a pair of freehand hops, which renders as a tight swirl. Skipping it
+			// lets the leg route cleanly from the previous inland waypoint to the next. The first and last waypoints are always
+			// kept: they are the river's true endpoints (a coastal mouth or a map-edge exit).
+			boolean isEndpoint = i == 0 || i == clippedNodes.size() - 1;
+			if (!isEndpoint && (corner.isCoast || corner.isOcean || corner.isWater))
+			{
+				continue;
+			}
 			// Collapse consecutive duplicates, and skip a corner already used earlier in this river so the path stays simple
 			// even if the source sub-path revisits a location (redistribute mode may clean source loops, unlike exact-copy).
 			if (!waypoints.isEmpty() && waypoints.get(waypoints.size() - 1).equals(corner))

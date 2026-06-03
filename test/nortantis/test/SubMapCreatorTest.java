@@ -338,6 +338,52 @@ public class SubMapCreatorTest
 	}
 
 	/**
+	 * Verifies that the single re-routed river in this sub-map follows the new graph's Voronoi edges throughout, with no freehand jumps. In
+	 * redistribute mode the router falls back to connecting two waypoints with a direct freehand hop (a segment that follows no Voronoi edge,
+	 * recorded as {@link nortantis.editor.RiverPathNode#EDGE_INDEX_NONE}) when greedy routing between them fails or wanders too far. Such a
+	 * hop renders as a straight line cutting across polygons. For this sub-map the river should route cleanly along graph edges, so any
+	 * freehand jump indicates the router had to patch around a routing failure.
+	 */
+	@Test
+	public void subMapRiverHasNoFreehandJumps() throws Exception
+	{
+		// Set to true to force this test to write its result map to the failed sub-maps folder, even when it passes.
+		boolean forceWrite = false;
+
+		String originalSettingsPath = Paths.get("unit test files", "map settings", "riversForSubMaps.nort").toString();
+		MapSettings originalSettings = new MapSettings(originalSettingsPath);
+		originalSettings.resolution = 0.5;
+
+		WorldGraph originalGraph = MapCreator.createGraphForUnitTests(originalSettings);
+		// Match the UI/full-draw path: only derive rivers from the graph if the map hasn't already. These
+		// .nort files store initialized rivers (hasInitializedRivers == true), and initializeRiversFromGraph
+		// appends rather than replaces, so calling it unconditionally would add a second, re-derived copy of
+		// every river. Those overlapping duplicate rivers render as extra segments and loops in the sub-map.
+		if (!originalSettings.edits.hasInitializedRivers)
+		{
+			originalSettings.edits.initializeRiversFromGraph(originalGraph, originalSettings.resolution);
+		}
+
+		// Sub-map selection bounds in RI (resolution-invariant) coordinates.
+		Rectangle selectionBoundsRI = new Rectangle(0, 0, 1183, 1839);
+
+		int worldSize = SubMapDialog.computeDefaultWorldSize(originalSettings, selectionBoundsRI);
+
+		long seed = 174503823L;
+		MapSettings subMapSettings = SubMapCreator.createSubMapSettings(originalSettings, originalGraph, selectionBoundsRI, worldSize, originalSettings.resolution, seed, true);
+
+		List<River> rivers = subMapSettings.edits.rivers;
+
+		assertEquals(1, rivers.size(), "Sub-map should contain exactly 1 river");
+
+		assertRiversHaveNoFreehandJumps(rivers, subMapSettings, "subMapRiverHasNoFreehandJumps");
+		if (forceWrite || forceWriteAllMaps)
+		{
+			saveFailedMap(subMapSettings, "subMapRiverHasNoFreehandJumps");
+		}
+	}
+
+	/**
 	 * Verifies that a sub-map covering the entire source map at the original detail level (a 1× "Match source detail" sub-map) preserves
 	 * every source river faithfully — none dropped. "Match source detail" copies rivers verbatim (no loop removal, no re-routing), so a
 	 * full-map copy must reproduce all of them. {@code riversForSubMaps.nort} intentionally contains a complex river that revisits points;
@@ -527,6 +573,29 @@ public class SubMapCreatorTest
 				{
 					String failedMapPath = saveFailedMap(subMapSettings, testName);
 					fail("River " + ri + " has a loop: path point " + p + " appears more than once.\nFailed map written to: " + failedMapPath);
+				}
+			}
+		}
+	}
+
+	/**
+	 * Asserts that no river segment is a freehand jump — i.e. every segment follows a Voronoi edge of the new graph
+	 * ({@code edgeIndexToNext != EDGE_INDEX_NONE}). A freehand jump is the router's fallback when it cannot route two waypoints along
+	 * graph edges, and renders as a straight line cutting across polygons.
+	 */
+	private void assertRiversHaveNoFreehandJumps(List<River> rivers, MapSettings subMapSettings, String testName) throws Exception
+	{
+		for (int ri = 0; ri < rivers.size(); ri++)
+		{
+			List<nortantis.editor.RiverPathNode> nodes = rivers.get(ri).nodes;
+			// The last node has no outgoing segment, so only check segments leaving nodes 0 .. size-2.
+			for (int i = 0; i + 1 < nodes.size(); i++)
+			{
+				if (nodes.get(i).getEdgeIndexToNext() == nortantis.editor.RiverPathNode.EDGE_INDEX_NONE)
+				{
+					String failedMapPath = saveFailedMap(subMapSettings, testName);
+					fail("River " + ri + " has a freehand jump at segment " + i + " (from " + nodes.get(i).getLoc() + " to " + nodes.get(i + 1).getLoc()
+							+ "): the segment follows no Voronoi edge.\nFailed map written to: " + failedMapPath);
 				}
 			}
 		}
