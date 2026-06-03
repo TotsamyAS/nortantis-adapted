@@ -644,130 +644,7 @@ public class SubMapCreator
 			}
 		}
 
-		if (redistributeIcons)
-		{
-			stitchConfluences(newEdits.rivers, newGraph, newEdits, originalResolution);
-		}
-
 		removeDuplicateRiverSegments(newEdits.rivers);
-	}
-
-	/**
-	 * Reconnects redistribute-mode tributaries that the finer graph left one corner short of their trunk.
-	 * <p>
-	 * Rivers are routed independently, and {@link #removeCornerRevisits} drops a waypoint that the global router could only reach by a spur
-	 * (a corner that is a near-dead-end in the new graph). A confluence corner shared by two source rivers is such a spur on the trunk: the
-	 * trunk's path is pruned back to the adjacent corner it actually passes through, while the tributary still ends at the confluence
-	 * corner, leaving the two one Voronoi edge apart and disconnected. This pass finds each river's interior (non-mouth) endpoint that no
-	 * other river shares, and if a graph-adjacent corner is used by a different river, extends the endpoint by one node onto that corner so
-	 * the two rivers share a point. Endpoints that reach the coast (mouths) and endpoints already shared are left alone.
-	 * </p>
-	 */
-	private static void stitchConfluences(List<River> rivers, WorldGraph newGraph, MapEdits newEdits, double resolution)
-	{
-		// Snapshot: map each new-graph corner a river passes through to the set of rivers using it.
-		Map<Integer, Set<Integer>> riversByCorner = new HashMap<>();
-		List<Set<Integer>> ownCornerIndexes = new ArrayList<>();
-		for (int ri = 0; ri < rivers.size(); ri++)
-		{
-			Set<Integer> own = new HashSet<>();
-			for (RiverPathNode node : rivers.get(ri).nodes)
-			{
-				int cornerIndex = newGraph.findClosestCorner(node.getLoc().mult(resolution)).index;
-				own.add(cornerIndex);
-				riversByCorner.computeIfAbsent(cornerIndex, k -> new HashSet<>()).add(ri);
-			}
-			ownCornerIndexes.add(own);
-		}
-
-		for (int ri = 0; ri < rivers.size(); ri++)
-		{
-			River stitched = stitchRiverEnds(rivers.get(ri), ri, ownCornerIndexes.get(ri), riversByCorner, newGraph, newEdits, resolution);
-			if (stitched != null)
-			{
-				rivers.set(ri, stitched);
-			}
-		}
-	}
-
-	/**
-	 * Extends, by one Voronoi edge, whichever ends of {@code river} are unshared interior endpoints that sit adjacent to a corner used by a
-	 * different river, so the rivers meet at a shared corner. Returns a new {@link River} if either end was extended, otherwise
-	 * {@code null}.
-	 */
-	private static River stitchRiverEnds(River river, int riverIndex, Set<Integer> ownCornerIndexes, Map<Integer, Set<Integer>> riversByCorner, WorldGraph newGraph, MapEdits newEdits,
-			double resolution)
-	{
-		List<RiverPathNode> nodes = new ArrayList<>(river.nodes);
-		boolean changed = false;
-
-		// Start endpoint: prepend a connecting corner if it stitches onto another river.
-		Corner startConnector = findConfluenceConnector(nodes.get(0), riverIndex, ownCornerIndexes, riversByCorner, newGraph, newEdits, resolution);
-		if (startConnector != null)
-		{
-			Corner startCorner = newGraph.findClosestCorner(nodes.get(0).getLoc().mult(resolution));
-			Edge edge = edgeBetweenAdjacentCorners(startConnector, startCorner);
-			int width = nodes.get(0).getWidthLevelToNext();
-			nodes.add(0, new RiverPathNode(startConnector.loc.mult(1.0 / resolution), width, new Random().nextLong(), edge != null ? edge.index : RiverPathNode.EDGE_INDEX_NONE));
-			changed = true;
-		}
-
-		// End endpoint: append a connecting corner, making the old terminal node interior.
-		int lastIndex = nodes.size() - 1;
-		Corner endConnector = findConfluenceConnector(nodes.get(lastIndex), riverIndex, ownCornerIndexes, riversByCorner, newGraph, newEdits, resolution);
-		if (endConnector != null)
-		{
-			Corner endCorner = newGraph.findClosestCorner(nodes.get(lastIndex).getLoc().mult(resolution));
-			Edge edge = edgeBetweenAdjacentCorners(endCorner, endConnector);
-			int width = lastIndex >= 1 ? nodes.get(lastIndex - 1).getWidthLevelToNext() : nodes.get(lastIndex).getWidthLevelToNext();
-			RiverPathNode oldTerminal = nodes.get(lastIndex);
-			nodes.set(lastIndex, new RiverPathNode(oldTerminal.getLoc(), width, new Random().nextLong(), edge != null ? edge.index : RiverPathNode.EDGE_INDEX_NONE));
-			nodes.add(new RiverPathNode(endConnector.loc.mult(1.0 / resolution), 0, 0L, RiverPathNode.EDGE_INDEX_NONE));
-			changed = true;
-		}
-
-		return changed ? new River(nodes) : null;
-	}
-
-	/**
-	 * For the given river endpoint node, returns a graph-adjacent corner used by a <em>different</em> river to stitch onto, or {@code null}
-	 * if the endpoint should be left alone. Returns {@code null} when the endpoint is a coastal mouth (it flows to the sea, not a
-	 * confluence), is already shared with another river, or has no adjacent corner that belongs to another river and not to this one.
-	 */
-	private static Corner findConfluenceConnector(RiverPathNode endpoint, int riverIndex, Set<Integer> ownCornerIndexes, Map<Integer, Set<Integer>> riversByCorner, WorldGraph newGraph,
-			MapEdits newEdits, double resolution)
-	{
-		Corner endCorner = newGraph.findClosestCorner(endpoint.getLoc().mult(resolution));
-		if (endCorner == null || endCorner.isCoast || endCorner.isOcean || endCorner.isWater || isNewCornerAdjacentToWater(endCorner, newEdits))
-		{
-			return null;
-		}
-		Set<Integer> riversHere = riversByCorner.get(endCorner.index);
-		if (riversHere != null && riversHere.size() > 1)
-		{
-			return null; // Already shared with another river.
-		}
-		Corner best = null;
-		double bestDist = Double.MAX_VALUE;
-		for (Corner adjacent : endCorner.adjacent)
-		{
-			if (ownCornerIndexes.contains(adjacent.index))
-			{
-				continue; // Don't stitch onto our own path (would form a loop).
-			}
-			Set<Integer> riversThere = riversByCorner.get(adjacent.index);
-			if (riversThere == null || (riversThere.size() == 1 && riversThere.contains(riverIndex)))
-			{
-				continue; // Not used by a different river.
-			}
-			double dist = endCorner.loc.distanceTo(adjacent.loc);
-			if (dist < bestDist)
-			{
-				bestDist = dist;
-				best = adjacent;
-			}
-		}
-		return best;
 	}
 
 	/**
@@ -952,7 +829,8 @@ public class SubMapCreator
 	}
 
 	/**
-	 * A* search node for the global river router: a {@code (corner, nextWaypointIndex)} state keyed for the open set, ordered by f-score.
+	 * A* search node for the global river router: a {@code (corner, nextWaypointIndex, previousCorner)} state keyed for the open set,
+	 * ordered by f-score.
 	 */
 	private record WaypointSearchNode(long stateKey, double fScore)
 	{
@@ -984,10 +862,16 @@ public class SubMapCreator
 			remainingStraight[i] = remainingStraight[i + 1] + waypoints.get(i).loc.distanceTo(waypoints.get(i + 1).loc);
 		}
 
-		// State key = cornerIndex * keyBase + t, with t in 0..waypointCount (waypointCount == reached the last waypoint = goal).
-		final long keyBase = waypointCount + 1;
+		// State = (corner, t, previousCorner), encoded as one long key = cornerIndex*tBase*prevBase + t*prevBase + previousCorner,
+		// with t in 0..waypointCount (waypointCount == reached the last waypoint = goal). The previousCorner component forbids
+		// immediately reversing the edge just travelled, so the river flows THROUGH each interior waypoint instead of spurring out to
+		// it and back (a spur revisits a corner, renders as a loop, and would be excised — dropping the waypoint).
+		final long tBase = waypointCount + 1;
+		final long prevBase = newGraph.corners.size() + 1;
+		final int noPreviousCorner = newGraph.corners.size();
+
 		Corner startCorner = waypoints.get(0);
-		long startKey = startCorner.index * keyBase + 1;
+		long startKey = startCorner.index * tBase * prevBase + 1 * prevBase + noPreviousCorner;
 
 		Map<Long, Double> gScore = new HashMap<>();
 		// cameFrom[stateKey] = { previousStateKey, edgeIndexOfIncomingSegment }.
@@ -1002,8 +886,9 @@ public class SubMapCreator
 		{
 			WaypointSearchNode current = open.poll();
 			long stateKey = current.stateKey();
-			int cornerIndex = (int) (stateKey / keyBase);
-			int t = (int) (stateKey % keyBase);
+			int cornerIndex = (int) (stateKey / (tBase * prevBase));
+			int t = (int) ((stateKey / prevBase) % tBase);
+			int previousIndex = (int) (stateKey % prevBase);
 
 			if (t == waypointCount)
 			{
@@ -1021,13 +906,32 @@ public class SubMapCreator
 			Corner corner = newGraph.corners.get(cornerIndex);
 			Corner target = waypoints.get(t);
 
+			// Is there a usable neighbor other than the one we arrived from? If so we forbid reversing the last edge (so the river
+			// flows through this corner rather than spurring). If not — this corner is a single-corridor dead-end (e.g. a waypoint
+			// snapped to a near-coast corner whose other neighbors are water) — we allow the reversal: the resulting spur is later
+			// excised by removeCornerRevisits, dropping the un-throughable waypoint cleanly rather than forcing a freehand jump.
+			boolean hasForwardOption = false;
+			for (Edge edge : corner.protrudes)
+			{
+				Corner neighbor = edgeOtherCorner(edge, corner);
+				if (neighbor == null || neighbor.index == previousIndex)
+				{
+					continue;
+				}
+				if (neighbor.equals(target) || !(neighbor.isCoast || neighbor.isOcean || neighbor.isWater))
+				{
+					hasForwardOption = true;
+					break;
+				}
+			}
+
 			// Graph steps to adjacent land corners (the target waypoint is allowed even if it is water-adjacent).
 			for (Edge edge : corner.protrudes)
 			{
 				Corner neighbor = edgeOtherCorner(edge, corner);
-				if (neighbor == null)
+				if (neighbor == null || (neighbor.index == previousIndex && hasForwardOption))
 				{
-					continue;
+					continue; // null, or would immediately reverse the edge just travelled while a forward option exists (no spur).
 				}
 				boolean isTarget = neighbor.equals(target);
 				if (!isTarget && (neighbor.isCoast || neighbor.isOcean || neighbor.isWater))
@@ -1036,12 +940,12 @@ public class SubMapCreator
 				}
 				int nextT = isTarget ? t + 1 : t;
 				double tentative = gCurrent + corner.loc.distanceTo(neighbor.loc);
-				relaxWaypointState(neighbor, nextT, tentative, stateKey, edge.index, keyBase, gScore, cameFrom, open, waypoints, remainingStraight);
+				relaxWaypointState(neighbor, nextT, cornerIndex, tentative, stateKey, edge.index, tBase, prevBase, gScore, cameFrom, open, waypoints, remainingStraight);
 			}
 
 			// Freehand jump straight to the next waypoint (no Voronoi edge), penalized so it is a last resort.
 			double jumpCost = gCurrent + corner.loc.distanceTo(target.loc) * freehandJumpPenalty;
-			relaxWaypointState(target, t + 1, jumpCost, stateKey, RiverPathNode.EDGE_INDEX_NONE, keyBase, gScore, cameFrom, open, waypoints, remainingStraight);
+			relaxWaypointState(target, t + 1, cornerIndex, jumpCost, stateKey, RiverPathNode.EDGE_INDEX_NONE, tBase, prevBase, gScore, cameFrom, open, waypoints, remainingStraight);
 		}
 
 		if (goalKey < 0)
@@ -1065,13 +969,13 @@ public class SubMapCreator
 		for (int i = 0; i < stateKeys.size(); i++)
 		{
 			long key = stateKeys.get(i);
-			Corner corner = newGraph.corners.get((int) (key / keyBase));
+			Corner corner = newGraph.corners.get((int) (key / (tBase * prevBase)));
 			Point ri = corner.loc.mult(1.0 / resolution);
 			if (i + 1 < stateKeys.size())
 			{
 				long nextKey = stateKeys.get(i + 1);
 				int edgeIndex = (int) cameFrom.get(nextKey)[1];
-				int sourceT = (int) (key % keyBase);
+				int sourceT = (int) ((key / prevBase) % tBase);
 				int width = waypointWidths.get(sourceT - 1);
 				nodes.add(new RiverPathNode(ri, width, random.nextLong(), edgeIndex));
 			}
@@ -1132,10 +1036,10 @@ public class SubMapCreator
 	 * Relaxes a candidate {@code (corner, nextT)} state in {@link #routeWaypointsGlobally}: if {@code tentativeG} improves on the best
 	 * known cost to that state, records the new cost and back-pointer (with the incoming segment's edge index) and enqueues it.
 	 */
-	private static void relaxWaypointState(Corner corner, int nextT, double tentativeG, long fromStateKey, int edgeIndex, long keyBase, Map<Long, Double> gScore, Map<Long, long[]> cameFrom,
-			PriorityQueue<WaypointSearchNode> open, List<Corner> waypoints, double[] remainingStraight)
+	private static void relaxWaypointState(Corner corner, int nextT, int previousCornerIndex, double tentativeG, long fromStateKey, int edgeIndex, long tBase, long prevBase, Map<Long, Double> gScore,
+			Map<Long, long[]> cameFrom, PriorityQueue<WaypointSearchNode> open, List<Corner> waypoints, double[] remainingStraight)
 	{
-		long newKey = corner.index * keyBase + nextT;
+		long newKey = corner.index * tBase * prevBase + nextT * prevBase + previousCornerIndex;
 		Double existing = gScore.get(newKey);
 		if (existing != null && tentativeG >= existing - 1e-6)
 		{
@@ -1249,22 +1153,6 @@ public class SubMapCreator
 			return e.v1;
 		if (e.v1 != null && e.v1.equals(corner))
 			return e.v0;
-		return null;
-	}
-
-	/**
-	 * Returns the Voronoi edge directly connecting two adjacent corners (one of {@code a}'s protruding edges whose other end is {@code b}),
-	 * or {@code null} if they are not adjacent.
-	 */
-	private static Edge edgeBetweenAdjacentCorners(Corner a, Corner b)
-	{
-		for (Edge e : a.protrudes)
-		{
-			if (b.equals(edgeOtherCorner(e, a)))
-			{
-				return e;
-			}
-		}
 		return null;
 	}
 
