@@ -339,10 +339,10 @@ public class SubMapCreatorTest
 
 	/**
 	 * Verifies that the single re-routed river in this sub-map follows the new graph's Voronoi edges throughout, with no freehand jumps. In
-	 * redistribute mode the router falls back to connecting two waypoints with a direct freehand hop (a segment that follows no Voronoi edge,
-	 * recorded as {@link nortantis.editor.RiverPathNode#EDGE_INDEX_NONE}) when greedy routing between them fails or wanders too far. Such a
-	 * hop renders as a straight line cutting across polygons. For this sub-map the river should route cleanly along graph edges, so any
-	 * freehand jump indicates the router had to patch around a routing failure.
+	 * redistribute mode the router falls back to connecting two waypoints with a direct freehand hop (a segment that follows no Voronoi
+	 * edge, recorded as {@link nortantis.editor.RiverPathNode#EDGE_INDEX_NONE}) when greedy routing between them fails or wanders too far.
+	 * Such a hop renders as a straight line cutting across polygons. For this sub-map the river should route cleanly along graph edges, so
+	 * any freehand jump indicates the router had to patch around a routing failure.
 	 */
 	@Test
 	public void subMapRiverHasNoFreehandJumps() throws Exception
@@ -580,8 +580,8 @@ public class SubMapCreatorTest
 
 	/**
 	 * Asserts that no river segment is a freehand jump — i.e. every segment follows a Voronoi edge of the new graph
-	 * ({@code edgeIndexToNext != EDGE_INDEX_NONE}). A freehand jump is the router's fallback when it cannot route two waypoints along
-	 * graph edges, and renders as a straight line cutting across polygons.
+	 * ({@code edgeIndexToNext != EDGE_INDEX_NONE}). A freehand jump is the router's fallback when it cannot route two waypoints along graph
+	 * edges, and renders as a straight line cutting across polygons.
 	 */
 	private void assertRiversHaveNoFreehandJumps(List<River> rivers, MapSettings subMapSettings, String testName) throws Exception
 	{

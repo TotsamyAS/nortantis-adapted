@@ -1,5 +1,8 @@
 package nortantis;
 
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+
 import nortantis.util.Assets;
 
 public class DebugFlags
@@ -43,6 +46,20 @@ public class DebugFlags
 	private static boolean drawVoronoi = false;
 
 	private static boolean drawRoadDebugInfo = false;
+
+	/**
+	 * When true, the corners used as waypoints by the sub-map river re-routing (the "Choose" detail level) are highlighted on the rendered
+	 * sub-map. The waypoint corner indexes are recorded into {@link #subMapRiverWaypointCornerIndexes} by {@link SubMapCreator} as it
+	 * routes each river, and drawn by {@link MapCreator}. Because the sub-map's render graph is built with the same seed and parameters as
+	 * the graph used during sub-map creation, corner indexes line up between the two.
+	 */
+	private static boolean highlightSubMapRiverWaypoints = true;
+
+	/**
+	 * New-graph corner indexes of the waypoints used by the most recent sub-map river re-routing, populated by {@link SubMapCreator} when
+	 * {@link #highlightSubMapRiverWaypoints} is on. Thread-safe so the background draw thread can read it while sub-map creation writes it.
+	 */
+	private static final List<Integer> subMapRiverWaypointCornerIndexes = new CopyOnWriteArrayList<>();
 
 	public static boolean showIncrementalUpdateBounds()
 	{
@@ -119,5 +136,36 @@ public class DebugFlags
 	public static boolean drawRoadDebugInfo()
 	{
 		return !Assets.isRunningFromJar() && drawRoadDebugInfo;
+	}
+
+	public static boolean highlightSubMapRiverWaypoints()
+	{
+		return !Assets.isRunningFromJar() && highlightSubMapRiverWaypoints;
+	}
+
+	/**
+	 * Clears the recorded sub-map river waypoint corner indexes. Called at the start of each sub-map river transfer so the highlights
+	 * reflect only the most recent sub-map.
+	 */
+	public static void clearSubMapRiverWaypointCornerIndexes()
+	{
+		subMapRiverWaypointCornerIndexes.clear();
+	}
+
+	/**
+	 * Records a new-graph corner index used as a river waypoint, so it can be highlighted on the rendered sub-map.
+	 */
+	public static void addSubMapRiverWaypointCornerIndex(int cornerIndex)
+	{
+		subMapRiverWaypointCornerIndexes.add(cornerIndex);
+	}
+
+	public static List<Integer> getSubMapRiverWaypointCornerIndexes()
+	{
+		if (Assets.isRunningFromJar())
+		{
+			return new CopyOnWriteArrayList<>();
+		}
+		return subMapRiverWaypointCornerIndexes;
 	}
 }

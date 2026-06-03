@@ -614,6 +614,10 @@ public class SubMapCreator
 		else
 		{
 			// Choose / custom detail: redistribute rivers by re-routing them through the new, finer graph.
+			if (DebugFlags.highlightSubMapRiverWaypoints())
+			{
+				DebugFlags.clearSubMapRiverWaypointCornerIndexes();
+			}
 			for (River river : originalEdits.rivers)
 			{
 				// A source endpoint is a coastal mouth if it lies inside the selection and is adjacent to water in the
@@ -803,6 +807,10 @@ public class SubMapCreator
 			waypoints.add(corner);
 			waypointCorners.add(corner);
 			waypointWidths.add(node.getWidthLevelToNext());
+			if (DebugFlags.highlightSubMapRiverWaypoints())
+			{
+				DebugFlags.addSubMapRiverWaypointCornerIndex(corner.index);
+			}
 		}
 
 		if (waypoints.size() < 2)

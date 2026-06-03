@@ -853,6 +853,35 @@ public class MapCreator implements WarningLogger
 			}
 		}
 
+		if (DebugFlags.highlightSubMapRiverWaypoints() && !DebugFlags.getSubMapRiverWaypointCornerIndexes().isEmpty())
+		{
+			try (Painter p = map.createPainter())
+			{
+				// Draw waypoints as magenta X marks so they stay distinguishable from the LandWaterTool's yellow/orange
+				// river highlighting (round control-point circles and highlighted polylines), which is shown at the same time.
+				// Each X is labeled with its 1-based order in the search (the order waypoints were found while routing).
+				p.setColor(Color.magenta);
+				p.setBasicStroke((float) (2.0 * settings.resolution));
+				p.setFont(Font.create("SansSerif", FontStyle.Bold, (float) (16.0 * settings.resolution)));
+				final int radius = (int) (8.0 * settings.resolution);
+				List<Integer> waypointCornerIndexes = DebugFlags.getSubMapRiverWaypointCornerIndexes();
+				for (int order = 0; order < waypointCornerIndexes.size(); order++)
+				{
+					int index = waypointCornerIndexes.get(order);
+					if (index < 0 || index >= graph.corners.size())
+					{
+						continue;
+					}
+					Corner c = graph.corners.get(index);
+					int x = (int) c.loc.x;
+					int y = (int) c.loc.y;
+					p.drawLine(x - radius, y - radius, x + radius, y + radius);
+					p.drawLine(x - radius, y + radius, x + radius, y - radius);
+					p.drawString(Integer.toString(order + 1), x + radius + (int) (2.0 * settings.resolution), y - radius);
+				}
+			}
+		}
+
 		if (settings.drawBorder)
 		{
 			Logger.println("Adding border.");
