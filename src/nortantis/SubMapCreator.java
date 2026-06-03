@@ -644,7 +644,130 @@ public class SubMapCreator
 			}
 		}
 
+		if (redistributeIcons)
+		{
+			stitchConfluences(newEdits.rivers, newGraph, newEdits, originalResolution);
+		}
+
 		removeDuplicateRiverSegments(newEdits.rivers);
+	}
+
+	/**
+	 * Reconnects redistribute-mode tributaries that the finer graph left one corner short of their trunk.
+	 * <p>
+	 * Rivers are routed independently, and {@link #removeCornerRevisits} drops a waypoint that the global router could only reach by a spur
+	 * (a corner that is a near-dead-end in the new graph). A confluence corner shared by two source rivers is such a spur on the trunk: the
+	 * trunk's path is pruned back to the adjacent corner it actually passes through, while the tributary still ends at the confluence
+	 * corner, leaving the two one Voronoi edge apart and disconnected. This pass finds each river's interior (non-mouth) endpoint that no
+	 * other river shares, and if a graph-adjacent corner is used by a different river, extends the endpoint by one node onto that corner so
+	 * the two rivers share a point. Endpoints that reach the coast (mouths) and endpoints already shared are left alone.
+	 * </p>
+	 */
+	private static void stitchConfluences(List<River> rivers, WorldGraph newGraph, MapEdits newEdits, double resolution)
+	{
+		// Snapshot: map each new-graph corner a river passes through to the set of rivers using it.
+		Map<Integer, Set<Integer>> riversByCorner = new HashMap<>();
+		List<Set<Integer>> ownCornerIndexes = new ArrayList<>();
+		for (int ri = 0; ri < rivers.size(); ri++)
+		{
+			Set<Integer> own = new HashSet<>();
+			for (RiverPathNode node : rivers.get(ri).nodes)
+			{
+				int cornerIndex = newGraph.findClosestCorner(node.getLoc().mult(resolution)).index;
+				own.add(cornerIndex);
+				riversByCorner.computeIfAbsent(cornerIndex, k -> new HashSet<>()).add(ri);
+			}
+			ownCornerIndexes.add(own);
+		}
+
+		for (int ri = 0; ri < rivers.size(); ri++)
+		{
+			River stitched = stitchRiverEnds(rivers.get(ri), ri, ownCornerIndexes.get(ri), riversByCorner, newGraph, newEdits, resolution);
+			if (stitched != null)
+			{
+				rivers.set(ri, stitched);
+			}
+		}
+	}
+
+	/**
+	 * Extends, by one Voronoi edge, whichever ends of {@code river} are unshared interior endpoints that sit adjacent to a corner used by a
+	 * different river, so the rivers meet at a shared corner. Returns a new {@link River} if either end was extended, otherwise
+	 * {@code null}.
+	 */
+	private static River stitchRiverEnds(River river, int riverIndex, Set<Integer> ownCornerIndexes, Map<Integer, Set<Integer>> riversByCorner, WorldGraph newGraph, MapEdits newEdits,
+			double resolution)
+	{
+		List<RiverPathNode> nodes = new ArrayList<>(river.nodes);
+		boolean changed = false;
+
+		// Start endpoint: prepend a connecting corner if it stitches onto another river.
+		Corner startConnector = findConfluenceConnector(nodes.get(0), riverIndex, ownCornerIndexes, riversByCorner, newGraph, newEdits, resolution);
+		if (startConnector != null)
+		{
+			Corner startCorner = newGraph.findClosestCorner(nodes.get(0).getLoc().mult(resolution));
+			Edge edge = edgeBetweenAdjacentCorners(startConnector, startCorner);
+			int width = nodes.get(0).getWidthLevelToNext();
+			nodes.add(0, new RiverPathNode(startConnector.loc.mult(1.0 / resolution), width, new Random().nextLong(), edge != null ? edge.index : RiverPathNode.EDGE_INDEX_NONE));
+			changed = true;
+		}
+
+		// End endpoint: append a connecting corner, making the old terminal node interior.
+		int lastIndex = nodes.size() - 1;
+		Corner endConnector = findConfluenceConnector(nodes.get(lastIndex), riverIndex, ownCornerIndexes, riversByCorner, newGraph, newEdits, resolution);
+		if (endConnector != null)
+		{
+			Corner endCorner = newGraph.findClosestCorner(nodes.get(lastIndex).getLoc().mult(resolution));
+			Edge edge = edgeBetweenAdjacentCorners(endCorner, endConnector);
+			int width = lastIndex >= 1 ? nodes.get(lastIndex - 1).getWidthLevelToNext() : nodes.get(lastIndex).getWidthLevelToNext();
+			RiverPathNode oldTerminal = nodes.get(lastIndex);
+			nodes.set(lastIndex, new RiverPathNode(oldTerminal.getLoc(), width, new Random().nextLong(), edge != null ? edge.index : RiverPathNode.EDGE_INDEX_NONE));
+			nodes.add(new RiverPathNode(endConnector.loc.mult(1.0 / resolution), 0, 0L, RiverPathNode.EDGE_INDEX_NONE));
+			changed = true;
+		}
+
+		return changed ? new River(nodes) : null;
+	}
+
+	/**
+	 * For the given river endpoint node, returns a graph-adjacent corner used by a <em>different</em> river to stitch onto, or {@code null}
+	 * if the endpoint should be left alone. Returns {@code null} when the endpoint is a coastal mouth (it flows to the sea, not a
+	 * confluence), is already shared with another river, or has no adjacent corner that belongs to another river and not to this one.
+	 */
+	private static Corner findConfluenceConnector(RiverPathNode endpoint, int riverIndex, Set<Integer> ownCornerIndexes, Map<Integer, Set<Integer>> riversByCorner, WorldGraph newGraph,
+			MapEdits newEdits, double resolution)
+	{
+		Corner endCorner = newGraph.findClosestCorner(endpoint.getLoc().mult(resolution));
+		if (endCorner == null || endCorner.isCoast || endCorner.isOcean || endCorner.isWater || isNewCornerAdjacentToWater(endCorner, newEdits))
+		{
+			return null;
+		}
+		Set<Integer> riversHere = riversByCorner.get(endCorner.index);
+		if (riversHere != null && riversHere.size() > 1)
+		{
+			return null; // Already shared with another river.
+		}
+		Corner best = null;
+		double bestDist = Double.MAX_VALUE;
+		for (Corner adjacent : endCorner.adjacent)
+		{
+			if (ownCornerIndexes.contains(adjacent.index))
+			{
+				continue; // Don't stitch onto our own path (would form a loop).
+			}
+			Set<Integer> riversThere = riversByCorner.get(adjacent.index);
+			if (riversThere == null || (riversThere.size() == 1 && riversThere.contains(riverIndex)))
+			{
+				continue; // Not used by a different river.
+			}
+			double dist = endCorner.loc.distanceTo(adjacent.loc);
+			if (dist < bestDist)
+			{
+				bestDist = dist;
+				best = adjacent;
+			}
+		}
+		return best;
 	}
 
 	/**
@@ -1126,6 +1249,22 @@ public class SubMapCreator
 			return e.v1;
 		if (e.v1 != null && e.v1.equals(corner))
 			return e.v0;
+		return null;
+	}
+
+	/**
+	 * Returns the Voronoi edge directly connecting two adjacent corners (one of {@code a}'s protruding edges whose other end is {@code b}),
+	 * or {@code null} if they are not adjacent.
+	 */
+	private static Edge edgeBetweenAdjacentCorners(Corner a, Corner b)
+	{
+		for (Edge e : a.protrudes)
+		{
+			if (b.equals(edgeOtherCorner(e, a)))
+			{
+				return e;
+			}
+		}
 		return null;
 	}
 
