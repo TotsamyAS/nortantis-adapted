@@ -318,9 +318,11 @@ public class SubMapCreatorTest
 	}
 
 	/**
-	 * Verifies that a sub-map covering the entire source map at the original detail level (a 1× "Match source detail" sub-map) produces a
-	 * clean river network: no duplicate segments, no loops, and no degenerate single-point rivers. This exercises the full-map transfer
-	 * path for {@code riversForSubMaps.nort}, where the selection covers the whole map so the sub-map's polygon count matches the source's.
+	 * Verifies that a sub-map covering the entire source map at the original detail level (a 1× "Match source detail" sub-map) preserves
+	 * every source river faithfully — none dropped. "Match source detail" copies rivers verbatim (no loop removal, no re-routing), so a
+	 * full-map copy must reproduce all of them. {@code riversForSubMaps.nort} intentionally contains a complex river that revisits points;
+	 * exact-copy reproduces it as-is, so this test deliberately does NOT assert loop-freedom — that would test source-data quality, not the
+	 * copy. (It is a regression test for a bug where {@code removeLoops} silently deleted that river.)
 	 */
 	@Test
 	public void subMapOfEntireMapAtOriginalDetailRivers() throws Exception
@@ -349,15 +351,16 @@ public class SubMapCreatorTest
 		int worldSize = SubMapDialog.computeDefaultWorldSize(originalSettings, selectionBoundsRI);
 		assertEquals(originalSettings.worldSize, worldSize, "A full-map selection should default to the source map's world size (original detail level)");
 
+		int sourceRiverCount = originalSettings.edits.rivers.size();
+
 		long seed = 1402779553L;
 		// redistributeIcons=false: original detail level means "Match source detail", which copies rivers over exactly.
 		MapSettings subMapSettings = SubMapCreator.createSubMapSettings(originalSettings, originalGraph, selectionBoundsRI, worldSize, originalSettings.resolution, seed, false);
 
 		List<River> rivers = subMapSettings.edits.rivers;
 
-		assertNoDuplicateRiverSegments(rivers, subMapSettings, "subMapOfEntireMapAtOriginalDetailRivers");
-		assertRiversHaveNoLoops(rivers, subMapSettings, "subMapOfEntireMapAtOriginalDetailRivers");
-		assertRiversHaveNoFingers(rivers, subMapSettings, "subMapOfEntireMapAtOriginalDetailRivers");
+		// A full-map exact-copy clips nothing, so every source river must survive 1:1 — none dropped or split.
+		assertEquals(sourceRiverCount, rivers.size(), "Full-map exact-copy should preserve every source river (none dropped)");
 		if (forceWrite || forceWriteAllMaps)
 		{
 			saveFailedMap(subMapSettings, "subMapOfEntireMapAtOriginalDetailRivers");
@@ -365,8 +368,9 @@ public class SubMapCreatorTest
 	}
 
 	/**
-	 * Verifies that a sub-map covering the entire source map at the original detail level (a 1× "Match source detail" sub-map) produces a
-	 * clean river network for {@code simpleSmallWorld.nort}: no duplicate segments, no loops, and no degenerate single-point rivers.
+	 * Verifies that a sub-map covering the entire source map at the original detail level (a 1× "Match source detail" sub-map) preserves
+	 * every source river faithfully for {@code simpleSmallWorld.nort} — none dropped. "Match source detail" copies rivers verbatim, so a
+	 * full-map copy must reproduce all of them.
 	 */
 	@Test
 	public void subMapOfEntireMapAtOriginalDetailSimpleSmallWorld() throws Exception
@@ -395,15 +399,16 @@ public class SubMapCreatorTest
 		int worldSize = SubMapDialog.computeDefaultWorldSize(originalSettings, selectionBoundsRI);
 		assertEquals(originalSettings.worldSize, worldSize, "A full-map selection should default to the source map's world size (original detail level)");
 
+		int sourceRiverCount = originalSettings.edits.rivers.size();
+
 		long seed = 768241095L;
 		// redistributeIcons=false: original detail level means "Match source detail", which copies rivers over exactly.
 		MapSettings subMapSettings = SubMapCreator.createSubMapSettings(originalSettings, originalGraph, selectionBoundsRI, worldSize, originalSettings.resolution, seed, false);
 
 		List<River> rivers = subMapSettings.edits.rivers;
 
-		assertNoDuplicateRiverSegments(rivers, subMapSettings, "subMapOfEntireMapAtOriginalDetailSimpleSmallWorld");
-		assertRiversHaveNoLoops(rivers, subMapSettings, "subMapOfEntireMapAtOriginalDetailSimpleSmallWorld");
-		assertRiversHaveNoFingers(rivers, subMapSettings, "subMapOfEntireMapAtOriginalDetailSimpleSmallWorld");
+		// A full-map exact-copy clips nothing, so every source river must survive 1:1 — none dropped or split.
+		assertEquals(sourceRiverCount, rivers.size(), "Full-map exact-copy should preserve every source river (none dropped)");
 		if (forceWrite || forceWriteAllMaps)
 		{
 			saveFailedMap(subMapSettings, "subMapOfEntireMapAtOriginalDetailSimpleSmallWorld");

@@ -580,8 +580,8 @@ public class SubMapCreator
 	 * </p>
 	 * <ul>
 	 * <li><b>Match source detail ({@code redistributeIcons == false}):</b> each river path is clipped to the selection and transformed
-	 * directly into sub-map RI coordinates (the same coordinate transform used for roads), preserving the original river shape exactly as a
-	 * freehand {@link River} polyline. {@link #removeLoops} drops any self-touching loop inherited from the source data.</li>
+	 * directly into sub-map RI coordinates (the same coordinate transform used for roads), reproducing the original river faithfully as a
+	 * freehand {@link River} polyline. The source path is authoritative and is never reshaped or dropped here.</li>
 	 * <li><b>Choose / custom detail ({@code redistributeIcons == true}):</b> rivers are <em>redistributed</em> — re-routed through the
 	 * sub-map's finer graph via {@link #transferPolylineToSubMap} so they follow the new polygon topology, matching how icons are
 	 * redistributed across the new polygons in this mode. This is why the Choose detail level looks different from a magnified copy.</li>
@@ -602,17 +602,12 @@ public class SubMapCreator
 
 		if (!redistributeIcons)
 		{
-			// Match source detail: copy each river over exactly, preserving its shape.
+			// Match source detail: copy each river over exactly, clipped to the selection and transformed into sub-map coordinates. The
+			// river is reproduced faithfully — its shape is preserved and it is never dropped, even where it runs into ocean or lakes. (No
+			// loop removal here: the source path is authoritative, and a complex source river can legitimately revisit points.)
 			for (River river : originalEdits.rivers)
 			{
-				for (River clippedRiver : clipRiverPath(river, selectionBoundsRI, newGenWidth, newGenHeight, riverLevelScale))
-				{
-					River simpleRiver = removeLoops(clippedRiver);
-					if (simpleRiver != null)
-					{
-						newEdits.rivers.add(simpleRiver);
-					}
-				}
+				newEdits.rivers.addAll(clipRiverPath(river, selectionBoundsRI, newGenWidth, newGenHeight, riverLevelScale));
 			}
 		}
 		else
@@ -670,54 +665,6 @@ public class SubMapCreator
 
 		// Drop any river trimmed below a drawable length.
 		rivers.removeIf(river -> river.nodes.size() < 2);
-	}
-
-	/**
-	 * Returns a copy of {@code river} with any loops removed, or {@code river} itself if it has none. A loop is a path point that repeats:
-	 * the original map's river-finding can produce a cyclic edge chain (see {@code WorldGraph.followRiver}, which closes the loop by adding
-	 * a final edge back to an already-visited corner), and {@code GraphRiver.getOrderedCorners} then linearizes that cycle into a path
-	 * whose last leg returns to an earlier point. Such a loop draws as a small overlapping curl. We excise it by dropping the path points
-	 * between the two occurrences of the repeated location, bridging the kept point to the segment that continued past the duplicate.
-	 * Returns {@code null} if the river is reduced below a drawable length.
-	 */
-	private static River removeLoops(River river)
-	{
-		List<RiverPathNode> nodes = new ArrayList<>(river.nodes);
-		boolean changed = false;
-		boolean foundLoop = true;
-		while (foundLoop)
-		{
-			foundLoop = false;
-			Map<Point, Integer> firstIndexByLoc = new HashMap<>();
-			for (int j = 0; j < nodes.size(); j++)
-			{
-				Point loc = nodes.get(j).getLoc();
-				Integer i = firstIndexByLoc.get(loc);
-				if (i != null)
-				{
-					// Bridge the kept point (index i) to whatever followed the duplicate (index j), using the
-					// duplicate's outgoing segment metadata, then drop the cycle body (indexes i+1 .. j).
-					RiverPathNode duplicate = nodes.get(j);
-					RiverPathNode kept = nodes.get(i);
-					nodes.set(i, new RiverPathNode(kept.getLoc(), duplicate.getWidthLevelToNext(), duplicate.getSeedToNext(), duplicate.getEdgeIndexToNext()));
-					nodes.subList(i + 1, j + 1).clear();
-					changed = true;
-					foundLoop = true;
-					break;
-				}
-				firstIndexByLoc.put(loc, j);
-			}
-		}
-
-		if (!changed)
-		{
-			return river;
-		}
-		if (nodes.size() < 2)
-		{
-			return null;
-		}
-		return new River(nodes);
 	}
 
 	private static boolean isSegmentShared(Map<OrderlessPair<Point>, Integer> segmentCounts, Point a, Point b)
