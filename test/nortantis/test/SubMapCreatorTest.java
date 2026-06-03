@@ -526,6 +526,102 @@ public class SubMapCreatorTest
 	}
 
 	/**
+	 * Like {@link #subMapOfEntireMapAtOriginalDetailRivers}, but at a detail level a little higher than the source (1.5× the polygon
+	 * count), which means rivers and icons are <em>redistributed</em> ({@code redistributeIcons == true}) — re-routed through the new,
+	 * finer graph rather than copied verbatim. Even re-routed, a full-map redistribution must not drop any river: each source river is
+	 * re-routed into one sub-map river, so the count is preserved. (Some segments may be freehand jumps where the finer topology forces
+	 * them; that is allowed here, unlike {@link #subMapRiverHasNoFreehandJumps} which targets a specific clean-routing case.)
+	 */
+	@Test
+	public void subMapOfEntireMapAtHigherDetailRivers() throws Exception
+	{
+		// Set to true to force this test to write its result map to the failed sub-maps folder, even when it passes.
+		boolean forceWrite = false;
+
+		String originalSettingsPath = Paths.get("unit test files", "map settings", "riversForSubMaps.nort").toString();
+		MapSettings originalSettings = new MapSettings(originalSettingsPath);
+		originalSettings.resolution = 0.5;
+
+		WorldGraph originalGraph = MapCreator.createGraphForUnitTests(originalSettings);
+		// Match the UI/full-draw path: only derive rivers from the graph if the map hasn't already. These
+		// .nort files store initialized rivers (hasInitializedRivers == true), and initializeRiversFromGraph
+		// appends rather than replaces, so calling it unconditionally would add a second, re-derived copy of
+		// every river. Those overlapping duplicate rivers render as extra segments and loops in the sub-map.
+		if (!originalSettings.edits.hasInitializedRivers)
+		{
+			originalSettings.edits.initializeRiversFromGraph(originalGraph, originalSettings.resolution);
+		}
+
+		// Selection bounds covering the entire source map, in RI (resolution-invariant) coordinates.
+		Rectangle selectionBoundsRI = new Rectangle(0, 0, originalSettings.generatedWidth, originalSettings.generatedHeight);
+
+		// A detail level a little higher than the source: 1.5x the source polygon count (createSubMapSettings clamps to the valid range).
+		int higherWorldSize = (int) Math.round(originalSettings.worldSize * 1.5);
+
+		int sourceRiverCount = originalSettings.edits.rivers.size();
+
+		long seed = 1402779553L;
+		// redistributeIcons=true: a higher-than-source detail level redistributes rivers and icons through the new graph.
+		MapSettings subMapSettings = SubMapCreator.createSubMapSettings(originalSettings, originalGraph, selectionBoundsRI, higherWorldSize, originalSettings.resolution, seed, true);
+
+		List<River> rivers = subMapSettings.edits.rivers;
+
+		// A full-map redistribution re-routes each source river into one sub-map river, so none should be dropped.
+		assertEquals(sourceRiverCount, rivers.size(), "Full-map higher-detail redistribution should re-route every source river (none dropped)");
+		if (forceWrite || forceWriteAllMaps)
+		{
+			saveFailedMap(subMapSettings, "subMapOfEntireMapAtHigherDetailRivers");
+		}
+	}
+
+	/**
+	 * Like {@link #subMapOfEntireMapAtOriginalDetailSimpleSmallWorld}, but at a detail level a little higher than the source (1.5× the
+	 * polygon count), which redistributes rivers and icons ({@code redistributeIcons == true}) through the new, finer graph rather than
+	 * copying them verbatim. A full-map redistribution re-routes each source river into one sub-map river, so the river count is preserved.
+	 */
+	@Test
+	public void subMapOfEntireMapAtHigherDetailSimpleSmallWorld() throws Exception
+	{
+		// Set to true to force this test to write its result map to the failed sub-maps folder, even when it passes.
+		boolean forceWrite = false;
+
+		String originalSettingsPath = Paths.get("unit test files", "map settings", "simpleSmallWorld.nort").toString();
+		MapSettings originalSettings = new MapSettings(originalSettingsPath);
+		originalSettings.resolution = 0.5;
+
+		WorldGraph originalGraph = MapCreator.createGraphForUnitTests(originalSettings);
+		// Match the UI/full-draw path: only derive rivers from the graph if the map hasn't already. These
+		// .nort files store initialized rivers (hasInitializedRivers == true), and initializeRiversFromGraph
+		// appends rather than replaces, so calling it unconditionally would add a second, re-derived copy of
+		// every river. Those overlapping duplicate rivers render as extra segments and loops in the sub-map.
+		if (!originalSettings.edits.hasInitializedRivers)
+		{
+			originalSettings.edits.initializeRiversFromGraph(originalGraph, originalSettings.resolution);
+		}
+
+		// Selection bounds covering the entire source map, in RI (resolution-invariant) coordinates.
+		Rectangle selectionBoundsRI = new Rectangle(0, 0, originalSettings.generatedWidth, originalSettings.generatedHeight);
+
+		// A detail level a little higher than the source: 1.5x the source polygon count (createSubMapSettings clamps to the valid range).
+		int higherWorldSize = (int) Math.round(originalSettings.worldSize * 1.5);
+
+		int sourceRiverCount = originalSettings.edits.rivers.size();
+
+		long seed = 768241095L;
+		// redistributeIcons=true: a higher-than-source detail level redistributes rivers and icons through the new graph.
+		MapSettings subMapSettings = SubMapCreator.createSubMapSettings(originalSettings, originalGraph, selectionBoundsRI, higherWorldSize, originalSettings.resolution, seed, true);
+
+		List<River> rivers = subMapSettings.edits.rivers;
+
+		// A full-map redistribution re-routes each source river into one sub-map river, so none should be dropped.
+		assertEquals(sourceRiverCount, rivers.size(), "Full-map higher-detail redistribution should re-route every source river (none dropped)");
+		if (forceWrite || forceWriteAllMaps)
+		{
+			saveFailedMap(subMapSettings, "subMapOfEntireMapAtHigherDetailSimpleSmallWorld");
+		}
+	}
+
+	/**
 	 * Returns true if the new-graph corner closest to the given river-path endpoint (in RI coordinates) is adjacent to the ocean — i.e. it
 	 * is a coast or ocean corner, or it touches a water center. Sub-map rivers are freehand polylines, so a river that reaches the sea ends
 	 * at a shoreline corner; an interior confluence/junction endpoint sits inland and does not match.
