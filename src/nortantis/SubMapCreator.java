@@ -857,7 +857,59 @@ public class SubMapCreator
 		loopClosingEdgeLevels.forEach((k, v) -> polylineEdgeLevels.merge(k, v, Math::max));
 		simplifyToPath(polylineEdgeLevels, firstCorner, lastCorner);
 
-		return buildRiverFromEdgePath(polylineEdgeLevels, firstCorner, lastCorner, originalResolution);
+		River river = buildRiverFromEdgePath(polylineEdgeLevels, firstCorner, lastCorner, originalResolution);
+
+		// Determine which ends should terminate at a coastal mouth: a source endpoint that lies inside the selection and is adjacent to
+		// water in the source map. The greedy router blocks coast/ocean/water corners, so it cannot route to or from a mouth corner flanked
+		// by shore corners and instead stops at the nearest inland corner. We snap each such mouth to the closest water-adjacent corner to
+		// the built path's corresponding end (firstCorner / lastCorner), then attach it as a short freehand hop in attachMouths — exactly a
+		// river's final approach to the sea. Deriving the mouths from the source endpoints (rather than from the routed segments) is
+		// robust:
+		// the segment list does not always retain a terminal segment ending at the snapped mouth.
+		Point sourceFirst = riPath.get(0);
+		Point sourceLast = riPath.get(riPath.size() - 1);
+		Corner desiredStartMouth = firstCorner != null && selectionBoundsRI.contains(sourceFirst.x, sourceFirst.y)
+				&& isRIPointAdjacentToWater(sourceFirst, originalGraph, originalEdits, originalResolution)
+						? findClosestCornerMatching(newGraph.corners, firstCorner.loc, c -> isNewCornerAdjacentToWater(c, newEdits))
+						: null;
+		Corner desiredEndMouth = lastCorner != null && selectionBoundsRI.contains(sourceLast.x, sourceLast.y) && isRIPointAdjacentToWater(sourceLast, originalGraph, originalEdits, originalResolution)
+				? findClosestCornerMatching(newGraph.corners, lastCorner.loc, c -> isNewCornerAdjacentToWater(c, newEdits))
+				: null;
+
+		return attachMouths(river, firstCorner, lastCorner, desiredStartMouth, desiredEndMouth, originalResolution);
+	}
+
+	/**
+	 * Ensures a re-routed river reaches its intended coastal mouths. The greedy router in {@link #transferPolylineToSubMap} blocks
+	 * coast/ocean/water corners, so it cannot route to or from a mouth corner that is flanked by shore corners; in that case the built path
+	 * stops at the nearest inland corner and the mouth is lost. This prepends/appends the mouth corner as a short freehand hop (no Voronoi
+	 * edge), which is exactly a river's final approach to the sea. {@code firstCorner} / {@code lastCorner} are the built path's actual end
+	 * corners; a mouth the router already reached is left untouched. Returns {@code river} unchanged if there is nothing to attach.
+	 */
+	private static River attachMouths(River river, Corner firstCorner, Corner lastCorner, Corner startMouth, Corner endMouth, double resolution)
+	{
+		if (river == null)
+			return null;
+		List<RiverPathNode> nodes = new ArrayList<>(river.nodes);
+
+		if (startMouth != null && firstCorner != null && !startMouth.equals(firstCorner))
+		{
+			// Prepend the mouth, giving the new first segment the same width level as the original first segment.
+			int level = nodes.get(0).getWidthLevelToNext();
+			nodes.add(0, new RiverPathNode(startMouth.loc.mult(1.0 / resolution), level, new Random().nextLong(), RiverPathNode.EDGE_INDEX_NONE));
+		}
+
+		if (endMouth != null && lastCorner != null && !endMouth.equals(lastCorner))
+		{
+			// The current terminal node becomes interior, flowing to the mouth with the river's terminal width level.
+			int lastIndex = nodes.size() - 1;
+			int level = lastIndex >= 1 ? nodes.get(lastIndex - 1).getWidthLevelToNext() : nodes.get(lastIndex).getWidthLevelToNext();
+			RiverPathNode oldTerminal = nodes.get(lastIndex);
+			nodes.set(lastIndex, new RiverPathNode(oldTerminal.getLoc(), level, new Random().nextLong(), RiverPathNode.EDGE_INDEX_NONE));
+			nodes.add(new RiverPathNode(endMouth.loc.mult(1.0 / resolution), 0, 0L, RiverPathNode.EDGE_INDEX_NONE));
+		}
+
+		return nodes.size() == river.nodes.size() ? river : new River(nodes);
 	}
 
 	/**
