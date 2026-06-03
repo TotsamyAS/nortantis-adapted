@@ -308,9 +308,29 @@ public class SubMapCreatorTest
 		long seed = 1222331460L;
 		MapSettings subMapSettings = SubMapCreator.createSubMapSettings(originalSettings, originalGraph, selectionBoundsRI, worldSize, originalSettings.resolution, seed, true);
 
+		WorldGraph newGraph = MapCreator.createGraphForUnitTests(subMapSettings);
+
 		List<River> rivers = subMapSettings.edits.rivers;
 
 		assertRiversAreAllConnected(rivers, subMapSettings, "subMapRiversFormConfluence2");
+
+		// The three arms of the T each terminate at the coast, so the sub-map must have three coastal mouths.
+		// This guards against an arm regressing to stop inland (the bug attachMouths originally fixed): connectivity
+		// alone would still pass if a dropped mouth left the arm joined to the trunk but not reaching the sea.
+		long mouthCount = 0;
+		for (River river : rivers)
+		{
+			if (riverEndpointTouchesCoastOrOcean(river.nodes.get(0).getLoc(), newGraph, subMapSettings.resolution))
+				mouthCount++;
+			if (riverEndpointTouchesCoastOrOcean(river.nodes.get(river.nodes.size() - 1).getLoc(), newGraph, subMapSettings.resolution))
+				mouthCount++;
+		}
+		if (mouthCount != 3)
+		{
+			String failedMapPath = saveFailedMap(subMapSettings, "subMapRiversFormConfluence2");
+			fail("Expected the confluence to have 3 coastal mouths, but found " + mouthCount + ".\nFailed map written to: " + failedMapPath);
+		}
+
 		if (forceWrite || forceWriteAllMaps)
 		{
 			saveFailedMap(subMapSettings, "subMapRiversFormConfluence2");
