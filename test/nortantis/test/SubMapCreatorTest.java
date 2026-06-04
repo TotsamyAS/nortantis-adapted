@@ -35,7 +35,7 @@ public class SubMapCreatorTest
 
 	// Set this to true to make every test write its result map to the failed sub-maps folder, so the actual results can be viewed even when
 	// the tests pass. Each test also has a local forceWrite flag near its top that does the same for that single test.
-	private static final boolean forceWriteAllMaps = true;
+	private static final boolean forceWriteAllMaps = false;
 
 	@BeforeAll
 	public static void setUpBeforeClass() throws IOException

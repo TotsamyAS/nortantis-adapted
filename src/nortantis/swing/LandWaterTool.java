@@ -2189,12 +2189,23 @@ public class LandWaterTool extends EditorTool
 			return Collections.emptySet();
 		}
 
+		WorldGraph graph = updater.mapParts.graph;
 		Set<Center> result = new HashSet<>();
 		for (List<Point> points : pointLists)
 		{
 			for (Point point : points)
 			{
-				Center c = updater.mapParts.graph.findClosestCenter(point.mult(mainWindow.displayQualityScale), true);
+				// Clamp the point into the map bounds before the lookup. A path (e.g. a freehand river)
+				// can have a node that lies beyond the map border; the segment leading to that node still
+				// needs to draw up to the edge, where it will be covered by the border. Dropping off-map
+				// nodes would leave the redraw bounds short, so the on-map part of the boundary-crossing
+				// segment would be clipped during an incremental update (a full draw is unaffected because
+				// it ignores these bounds). Clamping maps the off-map node to the border center where the
+				// segment exits the map, which extends the redraw bounds to the edge.
+				Point pixel = point.mult(mainWindow.displayQualityScale);
+				double clampedX = Math.min(Math.max(pixel.x, 0), graph.getWidth() - 1);
+				double clampedY = Math.min(Math.max(pixel.y, 0), graph.getHeight() - 1);
+				Center c = graph.findClosestCenter(new Point(clampedX, clampedY), true);
 				if (c != null)
 				{
 					result.add(c);
