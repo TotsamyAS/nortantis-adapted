@@ -38,6 +38,14 @@ public class NamedResource implements Serializable
 		}
 		String fileName = (String) obj.get("name");
 		String artPack = (String) obj.get("artPack");
+		if (fileName == null || artPack == null)
+		{
+			// A resource is only meaningful with both a name and an art pack. A file that stores either
+			// as null (e.g. one saved by a build with assertions disabled where an invalid NamedResource
+			// was constructed) would otherwise crash loading on the constructor's assertions. Treat it as
+			// "no resource" so the map still opens.
+			return null;
+		}
 		return new NamedResource(artPack, fileName);
 	}
 
