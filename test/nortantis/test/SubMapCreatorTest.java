@@ -61,14 +61,6 @@ public class SubMapCreatorTest
 		originalSettings.resolution = 0.5;
 
 		WorldGraph originalGraph = MapCreator.createGraphForUnitTests(originalSettings);
-		// Match the UI/full-draw path: only derive rivers from the graph if the map hasn't already. These
-		// .nort files store initialized rivers (hasInitializedRivers == true), and initializeRiversFromGraph
-		// appends rather than replaces, so calling it unconditionally would add a second, re-derived copy of
-		// every river. Those overlapping duplicate rivers render as extra segments and loops in the sub-map.
-		if (!originalSettings.edits.hasInitializedRivers)
-		{
-			originalSettings.edits.initializeRiversFromGraph(originalGraph, originalSettings.resolution);
-		}
 
 		// Sub-map selection bounds in RI (resolution-invariant) coordinates.
 		Rectangle selectionBoundsRI = new Rectangle(1324, 999, 1307, 1307);
@@ -108,14 +100,6 @@ public class SubMapCreatorTest
 		originalSettings.resolution = 0.5;
 
 		WorldGraph originalGraph = MapCreator.createGraphForUnitTests(originalSettings);
-		// Match the UI/full-draw path: only derive rivers from the graph if the map hasn't already. These
-		// .nort files store initialized rivers (hasInitializedRivers == true), and initializeRiversFromGraph
-		// appends rather than replaces, so calling it unconditionally would add a second, re-derived copy of
-		// every river. Those overlapping duplicate rivers render as extra segments and loops in the sub-map.
-		if (!originalSettings.edits.hasInitializedRivers)
-		{
-			originalSettings.edits.initializeRiversFromGraph(originalGraph, originalSettings.resolution);
-		}
 
 		// Sub-map selection bounds in RI (resolution-invariant) coordinates.
 		Rectangle selectionBoundsRI = new Rectangle(0, 0, 1348, 4096);
@@ -148,14 +132,6 @@ public class SubMapCreatorTest
 		originalSettings.resolution = 0.5;
 
 		WorldGraph originalGraph = MapCreator.createGraphForUnitTests(originalSettings);
-		// Match the UI/full-draw path: only derive rivers from the graph if the map hasn't already. These
-		// .nort files store initialized rivers (hasInitializedRivers == true), and initializeRiversFromGraph
-		// appends rather than replaces, so calling it unconditionally would add a second, re-derived copy of
-		// every river. Those overlapping duplicate rivers render as extra segments and loops in the sub-map.
-		if (!originalSettings.edits.hasInitializedRivers)
-		{
-			originalSettings.edits.initializeRiversFromGraph(originalGraph, originalSettings.resolution);
-		}
 
 		// Sub-map selection bounds in RI (resolution-invariant) coordinates.
 		Rectangle selectionBoundsRI = new Rectangle(2515, 1471, 1581, 2625);
@@ -190,14 +166,6 @@ public class SubMapCreatorTest
 		originalSettings.resolution = 0.5;
 
 		WorldGraph originalGraph = MapCreator.createGraphForUnitTests(originalSettings);
-		// Match the UI/full-draw path: only derive rivers from the graph if the map hasn't already. These
-		// .nort files store initialized rivers (hasInitializedRivers == true), and initializeRiversFromGraph
-		// appends rather than replaces, so calling it unconditionally would add a second, re-derived copy of
-		// every river. Those overlapping duplicate rivers render as extra segments and loops in the sub-map.
-		if (!originalSettings.edits.hasInitializedRivers)
-		{
-			originalSettings.edits.initializeRiversFromGraph(originalGraph, originalSettings.resolution);
-		}
 
 		// Sub-map selection bounds in RI (resolution-invariant) coordinates.
 		Rectangle selectionBoundsRI = new Rectangle(0, 0, 1348, 4096);
@@ -233,14 +201,6 @@ public class SubMapCreatorTest
 		originalSettings.resolution = 0.5;
 
 		WorldGraph originalGraph = MapCreator.createGraphForUnitTests(originalSettings);
-		// Match the UI/full-draw path: only derive rivers from the graph if the map hasn't already. These
-		// .nort files store initialized rivers (hasInitializedRivers == true), and initializeRiversFromGraph
-		// appends rather than replaces, so calling it unconditionally would add a second, re-derived copy of
-		// every river. Those overlapping duplicate rivers render as extra segments and loops in the sub-map.
-		if (!originalSettings.edits.hasInitializedRivers)
-		{
-			originalSettings.edits.initializeRiversFromGraph(originalGraph, originalSettings.resolution);
-		}
 
 		// Sub-map selection bounds in RI (resolution-invariant) coordinates.
 		Rectangle selectionBoundsRI = new Rectangle(1158, 1115, 1559, 1092);
@@ -294,14 +254,6 @@ public class SubMapCreatorTest
 		originalSettings.resolution = 0.5;
 
 		WorldGraph originalGraph = MapCreator.createGraphForUnitTests(originalSettings);
-		// Match the UI/full-draw path: only derive rivers from the graph if the map hasn't already. These
-		// .nort files store initialized rivers (hasInitializedRivers == true), and initializeRiversFromGraph
-		// appends rather than replaces, so calling it unconditionally would add a second, re-derived copy of
-		// every river. Those overlapping duplicate rivers render as extra segments and loops in the sub-map.
-		if (!originalSettings.edits.hasInitializedRivers)
-		{
-			originalSettings.edits.initializeRiversFromGraph(originalGraph, originalSettings.resolution);
-		}
 
 		// Sub-map selection bounds in RI (resolution-invariant) coordinates.
 		Rectangle selectionBoundsRI = new Rectangle(1158, 1115, 1559, 1092);
@@ -335,14 +287,6 @@ public class SubMapCreatorTest
 		originalSettings.resolution = 0.5;
 
 		WorldGraph originalGraph = MapCreator.createGraphForUnitTests(originalSettings);
-		// Match the UI/full-draw path: only derive rivers from the graph if the map hasn't already. These
-		// .nort files store initialized rivers (hasInitializedRivers == true), and initializeRiversFromGraph
-		// appends rather than replaces, so calling it unconditionally would add a second, re-derived copy of
-		// every river. Those overlapping duplicate rivers render as extra segments and loops in the sub-map.
-		if (!originalSettings.edits.hasInitializedRivers)
-		{
-			originalSettings.edits.initializeRiversFromGraph(originalGraph, originalSettings.resolution);
-		}
 
 		// Sub-map selection bounds in RI (resolution-invariant) coordinates.
 		Rectangle selectionBoundsRI = new Rectangle(661, 18, 2013, 2335);
@@ -399,14 +343,6 @@ public class SubMapCreatorTest
 		originalSettings.resolution = 0.5;
 
 		WorldGraph originalGraph = MapCreator.createGraphForUnitTests(originalSettings);
-		// Match the UI/full-draw path: only derive rivers from the graph if the map hasn't already. These
-		// .nort files store initialized rivers (hasInitializedRivers == true), and initializeRiversFromGraph
-		// appends rather than replaces, so calling it unconditionally would add a second, re-derived copy of
-		// every river. Those overlapping duplicate rivers render as extra segments and loops in the sub-map.
-		if (!originalSettings.edits.hasInitializedRivers)
-		{
-			originalSettings.edits.initializeRiversFromGraph(originalGraph, originalSettings.resolution);
-		}
 
 		// Sub-map selection bounds in RI (resolution-invariant) coordinates.
 		Rectangle selectionBoundsRI = new Rectangle(0, 0, 1183, 1839);
@@ -445,14 +381,6 @@ public class SubMapCreatorTest
 		originalSettings.resolution = 0.5;
 
 		WorldGraph originalGraph = MapCreator.createGraphForUnitTests(originalSettings);
-		// Match the UI/full-draw path: only derive rivers from the graph if the map hasn't already. These
-		// .nort files store initialized rivers (hasInitializedRivers == true), and initializeRiversFromGraph
-		// appends rather than replaces, so calling it unconditionally would add a second, re-derived copy of
-		// every river. Those overlapping duplicate rivers render as extra segments and loops in the sub-map.
-		if (!originalSettings.edits.hasInitializedRivers)
-		{
-			originalSettings.edits.initializeRiversFromGraph(originalGraph, originalSettings.resolution);
-		}
 
 		// Selection bounds covering the entire source map, in RI (resolution-invariant) coordinates.
 		Rectangle selectionBoundsRI = new Rectangle(0, 0, originalSettings.generatedWidth, originalSettings.generatedHeight);
@@ -493,14 +421,6 @@ public class SubMapCreatorTest
 		originalSettings.resolution = 0.5;
 
 		WorldGraph originalGraph = MapCreator.createGraphForUnitTests(originalSettings);
-		// Match the UI/full-draw path: only derive rivers from the graph if the map hasn't already. These
-		// .nort files store initialized rivers (hasInitializedRivers == true), and initializeRiversFromGraph
-		// appends rather than replaces, so calling it unconditionally would add a second, re-derived copy of
-		// every river. Those overlapping duplicate rivers render as extra segments and loops in the sub-map.
-		if (!originalSettings.edits.hasInitializedRivers)
-		{
-			originalSettings.edits.initializeRiversFromGraph(originalGraph, originalSettings.resolution);
-		}
 
 		// Selection bounds covering the entire source map, in RI (resolution-invariant) coordinates.
 		Rectangle selectionBoundsRI = new Rectangle(0, 0, originalSettings.generatedWidth, originalSettings.generatedHeight);
@@ -543,14 +463,6 @@ public class SubMapCreatorTest
 		originalSettings.resolution = 0.5;
 
 		WorldGraph originalGraph = MapCreator.createGraphForUnitTests(originalSettings);
-		// Match the UI/full-draw path: only derive rivers from the graph if the map hasn't already. These
-		// .nort files store initialized rivers (hasInitializedRivers == true), and initializeRiversFromGraph
-		// appends rather than replaces, so calling it unconditionally would add a second, re-derived copy of
-		// every river. Those overlapping duplicate rivers render as extra segments and loops in the sub-map.
-		if (!originalSettings.edits.hasInitializedRivers)
-		{
-			originalSettings.edits.initializeRiversFromGraph(originalGraph, originalSettings.resolution);
-		}
 
 		// Selection bounds covering the entire source map, in RI (resolution-invariant) coordinates.
 		Rectangle selectionBoundsRI = new Rectangle(0, 0, originalSettings.generatedWidth, originalSettings.generatedHeight);
@@ -590,14 +502,6 @@ public class SubMapCreatorTest
 		originalSettings.resolution = 0.5;
 
 		WorldGraph originalGraph = MapCreator.createGraphForUnitTests(originalSettings);
-		// Match the UI/full-draw path: only derive rivers from the graph if the map hasn't already. These
-		// .nort files store initialized rivers (hasInitializedRivers == true), and initializeRiversFromGraph
-		// appends rather than replaces, so calling it unconditionally would add a second, re-derived copy of
-		// every river. Those overlapping duplicate rivers render as extra segments and loops in the sub-map.
-		if (!originalSettings.edits.hasInitializedRivers)
-		{
-			originalSettings.edits.initializeRiversFromGraph(originalGraph, originalSettings.resolution);
-		}
 
 		// Selection bounds covering the entire source map, in RI (resolution-invariant) coordinates.
 		Rectangle selectionBoundsRI = new Rectangle(0, 0, originalSettings.generatedWidth, originalSettings.generatedHeight);
@@ -645,10 +549,6 @@ public class SubMapCreatorTest
 		originalSettings.resolution = 0.5;
 
 		WorldGraph originalGraph = MapCreator.createGraphForUnitTests(originalSettings);
-		if (!originalSettings.edits.hasInitializedRivers)
-		{
-			originalSettings.edits.initializeRiversFromGraph(originalGraph, originalSettings.resolution);
-		}
 
 		// Sub-region selection in RI coordinates (zoomed in, so the coastline mismatch is magnified).
 		Rectangle selectionBoundsRI = new Rectangle(1158, 1115, 1559, 1092);

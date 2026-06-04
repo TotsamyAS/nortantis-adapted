@@ -67,6 +67,11 @@ public class SubMapDialog
 	private Timer progressBarTimer;
 	/** Stable seed for the sub-map graph; generated once per step-2 session so re-draws produce the same Voronoi layout. */
 	private long subMapSeed;
+	/**
+	 * True once {@link #subMapSeed} has been generated, so going Back to step 1 and forward again keeps the same seed (and any edit the
+	 * user made to it) rather than regenerating it.
+	 */
+	private boolean subMapSeedGenerated = false;
 	private JTextField seedTextField;
 	/** Set to true in windowOpened; guards componentResized from firing the first preview draw before the dialog is fully shown. */
 	private boolean step2DialogOpened = false;
@@ -445,9 +450,14 @@ public class SubMapDialog
 
 	private void showStep2()
 	{
-		// Generate a stable seed for this step-2 session so repeated redraws produce the same Voronoi graph.
+		// Generate a stable seed the first time step 2 opens, so repeated redraws produce the same Voronoi graph. Going Back to step 1
+		// and forward again reuses the existing seed (including any value the user typed) rather than regenerating it.
 		// Use nextInt so the seed fits in an integer and displays as a readable value in the seed field.
-		subMapSeed = Helper.safeAbs(new Random().nextInt());
+		if (!subMapSeedGenerated)
+		{
+			subMapSeed = Helper.safeAbs(new Random().nextInt());
+			subMapSeedGenerated = true;
+		}
 
 		step2Dialog = new JDialog(mainWindow, Translation.get("subMapDialog.step2.title"), true);
 		step2Dialog.setDefaultCloseOperation(JDialog.DO_NOTHING_ON_CLOSE);
@@ -739,8 +749,8 @@ public class SubMapDialog
 				// Called on background thread by MapUpdater.
 				try
 				{
-					boolean redistributeIcons = customRadio != null && customRadio.isSelected();
-					MapSettings settings = SubMapCreator.createSubMapSettings(origSettings, origGraph, selBoundsRI, getSubmapWorldSize(), origResolution, subMapSeed, redistributeIcons);
+					boolean redistributeIconsAndRivers = customRadio != null && customRadio.isSelected();
+					MapSettings settings = SubMapCreator.createSubMapSettings(origSettings, origGraph, selBoundsRI, getSubmapWorldSize(), origResolution, subMapSeed, redistributeIconsAndRivers);
 					// Set resolution to 1.0 as a baseline; MapCreator.createMap will override it via
 					// Background.calcMapBoundsAndAdjustResolutionIfNeeded to fit the maxMapSize passed to the updater.
 					settings.resolution = 1.0;

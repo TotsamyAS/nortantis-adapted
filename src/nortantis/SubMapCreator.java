@@ -48,7 +48,7 @@ public class SubMapCreator
 	 * @return New MapSettings for the sub-map, with pre-populated edits.
 	 */
 	public static MapSettings createSubMapSettings(MapSettings originalSettings, WorldGraph originalGraph, Rectangle selectionBoundsRI, int subMapWorldSize, double originalResolution, long seed,
-			boolean redistributeIcons)
+			boolean redistributeIconsAndRivers)
 	{
 		// Compute new dimensions and world size.
 		// The largest dimension of the sub-map matches the largest dimension of the original map.
@@ -140,11 +140,11 @@ public class SubMapCreator
 
 		transferRegionEdits(originalGraph, originalSettings.edits, originalRegionToNewCenters, newEdits);
 
-		transferRivers(originalGraph, originalSettings.edits, newGraph, selectionBoundsRI, newEdits, originalResolution, redistributeIcons, newGenWidth, newGenHeight);
+		transferRivers(originalGraph, originalSettings.edits, newGraph, selectionBoundsRI, newEdits, originalResolution, redistributeIconsAndRivers, newGenWidth, newGenHeight);
 
 		transferText(originalSettings.edits, selectionBoundsRI, newEdits, newGenWidth, newGenHeight, fontScale);
 
-		transferFreeIcons(originalSettings.edits, originalGraph, newGraph, selectionBoundsRI, originalResolution, newEdits, newGenWidth, newGenHeight, redistributeIcons, seed);
+		transferFreeIcons(originalSettings.edits, originalGraph, newGraph, selectionBoundsRI, originalResolution, newEdits, newGenWidth, newGenHeight, redistributeIconsAndRivers, seed);
 		newEdits.hasIconEdits = true;
 
 		transferRoads(originalSettings.edits, selectionBoundsRI, newGenWidth, newGenHeight, newEdits);
@@ -298,12 +298,12 @@ public class SubMapCreator
 
 	/**
 	 * Transfers free icons from the original edits into {@code newEdits}. Cities and decorations are always copied by position. Mountains,
-	 * hills, sand, and trees are either redistributed by center (if {@code redistributeIcons}) or copied by position.
+	 * hills, sand, and trees are either redistributed by center (if {@code redistributeIconsAndRivers}) or copied by position.
 	 */
 	private static void transferFreeIcons(MapEdits originalEdits, WorldGraph originalGraph, WorldGraph newGraph, Rectangle selectionBoundsRI, double originalResolution, MapEdits newEdits,
-			int newGenWidth, int newGenHeight, boolean redistributeIcons, long seed)
+			int newGenWidth, int newGenHeight, boolean redistributeIconsAndRivers, long seed)
 	{
-		// Cities and decorations always copy by position, regardless of redistributeIcons.
+		// Cities and decorations always copy by position, regardless of redistributeIconsAndRivers.
 		// They must be copied before redistribution so that redistribution can skip their centers.
 		for (FreeIcon icon : originalEdits.freeIcons)
 		{
@@ -329,7 +329,7 @@ public class SubMapCreator
 			}
 		}
 
-		if (redistributeIcons)
+		if (redistributeIconsAndRivers)
 		{
 			// Redistribute mountains, hills, sand, and trees based on per-center mapping.
 			redistributeIconsByCenter(originalGraph, originalEdits, newGraph, selectionBoundsRI, originalResolution, newEdits, seed);
@@ -574,25 +574,25 @@ public class SubMapCreator
 	/**
 	 * Transfers rivers from the original map into {@code newEdits.rivers}.
 	 * <p>
-	 * <b>This is intended, load-bearing behavior — do not collapse the two branches.</b> {@code redistributeIcons} mirrors the detail-level
-	 * choice in {@link nortantis.swing.SubMapDialog}: it is {@code false} for "Match source detail" and {@code true} for the custom
-	 * "Choose" detail level (more polygons than the source). The two cases deliberately differ:
+	 * <b>This is intended, load-bearing behavior — do not collapse the two branches.</b> {@code redistributeIconsAndRivers} mirrors the
+	 * detail-level choice in {@link nortantis.swing.SubMapDialog}: it is {@code false} for "Match source detail" and {@code true} for the
+	 * custom "Choose" detail level (more polygons than the source). The two cases deliberately differ:
 	 * </p>
 	 * <ul>
-	 * <li><b>Match source detail ({@code redistributeIcons == false}):</b> each river path is clipped to the selection and transformed
-	 * directly into sub-map RI coordinates (the same coordinate transform used for roads), reproducing the original river faithfully as a
-	 * freehand {@link River} polyline. The source path is authoritative and is never reshaped or dropped here.</li>
-	 * <li><b>Choose / custom detail ({@code redistributeIcons == true}):</b> rivers are <em>redistributed</em> — each clipped sub-path is
-	 * re-routed through the sub-map's finer graph via {@link #routeClippedRiverToSubMap} so they follow the new polygon topology, matching
-	 * how icons are redistributed across the new polygons in this mode. This is why the Choose detail level looks different from a
-	 * magnified copy.</li>
+	 * <li><b>Match source detail ({@code redistributeIconsAndRivers == false}):</b> each river path is clipped to the selection and
+	 * transformed directly into sub-map RI coordinates (the same coordinate transform used for roads), reproducing the original river
+	 * faithfully as a freehand {@link River} polyline. The source path is authoritative and is never reshaped or dropped here.</li>
+	 * <li><b>Choose / custom detail ({@code redistributeIconsAndRivers == true}):</b> rivers are <em>redistributed</em> — each clipped
+	 * sub-path is re-routed through the sub-map's finer graph via {@link #routeClippedRiverToSubMap} so they follow the new polygon
+	 * topology, matching how icons are redistributed across the new polygons in this mode. This is why the Choose detail level looks
+	 * different from a magnified copy.</li>
 	 * </ul>
 	 * <p>
 	 * Either way {@link #removeDuplicateRiverSegments} trims overlaps where arms meet at a confluence.
 	 * </p>
 	 */
 	private static void transferRivers(WorldGraph originalGraph, MapEdits originalEdits, WorldGraph newGraph, Rectangle selectionBoundsRI, MapEdits newEdits, double originalResolution,
-			boolean redistributeIcons, int newGenWidth, int newGenHeight)
+			boolean redistributeIconsAndRivers, int newGenWidth, int newGenHeight)
 	{
 		if (originalEdits.rivers.isEmpty())
 		{
@@ -601,7 +601,7 @@ public class SubMapCreator
 
 		double riverLevelScale = computeRiverLevelScale(originalGraph, originalResolution, selectionBoundsRI, newGraph);
 
-		if (!redistributeIcons)
+		if (!redistributeIconsAndRivers)
 		{
 			// Match source detail: copy each river over exactly, clipped to the selection and transformed into sub-map coordinates. The
 			// river body is reproduced faithfully — its shape is preserved and it is never dropped, even where it runs into ocean or lakes.

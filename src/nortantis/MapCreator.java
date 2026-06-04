@@ -1716,14 +1716,24 @@ public class MapCreator implements WarningLogger
 	}
 
 	/**
-	 * Creates a WorldGraph and applies edge edits (e.g. river levels) from settings.edits. Intended for use in unit tests that need a fully
-	 * initialized graph without rendering.
+	 * Creates a WorldGraph and applies edge edits (e.g. river levels) from settings.edits, then derives rivers from the graph the same way
+	 * the full-draw path does (see {@link #createMap}). Intended for use in unit tests that need a fully initialized graph without
+	 * rendering.
+	 * <p>
+	 * As in the full draw, river initialization is guarded by {@link MapEdits#hasInitializedRivers}: modern {@code .nort} files already
+	 * store initialized rivers, and {@link MapEdits#initializeRiversFromGraph} appends rather than replaces, so calling it unconditionally
+	 * would add a second, re-derived copy of every river (which renders as overlapping duplicate segments and loops).
+	 * </p>
 	 */
 	public static WorldGraph createGraphForUnitTests(MapSettings settings)
 	{
 		Dimension mapBounds = Background.calcMapBoundsAndAdjustResolutionIfNeeded(settings, null);
 		Random r = new Random(settings.randomSeed);
 		WorldGraph graph = MapCreator.createGraph(settings, mapBounds.width, mapBounds.height, r, settings.resolution, !settings.edits.isInitialized());
+		if (!settings.edits.hasInitializedRivers)
+		{
+			settings.edits.initializeRiversFromGraph(graph, settings.resolution);
+		}
 		return graph;
 	}
 
