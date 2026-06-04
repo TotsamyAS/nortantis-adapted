@@ -604,11 +604,28 @@ public class SubMapCreator
 		if (!redistributeIcons)
 		{
 			// Match source detail: copy each river over exactly, clipped to the selection and transformed into sub-map coordinates. The
-			// river is reproduced faithfully — its shape is preserved and it is never dropped, even where it runs into ocean or lakes. (No
-			// loop removal here: the source path is authoritative, and a complex source river can legitimately revisit points.)
+			// river body is reproduced faithfully — its shape is preserved and it is never dropped, even where it runs into ocean or lakes.
+			// (No loop removal here: the source path is authoritative, and a complex source river can legitimately revisit points.)
+			//
+			// One adjustment: the sub-map is drawn on a freshly generated Voronoi grid, so its coast and lakeshore boundaries differ
+			// slightly from the source. A river mouth copied at its exact source position can therefore stop short of the redrawn water,
+			// which looks broken. For each river end that was a water mouth in the source, we extend it with a short connector to a nearby
+			// point on the water (see connectExactCopyMouths) — leaving the body untouched. Ends that already reach water, and ends cut off
+			// at the selection boundary (map-edge exits, not mouths), are left alone.
 			for (River river : originalEdits.rivers)
 			{
-				newEdits.rivers.addAll(clipRiverPath(river, selectionBoundsRI, newGenWidth, newGenHeight, riverLevelScale));
+				Point sourceFirst = river.nodes.get(0).getLoc();
+				Point sourceLast = river.nodes.get(river.nodes.size() - 1).getLoc();
+				boolean sourceStartIsMouth = selectionBoundsRI.contains(sourceFirst.x, sourceFirst.y) && isRIPointAdjacentToWater(sourceFirst, originalGraph, originalEdits, originalResolution);
+				boolean sourceEndIsMouth = selectionBoundsRI.contains(sourceLast.x, sourceLast.y) && isRIPointAdjacentToWater(sourceLast, originalGraph, originalEdits, originalResolution);
+
+				List<River> clippedSubPaths = clipRiverPath(river, selectionBoundsRI, newGenWidth, newGenHeight, riverLevelScale);
+				for (int s = 0; s < clippedSubPaths.size(); s++)
+				{
+					boolean startIsMouth = s == 0 && sourceStartIsMouth;
+					boolean endIsMouth = s == clippedSubPaths.size() - 1 && sourceEndIsMouth;
+					newEdits.rivers.add(connectExactCopyMouths(clippedSubPaths.get(s), startIsMouth, endIsMouth, newGraph, originalResolution));
+				}
 			}
 		}
 		else
@@ -646,6 +663,192 @@ public class SubMapCreator
 
 		removeDuplicateRiverSegments(newEdits.rivers);
 	}
+
+	/**
+	 * Extends an exact-copied river's mouth(s) to the sub-map's redrawn shoreline so the river still reaches the water.
+	 * {@code startIsMouth} / {@code endIsMouth} mark which ends were water mouths in the source map (and are not selection-boundary
+	 * cut-offs). For each such end that does not already reach the redrawn water, a short freehand connector node is added at a nearby
+	 * point on the water (see {@link #findShorelineConnector}); the river body is otherwise left exactly as copied. Returns a new
+	 * {@link River} if a connector was added, otherwise the input {@code clippedSubPath} unchanged.
+	 */
+	private static River connectExactCopyMouths(River clippedSubPath, boolean startIsMouth, boolean endIsMouth, WorldGraph newGraph, double resolution)
+	{
+		List<RiverPathNode> nodes = new ArrayList<>(clippedSubPath.nodes);
+		if (nodes.size() < 2)
+		{
+			return clippedSubPath;
+		}
+		boolean changed = false;
+
+		if (startIsMouth)
+		{
+			Point connector = findShorelineConnector(nodes.get(0).getLoc(), newGraph, resolution);
+			if (connector != null)
+			{
+				// Prepend the shoreline point; the connector segment carries the river's mouth width.
+				int width = nodes.get(0).getWidthLevelToNext();
+				nodes.add(0, new RiverPathNode(connector.mult(1.0 / resolution), width, new Random().nextLong(), RiverPathNode.EDGE_INDEX_NONE));
+				changed = true;
+			}
+		}
+
+		if (endIsMouth)
+		{
+			int lastIndex = nodes.size() - 1;
+			Point connector = findShorelineConnector(nodes.get(lastIndex).getLoc(), newGraph, resolution);
+			if (connector != null)
+			{
+				// The old terminal node becomes interior, flowing to the shoreline point with the river's terminal width.
+				int width = lastIndex >= 1 ? nodes.get(lastIndex - 1).getWidthLevelToNext() : 0;
+				RiverPathNode oldTerminal = nodes.get(lastIndex);
+				nodes.set(lastIndex, new RiverPathNode(oldTerminal.getLoc(), width, new Random().nextLong(), RiverPathNode.EDGE_INDEX_NONE));
+				nodes.add(new RiverPathNode(connector.mult(1.0 / resolution), 0, 0L, RiverPathNode.EDGE_INDEX_NONE));
+				changed = true;
+			}
+		}
+
+		return changed ? new River(nodes) : clippedSubPath;
+	}
+
+	/**
+	 * If the exact-copied river mouth at {@code endpointRI} (sub-map RI coordinates) does not reach the sub-map's redrawn water, returns a
+	 * nearby point on the water to extend it to (in graph/pixel coordinates); otherwise returns {@code null}.
+	 * <p>
+	 * Whether the mouth already reaches water is decided by {@link #doesPointReachWater}, which follows the drawn (noisy-edge) coastline
+	 * and so sees the sub-polygon gap that corner-level water-adjacency misses. When the mouth falls short, a bounded breadth-first search
+	 * over centers (up to {@link #mouthConnectorMaxCenterHops}) finds the nearest water center, and the returned point is the first water
+	 * pixel marched from the mouth toward that center, advanced a small margin into the water (see {@link #marchToWater}). The hop bound
+	 * keeps the connector short: a mouth genuinely far from the redrawn water is left as-is rather than bridged by a long chord.
+	 * </p>
+	 */
+	private static Point findShorelineConnector(Point endpointRI, WorldGraph newGraph, double resolution)
+	{
+		Point pixel = endpointRI.mult(resolution);
+		if (doesPointReachWater(pixel, newGraph))
+		{
+			return null;
+		}
+
+		Center startCenter = newGraph.findClosestCenter(pixel, true);
+		if (startCenter == null)
+		{
+			return null;
+		}
+
+		// Bounded breadth-first search over centers for the nearest water center.
+		Set<Center> visited = new HashSet<>();
+		visited.add(startCenter);
+		List<Center> frontier = new ArrayList<>();
+		frontier.add(startCenter);
+		Center nearestWater = null;
+		double nearestWaterDistance = Double.MAX_VALUE;
+		for (int hop = 0; hop < mouthConnectorMaxCenterHops && nearestWater == null; hop++)
+		{
+			List<Center> nextFrontier = new ArrayList<>();
+			for (Center center : frontier)
+			{
+				for (Center neighbor : center.neighbors)
+				{
+					if (!visited.add(neighbor))
+					{
+						continue;
+					}
+					nextFrontier.add(neighbor);
+					if (neighbor.isWater)
+					{
+						double distance = neighbor.loc.distanceTo(pixel);
+						if (distance < nearestWaterDistance)
+						{
+							nearestWaterDistance = distance;
+							nearestWater = neighbor;
+						}
+					}
+				}
+			}
+			frontier = nextFrontier;
+		}
+		if (nearestWater == null)
+		{
+			return null;
+		}
+
+		return marchToWater(pixel, nearestWater.loc, newGraph);
+	}
+
+	/**
+	 * Returns true if {@code pixelPoint} (graph/pixel coordinates) reaches the drawn water: it lies on a water polygon, or on land within
+	 * {@link #mouthReachToleranceInPixels} pixels (sampled in the eight compass directions) of one. Polygon membership is resolved with
+	 * {@link WorldGraph#findClosestCenter}, which follows the drawn (noisy-edge) coastline, so this detects a sub-polygon gap between a
+	 * river mouth and the redrawn shore that corner-level water-adjacency cannot see. A center counts as water by its own {@code isWater}
+	 * flag, which is set on all centers by the time rivers are transferred (and on any freshly built graph). This is the shared test used
+	 * both to decide whether a mouth connector is needed and, in unit tests, to assert that mouths reach the redrawn coast.
+	 */
+	public static boolean doesPointReachWater(Point pixelPoint, WorldGraph graph)
+	{
+		Center center = graph.findClosestCenter(pixelPoint, true);
+		if (center != null && center.isWater)
+		{
+			return true;
+		}
+		for (int dx = -1; dx <= 1; dx++)
+		{
+			for (int dy = -1; dy <= 1; dy++)
+			{
+				if (dx == 0 && dy == 0)
+				{
+					continue;
+				}
+				Center neighbor = graph.findClosestCenter(new Point(pixelPoint.x + dx * mouthReachToleranceInPixels, pixelPoint.y + dy * mouthReachToleranceInPixels), true);
+				if (neighbor != null && neighbor.isWater)
+				{
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Marches in a straight line from {@code fromPixel} toward {@code towardPixel} (both graph/pixel coordinates), returning the first
+	 * sampled point that lies on a water polygon, advanced {@link #connectorMarginIntoWaterInPixels} further along the same direction so
+	 * the connector ends clearly inside the water rather than exactly on the coastline. Returns {@code null} if no water is reached before
+	 * {@code towardPixel}. The advance is clamped so it never passes {@code towardPixel} (a point well inside the target water center).
+	 */
+	private static Point marchToWater(Point fromPixel, Point towardPixel, WorldGraph graph)
+	{
+		double deltaX = towardPixel.x - fromPixel.x;
+		double deltaY = towardPixel.y - fromPixel.y;
+		double length = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+		if (length < 1e-9)
+		{
+			return null;
+		}
+		double stepX = deltaX / length;
+		double stepY = deltaY / length;
+		for (double distance = 0; distance <= length; distance += 1.0)
+		{
+			Point sample = new Point(fromPixel.x + stepX * distance, fromPixel.y + stepY * distance);
+			Center center = graph.findClosestCenter(sample, true);
+			if (center != null && center.isWater)
+			{
+				double marginDistance = Math.min(distance + connectorMarginIntoWaterInPixels, length);
+				return new Point(fromPixel.x + stepX * marginDistance, fromPixel.y + stepY * marginDistance);
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Distance, in rendered pixels, within which a river mouth is considered to still reach the drawn water (see
+	 * {@link #doesPointReachWater}).
+	 */
+	private static final double mouthReachToleranceInPixels = 1.0;
+
+	/** Maximum number of Voronoi centers a sub-map exact-copy river mouth may be searched outward to find the redrawn water. */
+	private static final int mouthConnectorMaxCenterHops = 3;
+
+	/** Distance, in rendered pixels, a mouth connector is advanced past the coastline so it ends clearly inside the water. */
+	private static final double connectorMarginIntoWaterInPixels = 2.0;
 
 	/**
 	 * Removes duplicated segments where two transferred rivers overlap. Rivers are routed through the new graph independently, so where a

@@ -622,6 +622,96 @@ public class SubMapCreatorTest
 	}
 
 	/**
+	 * Verifies that when a region is copied at "match source detail" ({@code redistributeIcons == false}), each source river mouth still
+	 * reaches the water on the sub-map's redrawn coastline. The sub-map is drawn on a fresh Voronoi grid, so its coast/lakeshore noisy
+	 * edges differ slightly from the source; a river copied at its exact source position can therefore end short of the redrawn water,
+	 * which looks broken. {@link SubMapCreator} fixes this by extending such mouths with a short connector onto the redrawn water.
+	 * <p>
+	 * The check maps each source river endpoint that is a water mouth in the source and lies inside the selection to its position on the
+	 * sub-map, finds the nearest sub-map river endpoint, and asserts that endpoint reaches the redrawn water. Reach is tested with
+	 * {@link SubMapCreator#doesPointReachWater}, which follows the drawn (noisy-edge) coastline pixel-accurately, so a mouth that ends a
+	 * sub-polygon short of the water counts as not reaching it — a gap the coarser corner-level check cannot see. For this selection and
+	 * seed, two of the three mouths fall short without the connector (so this test fails if the connector is removed).
+	 * </p>
+	 */
+	@Test
+	public void subMapExactCopyRiverMouthsReachRedrawnCoast() throws Exception
+	{
+		// Set to true to force this test to write its result map to the failed sub-maps folder, even when it passes.
+		boolean forceWrite = false;
+
+		String originalSettingsPath = Paths.get("unit test files", "map settings", "riversForSubMaps.nort").toString();
+		MapSettings originalSettings = new MapSettings(originalSettingsPath);
+		originalSettings.resolution = 0.5;
+
+		WorldGraph originalGraph = MapCreator.createGraphForUnitTests(originalSettings);
+		if (!originalSettings.edits.hasInitializedRivers)
+		{
+			originalSettings.edits.initializeRiversFromGraph(originalGraph, originalSettings.resolution);
+		}
+
+		// Sub-region selection in RI coordinates (zoomed in, so the coastline mismatch is magnified).
+		Rectangle selectionBoundsRI = new Rectangle(1158, 1115, 1559, 1092);
+		int worldSize = SubMapDialog.computeDefaultWorldSize(originalSettings, selectionBoundsRI);
+
+		long seed = 5L;
+		// redistributeIcons=false: "match source detail" copies rivers exactly, then extends mouths to the redrawn coast.
+		MapSettings subMapSettings = SubMapCreator.createSubMapSettings(originalSettings, originalGraph, selectionBoundsRI, worldSize, originalSettings.resolution, seed, false);
+		WorldGraph newGraph = MapCreator.createGraphForUnitTests(subMapSettings);
+
+		// Sub-map river endpoints, to match each source mouth to its copied-over end.
+		List<Point> subMapEndpoints = new java.util.ArrayList<>();
+		for (River river : subMapSettings.edits.rivers)
+		{
+			subMapEndpoints.add(river.nodes.get(0).getLoc());
+			subMapEndpoints.add(river.nodes.get(river.nodes.size() - 1).getLoc());
+		}
+
+		int sourceMouthsInSelection = 0;
+		int reachedCoast = 0;
+		for (River sourceRiver : originalSettings.edits.rivers)
+		{
+			for (int end = 0; end < 2; end++)
+			{
+				Point sourcePoint = (end == 0 ? sourceRiver.nodes.get(0) : sourceRiver.nodes.get(sourceRiver.nodes.size() - 1)).getLoc();
+				boolean isSourceMouth = selectionBoundsRI.contains(sourcePoint.x, sourcePoint.y) && riverEndpointTouchesCoastOrOcean(sourcePoint, originalGraph, originalSettings.resolution);
+				if (!isSourceMouth)
+				{
+					continue;
+				}
+				sourceMouthsInSelection++;
+				// Where this mouth lands on the sub-map, and the nearest sub-map river endpoint to it.
+				Point subMapPoint = new Point((sourcePoint.x - selectionBoundsRI.x) / selectionBoundsRI.width * subMapSettings.generatedWidth,
+						(sourcePoint.y - selectionBoundsRI.y) / selectionBoundsRI.height * subMapSettings.generatedHeight);
+				Point nearestEnd = null;
+				double bestDistance = Double.MAX_VALUE;
+				for (Point endpoint : subMapEndpoints)
+				{
+					if (endpoint.distanceTo(subMapPoint) < bestDistance)
+					{
+						bestDistance = endpoint.distanceTo(subMapPoint);
+						nearestEnd = endpoint;
+					}
+				}
+				// Pixel-accurate check against the drawn (noisy-edge) coastline, so a mouth that ends a sub-polygon short of the redrawn
+				// water is counted as NOT reaching it. The coarser corner-level riverEndpointTouchesCoastOrOcean cannot see that gap.
+				if (nearestEnd != null && SubMapCreator.doesPointReachWater(nearestEnd.mult(subMapSettings.resolution), newGraph))
+				{
+					reachedCoast++;
+				}
+			}
+		}
+
+		if (forceWrite || forceWriteAllMaps)
+		{
+			saveFailedMap(subMapSettings, "subMapExactCopyRiverMouthsReachRedrawnCoast");
+		}
+		assertTrue(sourceMouthsInSelection > 0, "Expected the selection to contain at least one source river mouth");
+		assertEquals(sourceMouthsInSelection, reachedCoast,
+				"Every source river mouth should reach the sub-map's redrawn coast, but " + (sourceMouthsInSelection - reachedCoast) + " of " + sourceMouthsInSelection + " did not");
+	}
+
+	/**
 	 * Returns true if the new-graph corner closest to the given river-path endpoint (in RI coordinates) is adjacent to the ocean — i.e. it
 	 * is a coast or ocean corner, or it touches a water center. Sub-map rivers are freehand polylines, so a river that reaches the sea ends
 	 * at a shoreline corner; an interior confluence/junction endpoint sits inland and does not match.
