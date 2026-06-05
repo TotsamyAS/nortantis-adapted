@@ -4,12 +4,14 @@ import nortantis.*;
 import nortantis.editor.*;
 import nortantis.geom.IntPoint;
 import nortantis.geom.IntRectangle;
+import nortantis.geom.Rectangle;
 import nortantis.graph.voronoi.Center;
 import nortantis.platform.Image;
 import nortantis.platform.ImageHelper;
 import nortantis.platform.PlatformFactory;
 import nortantis.platform.awt.AwtFactory;
 import nortantis.swing.MapEdits;
+import nortantis.swing.SubMapDialog;
 import nortantis.util.*;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
@@ -726,6 +728,43 @@ public class MapCreatorTest
 		if (failCount > 0)
 		{
 			fail(failCount + " incremental icon addition tests failed.");
+		}
+	}
+
+	/**
+	 * Creates a sub-map of simpleSmallWorld at a high detail level (many more polygons than the selected region holds at the source's
+	 * density) and compares the rendered result per-pixel to its expected image. simpleSmallWorld is a small world (5000 polygons), so
+	 * extracting a sub-region at high detail exercises the icon/river/text redistribution paths in SubMapCreator under a large detail
+	 * increase, all the way through rendering.
+	 */
+	@Test
+	public void subMapOfSimpleSmallWorldAtHighDetail()
+	{
+		MapSettings originalSettings = new MapSettings(Paths.get("unit test files", "map settings", "simpleSmallWorld.nort").toString());
+		WorldGraph originalGraph = MapCreator.createGraphForUnitTests(originalSettings);
+
+		// A sub-region of the source map, in RI (resolution-invariant) coordinates.
+		Rectangle selectionBoundsRI = new Rectangle(1024, 1024, 2048, 2048);
+		int matchWorldSize = SubMapDialog.computeDefaultWorldSize(originalSettings, selectionBoundsRI);
+		// High detail: 8x as many polygons as the selected region holds at the source's density.
+		int worldSize = Math.min(SettingsGenerator.maxWorldSize, matchWorldSize * 8);
+		assertTrue(worldSize > matchWorldSize, "Test setup requires higher-than-source detail");
+
+		long seed = 987654321L;
+		MapSettings subMapSettings = SubMapCreator.createSubMapSettings(originalSettings, originalGraph, selectionBoundsRI, worldSize, originalSettings.resolution, seed, true);
+
+		assertEquals(worldSize, subMapSettings.worldSize, "Sub-map should be generated at the requested high detail (world size)");
+
+		WorldGraph subMapGraph = MapCreator.createGraphForUnitTests(subMapSettings);
+		// The high detail level should actually take effect: the sub-map graph has far more polygons than the source region did.
+		assertTrue(subMapGraph.centers.size() > matchWorldSize * 2,
+				"Sub-map should have many more polygons than the source region (got " + subMapGraph.centers.size() + ", source region ~" + matchWorldSize + ")");
+		// Every sub-map center should have land/water (and region) assigned from the source map.
+		assertEquals(subMapGraph.centers.size(), subMapSettings.edits.centerEdits.size(), "Every sub-map center should have a transferred CenterEdit");
+
+		try (Image actual = new MapCreator().createMap(subMapSettings, null, null))
+		{
+			MapTestUtil.compareToExpectedMap(actual, "subMapOfSimpleSmallWorldAtHighDetail", expectedMapsFolderName, failedMapsFolderName, 0);
 		}
 	}
 

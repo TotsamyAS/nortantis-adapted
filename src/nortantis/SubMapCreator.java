@@ -142,7 +142,15 @@ public class SubMapCreator
 
 		transferRivers(originalGraph, originalSettings.edits, newGraph, selectionBoundsRI, newEdits, originalResolution, redistributeIconsAndRivers, newGenWidth, newGenHeight);
 
-		transferText(originalSettings.edits, selectionBoundsRI, newEdits, newGenWidth, newGenHeight, fontScale);
+		// City labels are repositioned to stay attached to their city icon (see transferText). iconSizeRatio is how much city icons shrink
+		// in the sub-map (icon size scales with mean polygon width); sourceMeanPolygonWidthRI scales the label-to-icon association
+		// distance;
+		// sourceCityFontSize lets transferText estimate the label's text height so it can clear the icon.
+		double iconSizeRatio = newGraph.getMeanCenterWidthBetweenNeighbors() / originalGraph.getMeanCenterWidthBetweenNeighbors();
+		double sourceMeanPolygonWidthRI = originalGraph.getMeanCenterWidthBetweenNeighbors() / originalResolution;
+		double sourceCityFontSize = originalSettings.citiesFont.getSize();
+
+		transferText(originalSettings.edits, selectionBoundsRI, newEdits, newGenWidth, newGenHeight, fontScale, iconSizeRatio, sourceMeanPolygonWidthRI, sourceCityFontSize);
 
 		transferFreeIcons(originalSettings.edits, originalGraph, newGraph, selectionBoundsRI, originalResolution, newEdits, newGenWidth, newGenHeight, redistributeIconsAndRivers, seed);
 		newEdits.hasIconEdits = true;
@@ -173,26 +181,102 @@ public class SubMapCreator
 		}
 	}
 
-	private static void transferText(MapEdits originalEdits, Rectangle selectionBoundsRI, MapEdits newEdits, int newGenWidth, int newGenHeight, double zoomFactor)
+	private static void transferText(MapEdits originalEdits, Rectangle selectionBoundsRI, MapEdits newEdits, int newGenWidth, int newGenHeight, double fontScale, double iconSizeRatio,
+			double sourceMeanPolygonWidthRI, double sourceCityFontSize)
 	{
 		// Copy MapText entries whose location falls inside selectionBoundsRI.
 		newEdits.text = new CopyOnWriteArrayList<>();
+		double maxCityLabelAssociationDistanceRI = sourceMeanPolygonWidthRI * cityLabelToIconMaxAssociationWidths;
 		for (MapText text : originalEdits.text)
 		{
 			if (selectionBoundsRI.containsOrOverlaps(text.location))
 			{
 				MapText newText = text.deepCopy();
-				newText.location = transformRIPoint(text.location, selectionBoundsRI, newGenWidth, newGenHeight);
+
+				// A city label is positioned relative to its city icon rather than by the plain position transform, so it stays attached to
+				// its icon instead of drifting away as the icon shrinks at higher detail. Its offset from the icon is scaled by the icon's
+				// own size ratio, so the label hugs the icon the same way it did in the source. A small clearance is then added outward,
+				// because the label's font is deliberately kept larger than the icon (fontScale > iconSizeRatio): without it the relatively
+				// larger text would overlap the icon. The clearance is the extra text extent toward the icon — about half a line of text
+				// times how much more the font scales than the icon. At match detail iconSizeRatio equals the position magnification and
+				// the
+				// clearance is zero, so this reduces to the plain transform (no change).
+				FreeIcon cityIcon = text.type == TextType.City ? findNearestSourceCityIcon(text.location, originalEdits, selectionBoundsRI, maxCityLabelAssociationDistanceRI) : null;
+				if (cityIcon != null)
+				{
+					Point sourceIconLocationRI = cityIcon.locationResolutionInvariant;
+					Point newIconLocationRI = transformRIPoint(sourceIconLocationRI, selectionBoundsRI, newGenWidth, newGenHeight);
+					Point sourceOffsetRI = text.location.subtract(sourceIconLocationRI);
+					Point newOffsetRI = sourceOffsetRI.mult(iconSizeRatio);
+
+					double offsetLength = Math.sqrt(sourceOffsetRI.x * sourceOffsetRI.x + sourceOffsetRI.y * sourceOffsetRI.y);
+					if (offsetLength > 1e-6)
+					{
+						double sourceFontSize = text.fontOverride != null ? text.fontOverride.getSize() : sourceCityFontSize;
+						// Rendered line height in RI units (the font size stored in the file is multiplied by
+						// calcSizeMultiplierFromResolutionScale when drawn).
+						double sourceLineHeightRI = sourceFontSize * MapCreator.calcSizeMultiplierFromResolutionScale(1.0);
+						double clearance = cityLabelClearanceLineHeights * sourceLineHeightRI * Math.max(0, fontScale - iconSizeRatio);
+						newOffsetRI = newOffsetRI.add(sourceOffsetRI.mult(clearance / offsetLength));
+					}
+					newText.location = newIconLocationRI.add(newOffsetRI);
+				}
+				else
+				{
+					newText.location = transformRIPoint(text.location, selectionBoundsRI, newGenWidth, newGenHeight);
+				}
+
 				// Clear bounds since they'll be recomputed at the new resolution.
 				newText.line1Bounds = null;
 				newText.line2Bounds = null;
 				if (newText.fontOverride != null)
 				{
-					newText.fontOverride = scaleFontSize(newText.fontOverride, zoomFactor);
+					newText.fontOverride = scaleFontSize(newText.fontOverride, fontScale);
 				}
 				newEdits.text.add(newText);
 			}
 		}
+	}
+
+	/** Maximum distance, in multiples of the source mean polygon width, a city label may be from a city icon to be associated with it. */
+	private static final double cityLabelToIconMaxAssociationWidths = 6.0;
+
+	/**
+	 * How much of a city label's rendered line height counts as its extent toward its icon, used to clear the label off the icon (see
+	 * transferText). Roughly half a line (a centered label sits about half a line height from its near edge), tuned so labels clear their
+	 * icons without drifting noticeably farther than the source.
+	 */
+	private static final double cityLabelClearanceLineHeights = 0.5;
+
+	/**
+	 * Returns the source city icon ({@link IconType#cities}) nearest to {@code labelLocationRI} that lies within the selection and within
+	 * {@code maxDistanceRI}, or {@code null} if none qualifies. Used to pair a city label with the icon it annotates so the label can be
+	 * repositioned relative to that icon in the sub-map. Icons outside the selection are excluded because they are not transferred (their
+	 * sub-map position would be off the map). The pairing is purely distance-based and need not be exact: a mispairing between two nearby
+	 * cities only shifts the label by the small difference between their icon positions.
+	 */
+	private static FreeIcon findNearestSourceCityIcon(Point labelLocationRI, MapEdits originalEdits, Rectangle selectionBoundsRI, double maxDistanceRI)
+	{
+		FreeIcon nearest = null;
+		double nearestDistance = maxDistanceRI;
+		for (FreeIcon icon : originalEdits.freeIcons)
+		{
+			if (icon.type != IconType.cities)
+			{
+				continue;
+			}
+			if (!selectionBoundsRI.containsOrOverlaps(icon.locationResolutionInvariant))
+			{
+				continue;
+			}
+			double distance = labelLocationRI.distanceTo(icon.locationResolutionInvariant);
+			if (distance <= nearestDistance)
+			{
+				nearestDistance = distance;
+				nearest = icon;
+			}
+		}
+		return nearest;
 	}
 
 	private static void transferRoads(MapEdits originalEdits, Rectangle selectionBoundsRI, int newGenWidth, int newGenHeight, MapEdits newEdits)

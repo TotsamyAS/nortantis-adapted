@@ -1,12 +1,18 @@
 package nortantis.test;
 
+import nortantis.IconType;
 import nortantis.MapCreator;
 import nortantis.MapSettings;
+import nortantis.MapText;
+import nortantis.SettingsGenerator;
 import nortantis.SubMapCreator;
+import nortantis.TextType;
+import nortantis.editor.FreeIcon;
 import nortantis.editor.River;
 import nortantis.WorldGraph;
 import nortantis.geom.Point;
 import nortantis.geom.Rectangle;
+import nortantis.swing.MapEdits;
 import nortantis.swing.SubMapDialog;
 import nortantis.util.OrderlessPair;
 import nortantis.platform.Image;
@@ -775,6 +781,131 @@ public class SubMapCreatorTest
 				fail("River " + ri + " has fewer than 2 path points (" + river.nodes.size() + "), indicating a failed routing.\nFailed map written to: " + failedMapPath);
 			}
 		}
+	}
+
+	/**
+	 * Verifies that when a region is extracted at higher detail (more polygons than the source section), each city label stays attached to
+	 * its city icon instead of drifting away as the icon shrinks. {@link SubMapCreator} repositions city labels relative to their icon,
+	 * scaling the offset by the icon's size ratio (plus a small clearance so the larger text does not overlap the icon — see transferText),
+	 * so the label keeps the same distance from its icon measured in polygon-widths, the unit icons scale with.
+	 * <p>
+	 * The check pairs each in-selection source city label with its nearest in-selection source city icon (the same distance-based
+	 * association SubMapCreator uses), keeps only labels clearly belonging to a city (within 2 polygon-widths), and asserts the transferred
+	 * label sits the same distance (in polygon-widths) from its nearest sub-map city icon, within a tolerance that allows the small
+	 * clearance. Without the fix the offset scales by the full position magnification, so the distance balloons by the square root of the
+	 * detail factor and this test fails.
+	 * </p>
+	 */
+	@Test
+	public void subMapCityLabelsStayWithIconsAtHigherDetail() throws Exception
+	{
+		// Set to true to force this test to write its result map to the failed sub-maps folder, even when it passes.
+		boolean forceWrite = false;
+
+		MapSettings originalSettings = new MapSettings(Paths.get("unit test files", "map settings", "allTypesOfEdits.nort").toString());
+		originalSettings.resolution = 0.5;
+		WorldGraph originalGraph = MapCreator.createGraphForUnitTests(originalSettings);
+
+		Rectangle selectionBoundsRI = new Rectangle(0, 0, 2048, 2048);
+		int matchWorldSize = SubMapDialog.computeDefaultWorldSize(originalSettings, selectionBoundsRI);
+		// Higher detail than the source region (more, smaller polygons) — the case where labels drift from their icons.
+		int worldSize = Math.min(SettingsGenerator.maxWorldSize, matchWorldSize * 8);
+		assertTrue(worldSize > matchWorldSize, "Test setup requires higher-than-source detail to exercise the drift");
+
+		long seed = 12345L;
+		MapSettings subMapSettings = SubMapCreator.createSubMapSettings(originalSettings, originalGraph, selectionBoundsRI, worldSize, originalSettings.resolution, seed, true);
+		WorldGraph subMapGraph = MapCreator.createGraphForUnitTests(subMapSettings);
+
+		if (forceWrite || forceWriteAllMaps)
+		{
+			saveFailedMap(subMapSettings, "subMapCityLabelsStayWithIconsAtHigherDetail");
+		}
+
+		double sourceMeanWidthRI = originalGraph.getMeanCenterWidthBetweenNeighbors() / originalSettings.resolution;
+		double subMeanWidthRI = subMapGraph.getMeanCenterWidthBetweenNeighbors() / subMapSettings.resolution;
+
+		int tested = 0;
+		for (MapText sourceLabel : originalSettings.edits.text)
+		{
+			if (sourceLabel.type != TextType.City || !selectionBoundsRI.containsOrOverlaps(sourceLabel.location))
+			{
+				continue;
+			}
+			FreeIcon sourceIcon = nearestCityIcon(sourceLabel.location, originalSettings.edits, selectionBoundsRI);
+			if (sourceIcon == null)
+			{
+				continue;
+			}
+			double sourceDistanceInWidths = sourceLabel.location.distanceTo(sourceIcon.locationResolutionInvariant) / sourceMeanWidthRI;
+			// Skip ambiguous/manually-detached labels; test only labels clearly hugging a city icon.
+			if (sourceDistanceInWidths > 2.0)
+			{
+				continue;
+			}
+			MapText subLabel = findUniqueTextByValue(subMapSettings.edits.text, sourceLabel.value);
+			if (subLabel == null)
+			{
+				continue;
+			}
+			FreeIcon subIcon = nearestCityIcon(subLabel.location, subMapSettings.edits, null);
+			assertNotNull(subIcon, "Sub-map should contain a city icon for '" + sourceLabel.value + "'");
+			double subDistanceInWidths = subLabel.location.distanceTo(subIcon.locationResolutionInvariant) / subMeanWidthRI;
+			// The label-to-icon distance, measured in polygon-widths (the unit icons scale with), is preserved aside from a small constant
+			// clearance that lifts the label off the icon. Without the fix the offset scales by the full position magnification, so the
+			// distance balloons by the square root of the detail factor and this assertion fails.
+			assertEquals(sourceDistanceInWidths, subDistanceInWidths, 0.3,
+					"City label '" + sourceLabel.value + "' should stay attached to its icon (distance in polygon-widths preserved) at higher detail");
+			tested++;
+		}
+		assertTrue(tested >= 5, "Expected several testable city labels in the selection, but only found " + tested);
+	}
+
+	/**
+	 * Returns the {@link IconType#cities} icon in {@code edits} nearest to {@code locationRI}, optionally restricted to
+	 * {@code selectionOrNull}, or null if none.
+	 */
+	private static FreeIcon nearestCityIcon(Point locationRI, MapEdits edits, Rectangle selectionOrNull)
+	{
+		FreeIcon nearest = null;
+		double nearestDistance = Double.MAX_VALUE;
+		for (FreeIcon icon : edits.freeIcons)
+		{
+			if (icon.type != IconType.cities)
+			{
+				continue;
+			}
+			if (selectionOrNull != null && !selectionOrNull.containsOrOverlaps(icon.locationResolutionInvariant))
+			{
+				continue;
+			}
+			double distance = locationRI.distanceTo(icon.locationResolutionInvariant);
+			if (distance < nearestDistance)
+			{
+				nearestDistance = distance;
+				nearest = icon;
+			}
+		}
+		return nearest;
+	}
+
+	/**
+	 * Returns the single MapText with the given value, or null if there is not exactly one (avoids ambiguous matches when names repeat).
+	 */
+	private static MapText findUniqueTextByValue(List<MapText> texts, String value)
+	{
+		MapText found = null;
+		for (MapText text : texts)
+		{
+			if (value.equals(text.value))
+			{
+				if (found != null)
+				{
+					return null;
+				}
+				found = text;
+			}
+		}
+		return found;
 	}
 
 }

@@ -37,6 +37,15 @@ public class NamedResource implements Serializable
 			return null;
 		}
 		String fileName = (String) obj.get("name");
+		if (fileName == null)
+		{
+			// Backwards compatibility: before BackgroundTextureResource was merged into NamedResource, the name was
+			// stored under the key "fileName". Files saved by that build have no "name" key, so recover
+			// the value from "fileName" to keep their background texture instead of dropping it.
+			// Although I'm not sure any Nortantis version was actually released in the window in which this could
+			// have happened.
+			fileName = (String) obj.get("fileName");
+		}
 		String artPack = (String) obj.get("artPack");
 		if (fileName == null || artPack == null)
 		{

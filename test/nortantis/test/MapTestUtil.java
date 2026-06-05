@@ -92,6 +92,33 @@ public class MapTestUtil
 		assertEquals(settings, copy);
 	}
 
+	/**
+	 * Compares an already-rendered map image to its stored expected image, creating the expected image from {@code actual} on the first run
+	 * (the same first-run-writes behavior as {@link #generateAndCompare}). Use this for tests that produce a map through a path other than
+	 * rendering a plain settings file (e.g. a sub-map) but still want a per-pixel regression check. On mismatch the actual image and a diff
+	 * image are written to the failed-maps folder and the test fails.
+	 */
+	public static void compareToExpectedMap(Image actual, String expectedFileName, String expectedMapsFolderName, String failedMapsFolderName, int threshold)
+	{
+		String expectedMapFilePath = getExpectedMapFilePath(expectedFileName, expectedMapsFolderName);
+		if (!new File(expectedMapFilePath).exists())
+		{
+			// First run: create the expected map from the actual one.
+			ImageHelper.getInstance().write(actual, expectedMapFilePath);
+			return;
+		}
+
+		Image expected = Assets.readImage(expectedMapFilePath);
+		String comparisonErrorMessage = checkIfImagesEqual(expected, actual, threshold);
+		if (comparisonErrorMessage != null && !comparisonErrorMessage.isEmpty())
+		{
+			FileHelper.createFolder(Paths.get("unit test files", failedMapsFolderName).toString());
+			ImageHelper.getInstance().write(actual, getFailedMapFilePath(expectedFileName, failedMapsFolderName));
+			createImageDiffIfImagesAreSameSize(expected, actual, expectedFileName, failedMapsFolderName);
+			fail(comparisonErrorMessage);
+		}
+	}
+
 	public static void createImageDiffIfImagesAreSameSize(Image image1, Image image2, String settingsFileName, String failedMapsFolderName)
 	{
 		createImageDiffIfImagesAreSameSize(image1, image2, settingsFileName, 0, failedMapsFolderName);
