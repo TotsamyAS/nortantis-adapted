@@ -8,6 +8,7 @@ import nortantis.Stroke;
 import nortantis.editor.CenterEdit;
 import nortantis.editor.CenterTrees;
 import nortantis.editor.FreeIcon;
+import nortantis.editor.IconColors;
 import nortantis.editor.UserPreferences;
 import nortantis.geom.IntDimension;
 import nortantis.geom.IntRectangle;
@@ -1221,7 +1222,10 @@ public class ThemePanel extends JTabbedPane
 					{
 						if (hasVisibleTreeWithinDistance(entry.getKey(), 3))
 						{
-							mainWindow.edits.centerEdits.put(entry.getKey(), entry.getValue().copyWithTrees(new CenterTrees(cTrees.artPack, cTrees.treeType, cTrees.density, rand.nextLong(), false)));
+							// Carry the dormant trees' remembered colors forward so they reappear with their original color (see IconDrawer's
+							// dormant-tree handling), rather than the current per-type tree color.
+							mainWindow.edits.centerEdits.put(entry.getKey(),
+									entry.getValue().copyWithTrees(new CenterTrees(cTrees.artPack, cTrees.treeType, cTrees.density, rand.nextLong(), false, cTrees.colors)));
 						}
 						else
 						{
@@ -1255,11 +1259,31 @@ public class ThemePanel extends JTabbedPane
 
 				assert density > 0;
 
-				CenterTrees cTrees = new CenterTrees(artPack, treeType, density, rand.nextLong());
+				// Carry the visible trees' colors onto the rebuilt CenterTrees so they keep their (possibly custom-edited) color instead of
+				// snapping back to the current per-type tree color when reflowed.
+				IconColors colors = getRepresentativeTreeColors(trees, artPack, treeType);
+				CenterTrees cTrees = new CenterTrees(artPack, treeType, density, rand.nextLong(), false, colors);
 				CenterEdit cEdit = mainWindow.edits.centerEdits.get(centerIndex);
 				mainWindow.edits.centerEdits.put(centerIndex, cEdit.copyWithTrees(cTrees));
 			}
 		});
+	}
+
+	/**
+	 * Returns the colors of a representative tree from {@code trees} (one matching the chosen {@code artPack}/{@code treeType} if possible,
+	 * else the first), used to give a rebuilt {@link CenterTrees} the same colors as the visible trees it is re-anchoring.
+	 */
+	private IconColors getRepresentativeTreeColors(List<FreeIcon> trees, String artPack, String treeType)
+	{
+		for (FreeIcon tree : trees)
+		{
+			if (Objects.equals(tree.artPack, artPack) && Objects.equals(tree.groupId, treeType))
+			{
+				return new IconColors(tree.fillColor, tree.filterColor, tree.maximizeOpacity, tree.fillWithColor);
+			}
+		}
+		FreeIcon first = trees.get(0);
+		return new IconColors(first.fillColor, first.filterColor, first.maximizeOpacity, first.fillWithColor);
 	}
 
 	/**

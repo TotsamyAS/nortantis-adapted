@@ -4,6 +4,7 @@ import nortantis.editor.CenterEdit;
 import nortantis.editor.CenterIconType;
 import nortantis.editor.CenterTrees;
 import nortantis.editor.FreeIcon;
+import nortantis.editor.IconColors;
 import nortantis.geom.*;
 import nortantis.graph.voronoi.Center;
 import nortantis.graph.voronoi.Corner;
@@ -69,6 +70,20 @@ public class IconDrawer
 	public void setLowMemoryMode(boolean isLowMemoryMode)
 	{
 		this.isLowMemoryMode = isLowMemoryMode;
+	}
+
+	/**
+	 * Returns the colors to draw an icon with: {@code override} when it is non-null (a {@link CenterIcon}/{@link CenterTrees} that remembers
+	 * its own colors, e.g. a sub-map-redistributed or dormant icon), otherwise the map's per-type colors for {@code type} (the normal case
+	 * for generated and freshly edited icons).
+	 */
+	private IconColors resolveIconColors(IconColors override, IconType type)
+	{
+		if (override != null)
+		{
+			return override;
+		}
+		return new IconColors(fillColorsByType.get(type), iconFilterColorsByType.get(type), Boolean.TRUE.equals(maximizeOpacityByType.get(type)), Boolean.TRUE.equals(fillWithColorByType.get(type)));
 	}
 
 	public IconDrawer(WorldGraph graph, Random rand, MapSettings settings)
@@ -249,8 +264,9 @@ public class IconDrawer
 						String name = artPackAndGroupAndName.getThird();
 
 						IconType type = centerIconTypeToIconType(cEdit.icon.iconType);
-						FreeIcon icon = new FreeIcon(resolutionScale, center.loc, 1.0, type, artPack, groupId, name, cEdit.index, fillColorsByType.get(type), iconFilterColorsByType.get(type),
-								maximizeOpacityByType.get(type), fillWithColorByType.get(type));
+						IconColors colors = resolveIconColors(cEdit.icon.colors, type);
+						FreeIcon icon = new FreeIcon(resolutionScale, center.loc, 1.0, type, artPack, groupId, name, cEdit.index, colors.fillColor, colors.filterColor, colors.maximizeOpacity,
+								colors.fillWithColor);
 						IconDrawTask drawTask = toIconDrawTask(icon);
 
 						if (!isContentBottomTouchingWater(drawTask))
@@ -336,8 +352,9 @@ public class IconDrawer
 			loc = center.loc;
 		}
 		double scale = getWidthScaleForNewShuffledIcon(center, type);
-		FreeIcon icon = new FreeIcon(resolutionScale, loc, scale, type, cEdit.icon.artPack, groupId, cEdit.icon.iconIndex, cEdit.index, fillColorsByType.get(type), iconFilterColorsByType.get(type),
-				maximizeOpacityByType.get(type), fillWithColorByType.get(type));
+		IconColors colors = resolveIconColors(cEdit.icon.colors, type);
+		FreeIcon icon = new FreeIcon(resolutionScale, loc, scale, type, cEdit.icon.artPack, groupId, cEdit.icon.iconIndex, cEdit.index, colors.fillColor, colors.filterColor, colors.maximizeOpacity,
+				colors.fillWithColor);
 		Rectangle changeBounds = null;
 		IconDrawTask drawTask = toIconDrawTask(icon);
 		if (!isContentBottomTouchingWater(drawTask))
@@ -1776,7 +1793,12 @@ public class IconDrawer
 				}
 				else
 				{
-					edits.centerEdits.put(index, edits.centerEdits.get(index).copyWithTrees(edits.centerEdits.get(index).trees.copyWithIsDormant(true)));
+					// These trees failed to draw, so they go dormant and are persisted. Stamp the colors they were drawn with (the per-type
+					// colors, or their own remembered colors) so that when they reawaken (see ThemePanel.triggerRebuildAllAnchoredTrees) they
+					// reappear with their original color rather than whatever the per-type tree color happens to be then.
+					CenterTrees dormantTrees = edits.centerEdits.get(index).trees;
+					IconColors colorsUsed = resolveIconColors(dormantTrees.colors, IconType.trees);
+					edits.centerEdits.put(index, edits.centerEdits.get(index).copyWithTrees(dormantTrees.copyWithIsDormant(true).copyWithColors(colorsUsed)));
 				}
 			}
 		}
@@ -1864,7 +1886,9 @@ public class IconDrawer
 		freeIcons.clearTrees(center.index);
 
 		Random rand = new Random(cTrees.randomSeed);
-		addTreeNearLocation(center.loc, cTrees.density, center, rand, cTrees.artPack, cTrees.treeType);
+		// Use the colors these trees remember (e.g. dormant or sub-map-redistributed trees), falling back to the per-type tree colors.
+		IconColors colors = resolveIconColors(cTrees.colors, IconType.trees);
+		addTreeNearLocation(center.loc, cTrees.density, center, rand, cTrees.artPack, cTrees.treeType, colors);
 
 		// Draw trees at the neighboring corners too.
 		// Note that corners use their own Random instance because the random
@@ -1874,7 +1898,7 @@ public class IconDrawer
 		{
 			if (shouldCenterDrawTreesForCorner(center, corner, additionalCentersThatWillHaveTrees))
 			{
-				addTreeNearLocation(corner.loc, cTrees.density, center, rand, cTrees.artPack, cTrees.treeType);
+				addTreeNearLocation(corner.loc, cTrees.density, center, rand, cTrees.artPack, cTrees.treeType, colors);
 			}
 		}
 
@@ -1961,7 +1985,7 @@ public class IconDrawer
 	}
 
 	@SuppressWarnings("lossy-conversions")
-	private void addTreeNearLocation(Point loc, double forestDensity, Center center, Random rand, String artPack, String groupId)
+	private void addTreeNearLocation(Point loc, double forestDensity, Center center, Random rand, String artPack, String groupId, IconColors colors)
 	{
 		// Convert the forestDensity into an integer number of trees to draw
 		// such that the expected
@@ -1983,8 +2007,8 @@ public class IconDrawer
 			x += rand.nextGaussian() * scale;
 			y += rand.nextGaussian() * scale;
 
-			FreeIcon icon = new FreeIcon(resolutionScale, new Point(x, y), 1.0, IconType.trees, artPack, groupId, index, center.index, forestDensity, fillColorsByType.get(IconType.trees),
-					iconFilterColorsByType.get(IconType.trees), maximizeOpacityByType.get(IconType.trees), fillWithColorByType.get(IconType.trees));
+			FreeIcon icon = new FreeIcon(resolutionScale, new Point(x, y), 1.0, IconType.trees, artPack, groupId, index, center.index, forestDensity, colors.fillColor, colors.filterColor,
+					colors.maximizeOpacity, colors.fillWithColor);
 
 			if (!isContentBottomTouchingWater(icon))
 			{

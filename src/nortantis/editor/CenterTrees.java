@@ -13,13 +13,19 @@ public class CenterTrees
 	public final double density;
 	public final long randomSeed;
 	public final boolean isDormant;
+	/**
+	 * The specific colors to draw these trees with, or null to use the map's per-type tree colors (the normal case). This lets dormant trees
+	 * reappear with the color they were originally drawn with rather than the current per-type tree color, and lets sub-map redistribution
+	 * keep the colors of the source trees. See {@link IconColors}.
+	 */
+	public final IconColors colors;
 
 	public CenterTrees(String artPack, String treeType, double density, long randomSeed)
 	{
-		this(artPack, treeType, density, randomSeed, false);
+		this(artPack, treeType, density, randomSeed, false, null);
 	}
 
-	public CenterTrees(String artPack, String treeType, double density, long randomSeed, boolean isDormant)
+	public CenterTrees(String artPack, String treeType, double density, long randomSeed, boolean isDormant, IconColors colors)
 	{
 		assert artPack != null;
 		this.artPack = artPack;
@@ -28,21 +34,27 @@ public class CenterTrees
 		this.density = density;
 		this.randomSeed = randomSeed;
 		this.isDormant = isDormant;
+		this.colors = colors;
 	}
 
 	public CenterTrees copyWithTreeType(String treeType)
 	{
-		return new CenterTrees(artPack, treeType, density, randomSeed, isDormant);
+		return new CenterTrees(artPack, treeType, density, randomSeed, isDormant, colors);
 	}
 
 	public CenterTrees copyWithArtPack(String artPack)
 	{
-		return new CenterTrees(artPack, treeType, density, randomSeed, isDormant);
+		return new CenterTrees(artPack, treeType, density, randomSeed, isDormant, colors);
 	}
 
 	public CenterTrees copyWithIsDormant(boolean isDormant)
 	{
-		return new CenterTrees(artPack, treeType, density, randomSeed, isDormant);
+		return new CenterTrees(artPack, treeType, density, randomSeed, isDormant, colors);
+	}
+
+	public CenterTrees copyWithColors(IconColors colors)
+	{
+		return new CenterTrees(artPack, treeType, density, randomSeed, isDormant, colors);
 	}
 
 	@Override
@@ -62,7 +74,7 @@ public class CenterTrees
 		}
 		CenterTrees other = (CenterTrees) obj;
 		return Objects.equals(artPack, other.artPack) && Double.doubleToLongBits(density) == Double.doubleToLongBits(other.density) && isDormant == other.isDormant && randomSeed == other.randomSeed
-				&& Objects.equals(treeType, other.treeType);
+				&& Objects.equals(treeType, other.treeType) && Objects.equals(colors, other.colors);
 	}
 
 }

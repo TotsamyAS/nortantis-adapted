@@ -18,18 +18,23 @@ public class CenterIcon
 	 * An alternative to using iconIndex.
 	 */
 	public final String iconName;
+	/**
+	 * The specific colors to draw this icon with, or null to use the map's per-type icon colors (the normal case). Set by sub-map
+	 * redistribution so a redistributed icon keeps the color of the source icon it came from. See {@link IconColors}.
+	 */
+	public final IconColors colors;
 
 	public CenterIcon(CenterIconType iconType, String artPack, String iconGroupId, int iconIndex)
 	{
-		this(iconType, artPack, iconGroupId, iconIndex, null);
+		this(iconType, artPack, iconGroupId, iconIndex, null, null);
 	}
 
 	public CenterIcon(CenterIconType iconType, String artPack, String iconGroupId, String iconName)
 	{
-		this(iconType, artPack, iconGroupId, -1, iconName);
+		this(iconType, artPack, iconGroupId, -1, iconName, null);
 	}
 
-	private CenterIcon(CenterIconType iconType, String artPack, String iconGroupId, int iconIndex, String iconName)
+	private CenterIcon(CenterIconType iconType, String artPack, String iconGroupId, int iconIndex, String iconName, IconColors colors)
 	{
 		this.iconType = iconType;
 		assert artPack != null;
@@ -38,22 +43,28 @@ public class CenterIcon
 		this.iconGroupId = iconGroupId;
 		this.iconIndex = iconIndex;
 		this.iconName = iconName;
+		this.colors = colors;
 	}
 
 	public CenterIcon copyWithIconGroupId(String iconGroupId)
 	{
-		return new CenterIcon(iconType, artPack, iconGroupId, iconIndex, iconName);
+		return new CenterIcon(iconType, artPack, iconGroupId, iconIndex, iconName, colors);
 	}
 
 	public CenterIcon copyWithIconName(String iconName)
 	{
-		return new CenterIcon(iconType, artPack, iconGroupId, iconIndex, iconName);
+		return new CenterIcon(iconType, artPack, iconGroupId, iconIndex, iconName, colors);
+	}
+
+	public CenterIcon copyWithColors(IconColors colors)
+	{
+		return new CenterIcon(iconType, artPack, iconGroupId, iconIndex, iconName, colors);
 	}
 
 	@Override
 	public int hashCode()
 	{
-		return Objects.hash(artPack, iconGroupId, iconIndex, iconName, iconType);
+		return Objects.hash(artPack, iconGroupId, iconIndex, iconName, iconType, colors);
 	}
 
 	@Override
@@ -73,6 +84,6 @@ public class CenterIcon
 		}
 		CenterIcon other = (CenterIcon) obj;
 		return Objects.equals(artPack, other.artPack) && Objects.equals(iconGroupId, other.iconGroupId) && iconIndex == other.iconIndex && Objects.equals(iconName, other.iconName)
-				&& iconType == other.iconType;
+				&& iconType == other.iconType && Objects.equals(colors, other.colors);
 	}
 }

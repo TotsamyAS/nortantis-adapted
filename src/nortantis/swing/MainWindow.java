@@ -95,6 +95,8 @@ public class MainWindow extends JFrame implements ILoggerTarget
 	private JMenuItem nameGeneratorMenuItem;
 	protected String customImagesPath;
 	private JMenu fileMenu;
+	private JMenuItem newRandomMapMenuItem;
+	private JMenuItem loadSettingsMenuItem;
 	private JMenuItem newMapWithSameThemeMenuItem;
 	private JMenuItem createSubMapMenuItem;
 	private JMenuItem searchTextMenuItem;
@@ -245,6 +247,27 @@ public class MainWindow extends JFrame implements ILoggerTarget
 			e.printStackTrace();
 			return null;
 		}
+	}
+
+	/**
+	 * Enables or disables the entire menu bar (File, Edit, View, Tools, Help) as a group. Disabling at the menu level greys out and blocks
+	 * each menu rather than toggling individual items. Used to lock the menu bar while the sub-map dialog is open, since its first step is
+	 * non-modal and would otherwise leave commands like File -&gt; Open reachable.
+	 */
+	void setMenuBarEnabled(boolean enabled)
+	{
+		fileMenu.setEnabled(enabled);
+		editMenu.setEnabled(enabled);
+		viewMenu.setEnabled(enabled);
+		toolsMenu.setEnabled(enabled);
+		helpMenu.setEnabled(enabled);
+
+		// Disabling a JMenu greys it out but does not suppress its items' keyboard accelerators - those fire from the focused-window input
+		// map regardless of the parent menu's enabled state. Disable at the item level the two whose accelerators would load a different map,
+		// File -> New (Ctrl+N) and File -> Open (Ctrl+O), so they are fully blocked while the menu bar is locked. The other accelerator items
+		// (Save, Refresh, Undo, Redo, Search) are already disabled by enableOrDisableFieldsThatRequireMap during the sub-map dialog.
+		newRandomMapMenuItem.setEnabled(enabled);
+		loadSettingsMenuItem.setEnabled(enabled);
 	}
 
 	void enableOrDisableFieldsThatRequireMap(boolean enable, MapSettings settings, boolean forceEnableZoom)
@@ -683,7 +706,7 @@ public class MainWindow extends JFrame implements ILoggerTarget
 		fileMenu = new JMenu(Translation.get("menu.file"));
 		menuBar.add(fileMenu);
 
-		final JMenuItem newRandomMapMenuItem = new JMenuItem(Translation.get("menu.file.newRandomMap"));
+		newRandomMapMenuItem = new JMenuItem(Translation.get("menu.file.newRandomMap"));
 		newRandomMapMenuItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_N, SwingHelper.getMenuShortcutKeyMask()));
 		fileMenu.add(newRandomMapMenuItem);
 		newRandomMapMenuItem.addActionListener(new ActionListener()
@@ -735,7 +758,7 @@ public class MainWindow extends JFrame implements ILoggerTarget
 			}
 		});
 
-		final JMenuItem loadSettingsMenuItem = new JMenuItem(Translation.get("menu.file.open"));
+		loadSettingsMenuItem = new JMenuItem(Translation.get("menu.file.open"));
 		loadSettingsMenuItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_O, SwingHelper.getMenuShortcutKeyMask()));
 		fileMenu.add(loadSettingsMenuItem);
 		loadSettingsMenuItem.addActionListener(new ActionListener()

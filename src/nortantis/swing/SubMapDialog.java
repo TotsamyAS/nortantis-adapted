@@ -119,6 +119,9 @@ public class SubMapDialog
 		mainWindow.toolsPanel.currentTool.onSwitchingAway();
 		mainWindow.mapEditingPanel.clearAllToolSpecificSelectionsAndHighlights();
 		mainWindow.enableOrDisableFieldsThatRequireMap(false, null, true);
+		// Lock the whole menu bar for the duration of the sub-map workflow. Re-enabled at each exit point (cancel from step 1 or 2, closing
+		// step 2's window, and creating the sub-map).
+		mainWindow.setMenuBarEnabled(false);
 
 		step1Dialog = new JDialog(mainWindow, Translation.get("subMapDialog.step1.title"), false);
 		step1Dialog.setDefaultCloseOperation(JDialog.DO_NOTHING_ON_CLOSE);
@@ -433,6 +436,7 @@ public class SubMapDialog
 			step1Dialog = null;
 		}
 		mainWindow.enableOrDisableFieldsThatRequireMap(true, mainWindow.getSettingsFromGUI(false), true);
+		mainWindow.setMenuBarEnabled(true);
 	}
 
 	private void disposeStep1()
@@ -671,6 +675,7 @@ public class SubMapDialog
 			step2Dialog.dispose();
 			step2Dialog = null;
 			mainWindow.enableOrDisableFieldsThatRequireMap(true, mainWindow.getSettingsFromGUI(false), true);
+			mainWindow.setMenuBarEnabled(true);
 		});
 
 		createButton = new JButton(Translation.get("subMapDialog.step2.create"));
@@ -723,6 +728,7 @@ public class SubMapDialog
 				step2Dialog.dispose();
 				step2Dialog = null;
 				mainWindow.enableOrDisableFieldsThatRequireMap(true, mainWindow.getSettingsFromGUI(false), true);
+				mainWindow.setMenuBarEnabled(true);
 			}
 		});
 
@@ -921,6 +927,7 @@ public class SubMapDialog
 		step2Dialog.dispose();
 		step2Dialog = null;
 		mainWindow.enableOrDisableFieldsThatRequireMap(true, settings, true);
+		mainWindow.setMenuBarEnabled(true);
 		mainWindow.clearOpenSettingsFilePath();
 		mainWindow.loadSettingsIntoGUI(settings);
 

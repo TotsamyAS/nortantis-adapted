@@ -639,11 +639,52 @@ public class MapSettings implements Serializable
 				treesObj.put("density", centerEdit.trees.density);
 				treesObj.put("randomSeed", centerEdit.trees.randomSeed);
 				treesObj.put("isDormant", centerEdit.trees.isDormant);
+				// Persist the colors these trees were drawn with so dormant trees reappear with their original color rather than the
+				// current per-type tree color. Absent for trees that use the per-type colors (the normal case).
+				if (centerEdit.trees.colors != null)
+				{
+					putIconColors(treesObj, centerEdit.trees.colors);
+				}
 				mpObj.put("trees", treesObj);
 			}
 			list.add(mpObj);
 		}
 		return list;
+	}
+
+	/**
+	 * Writes the four icon color properties of {@code colors} into {@code obj}. Mirrors {@link #parseIconColors}.
+	 */
+	@SuppressWarnings("unchecked")
+	private void putIconColors(JSONObject obj, IconColors colors)
+	{
+		if (colors.fillColor != null)
+		{
+			obj.put("fillColor", colorToString(colors.fillColor));
+		}
+		if (colors.filterColor != null)
+		{
+			obj.put("filterColor", colors.filterColor.toJson());
+		}
+		obj.put("maximizeOpacity", colors.maximizeOpacity);
+		obj.put("fillWithColor", colors.fillWithColor);
+	}
+
+	/**
+	 * Reads the icon color properties written by {@link #putIconColors} from {@code obj}, or returns null if none are present (the normal
+	 * case, meaning the per-type colors should be used).
+	 */
+	private IconColors parseIconColors(JSONObject obj)
+	{
+		if (obj == null || !(obj.containsKey("fillColor") || obj.containsKey("filterColor") || obj.containsKey("maximizeOpacity") || obj.containsKey("fillWithColor")))
+		{
+			return null;
+		}
+		Color fillColor = obj.containsKey("fillColor") ? parseColor((String) obj.get("fillColor")) : null;
+		HSBColor filterColor = obj.containsKey("filterColor") ? HSBColor.fromJson((JSONObject) obj.get("filterColor")) : null;
+		boolean maximizeOpacity = obj.containsKey("maximizeOpacity") ? (Boolean) obj.get("maximizeOpacity") : false;
+		boolean fillWithColor = obj.containsKey("fillWithColor") ? (Boolean) obj.get("fillWithColor") : false;
+		return new IconColors(fillColor, filterColor, maximizeOpacity, fillWithColor);
 	}
 
 	@SuppressWarnings("unchecked")
@@ -1873,7 +1914,8 @@ public class MapSettings implements Serializable
 					double density = (Double) treesObj.get("density");
 					long randomSeed = (Long) treesObj.get("randomSeed");
 					boolean isDormant = treesObj.containsKey("isDormant") ? (Boolean) treesObj.get("isDormant") : false;
-					trees = new CenterTrees(artPack, treeType, density, randomSeed, isDormant);
+					IconColors colors = parseIconColors(treesObj);
+					trees = new CenterTrees(artPack, treeType, density, randomSeed, isDormant, colors);
 				}
 			}
 

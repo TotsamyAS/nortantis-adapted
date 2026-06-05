@@ -5,6 +5,7 @@ import nortantis.editor.CenterIcon;
 import nortantis.editor.CenterIconType;
 import nortantis.editor.CenterTrees;
 import nortantis.editor.FreeIcon;
+import nortantis.editor.IconColors;
 import nortantis.editor.RegionEdit;
 import nortantis.editor.Road;
 import nortantis.geom.Point;
@@ -532,7 +533,7 @@ public class SubMapCreator
 			{
 				continue;
 			}
-			CenterIcon centerIcon = new CenterIcon(IconDrawer.iconTypeToCenterIconType(icon.type), icon.artPack, icon.groupId, icon.iconIndex);
+			CenterIcon centerIcon = new CenterIcon(IconDrawer.iconTypeToCenterIconType(icon.type), icon.artPack, icon.groupId, icon.iconIndex).copyWithColors(iconColorsOf(icon));
 			newEdits.centerEdits.put(nearestNew.index, nearestCenterEdit.copyWithIcon(centerIcon));
 		}
 
@@ -628,7 +629,7 @@ public class SubMapCreator
 				{
 					FreeIcon icon = iconsAtLocation.get(0);
 					int randomIconIndex = new Random(seed + newCenter.index).nextInt(Integer.MAX_VALUE);
-					CenterIcon centerIcon = new CenterIcon(IconDrawer.iconTypeToCenterIconType(icon.type), icon.artPack, icon.groupId, randomIconIndex);
+					CenterIcon centerIcon = new CenterIcon(IconDrawer.iconTypeToCenterIconType(icon.type), icon.artPack, icon.groupId, randomIconIndex).copyWithColors(iconColorsOf(icon));
 					newEdits.centerEdits.put(newCenter.index, existingEdit != null ? existingEdit.copyWithIcon(centerIcon) : new CenterEdit(newCenter.index, false, false, null, centerIcon, null));
 					existingEdit = newEdits.centerEdits.get(newCenter.index);
 				}
@@ -644,7 +645,7 @@ public class SubMapCreator
 				CenterTrees originalTrees = originalCenterToCenterTrees.get(originalCenterAtLocation.index);
 				if (originalTrees != null)
 				{
-					CenterTrees newTrees = new CenterTrees(originalTrees.artPack, originalTrees.treeType, originalTrees.density, seed + newCenter.index, originalTrees.isDormant);
+					CenterTrees newTrees = new CenterTrees(originalTrees.artPack, originalTrees.treeType, originalTrees.density, seed + newCenter.index, originalTrees.isDormant, originalTrees.colors);
 					CenterEdit current = newEdits.centerEdits.get(newCenter.index);
 					if (current != null)
 					{
@@ -659,7 +660,8 @@ public class SubMapCreator
 						String artPack = treeFreeIcons.get(0).artPack;
 						String treeType = treeFreeIcons.get(0).groupId;
 						double avgDensity = treeFreeIcons.stream().mapToDouble(t -> t.density).average().getAsDouble();
-						CenterTrees newTrees = new CenterTrees(artPack, treeType, avgDensity, seed + newCenter.index);
+						// Keep the source trees' colors so the redistributed trees match instead of using the sub-map's per-type tree color.
+						CenterTrees newTrees = new CenterTrees(artPack, treeType, avgDensity, seed + newCenter.index, false, iconColorsOf(treeFreeIcons.get(0)));
 						CenterEdit current = newEdits.centerEdits.get(newCenter.index);
 						if (current != null)
 						{
@@ -669,6 +671,15 @@ public class SubMapCreator
 				}
 			}
 		}
+	}
+
+	/**
+	 * Captures the four color properties of a source {@link FreeIcon} so a redistributed {@link CenterIcon}/{@link CenterTrees} can be drawn
+	 * with the colors of the icon it came from rather than the sub-map's per-type icon colors.
+	 */
+	private static IconColors iconColorsOf(FreeIcon icon)
+	{
+		return new IconColors(icon.fillColor, icon.filterColor, icon.maximizeOpacity, icon.fillWithColor);
 	}
 
 	/**
