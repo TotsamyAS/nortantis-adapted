@@ -152,7 +152,13 @@ public class SubMapCreator
 
 		transferText(originalSettings.edits, selectionBoundsRI, newEdits, newGenWidth, newGenHeight, fontScale, iconSizeRatio, sourceMeanPolygonWidthRI, sourceCityFontSize);
 
-		transferFreeIcons(originalSettings.edits, originalGraph, newGraph, selectionBoundsRI, originalResolution, newEdits, newGenWidth, newGenHeight, redistributeIconsAndRivers, seed);
+		// An IconDrawer over the source graph, used to compute each city/decoration icon's drawn bounds so icons that overlap the selection
+		// are kept even when their anchor point lies just outside it (city labels sit below their icon, so a city near the top edge has its
+		// icon above the selection but its image still reaching into it).
+		IconDrawer sourceIconDrawer = new IconDrawer(originalGraph, new Random(seed), originalSettings);
+
+		transferFreeIcons(originalSettings.edits, originalGraph, newGraph, selectionBoundsRI, originalResolution, newEdits, newGenWidth, newGenHeight, redistributeIconsAndRivers, seed,
+				sourceIconDrawer);
 		newEdits.hasIconEdits = true;
 
 		transferRoads(originalSettings.edits, selectionBoundsRI, newGenWidth, newGenHeight, newEdits);
@@ -249,11 +255,12 @@ public class SubMapCreator
 	private static final double cityLabelClearanceLineHeights = 0.5;
 
 	/**
-	 * Returns the source city icon ({@link IconType#cities}) nearest to {@code labelLocationRI} that lies within the selection and within
-	 * {@code maxDistanceRI}, or {@code null} if none qualifies. Used to pair a city label with the icon it annotates so the label can be
-	 * repositioned relative to that icon in the sub-map. Icons outside the selection are excluded because they are not transferred (their
-	 * sub-map position would be off the map). The pairing is purely distance-based and need not be exact: a mispairing between two nearby
-	 * cities only shifts the label by the small difference between their icon positions.
+	 * Returns the source city icon ({@link IconType#cities}) that {@code labelLocationRI} annotates, or {@code null} if none qualifies. The
+	 * label's icon is taken to be the globally nearest city icon within {@code maxDistanceRI}; it is returned only if that icon lies inside
+	 * the selection (so it is transferred and the label can be repositioned relative to it). Searching globally — rather than only among
+	 * in-selection icons — is important: a label whose own icon is just outside the selection must NOT be re-paired with a different
+	 * neighboring city's icon and dragged across the map, so in that case we return null and the caller leaves the label at its plain
+	 * transformed position.
 	 */
 	private static FreeIcon findNearestSourceCityIcon(Point labelLocationRI, MapEdits originalEdits, Rectangle selectionBoundsRI, double maxDistanceRI)
 	{
@@ -265,16 +272,16 @@ public class SubMapCreator
 			{
 				continue;
 			}
-			if (!selectionBoundsRI.containsOrOverlaps(icon.locationResolutionInvariant))
-			{
-				continue;
-			}
 			double distance = labelLocationRI.distanceTo(icon.locationResolutionInvariant);
 			if (distance <= nearestDistance)
 			{
 				nearestDistance = distance;
 				nearest = icon;
 			}
+		}
+		if (nearest != null && !selectionBoundsRI.containsOrOverlaps(nearest.locationResolutionInvariant))
+		{
+			return null;
 		}
 		return nearest;
 	}
@@ -385,7 +392,7 @@ public class SubMapCreator
 	 * hills, sand, and trees are either redistributed by center (if {@code redistributeIconsAndRivers}) or copied by position.
 	 */
 	private static void transferFreeIcons(MapEdits originalEdits, WorldGraph originalGraph, WorldGraph newGraph, Rectangle selectionBoundsRI, double originalResolution, MapEdits newEdits,
-			int newGenWidth, int newGenHeight, boolean redistributeIconsAndRivers, long seed)
+			int newGenWidth, int newGenHeight, boolean redistributeIconsAndRivers, long seed, IconDrawer sourceIconDrawer)
 	{
 		// Cities and decorations always copy by position, regardless of redistributeIconsAndRivers.
 		// They must be copied before redistribution so that redistribution can skip their centers.
@@ -395,7 +402,9 @@ public class SubMapCreator
 			{
 				continue;
 			}
-			if (selectionBoundsRI.containsOrOverlaps(icon.locationResolutionInvariant))
+			// Keep the icon if its drawn image overlaps the selection, not just its anchor point — otherwise a city whose icon sits just
+			// outside the selection (e.g. above the top edge, with its label below inside it) would be dropped even though it is visible.
+			if (doesIconOverlapSelection(icon, sourceIconDrawer, selectionBoundsRI, originalResolution))
 			{
 				Point newLoc = transformRIPoint(icon.locationResolutionInvariant, selectionBoundsRI, newGenWidth, newGenHeight);
 				Integer newCenterIndex = null;
@@ -435,6 +444,23 @@ public class SubMapCreator
 				}
 			}
 		}
+	}
+
+	/**
+	 * Returns true if {@code icon}'s drawn image overlaps {@code selectionBoundsRI}. The icon's drawn bounds are computed with
+	 * {@code sourceIconDrawer} (source-graph pixel coordinates) and converted to RI. If the image cannot be loaded (e.g. a missing art
+	 * pack), this falls back to testing the icon's anchor point so the icon is still transferred when its anchor is inside the selection.
+	 */
+	private static boolean doesIconOverlapSelection(FreeIcon icon, IconDrawer sourceIconDrawer, Rectangle selectionBoundsRI, double originalResolution)
+	{
+		IconDrawTask task = sourceIconDrawer.toIconDrawTask(icon);
+		if (task == null)
+		{
+			return selectionBoundsRI.containsOrOverlaps(icon.locationResolutionInvariant);
+		}
+		Rectangle boundsPixels = task.createBounds();
+		Rectangle boundsRI = new Rectangle(boundsPixels.x / originalResolution, boundsPixels.y / originalResolution, boundsPixels.width / originalResolution, boundsPixels.height / originalResolution);
+		return selectionBoundsRI.overlaps(boundsRI);
 	}
 
 	/**
