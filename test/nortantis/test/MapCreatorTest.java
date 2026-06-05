@@ -768,6 +768,74 @@ public class MapCreatorTest
 		}
 	}
 
+	/**
+	 * Creates a sub-map of the upper-right corner of simpleSmallWorld at the source map's detail level - the "Match source detail" option in
+	 * SubMapDialog, which keeps the same polygon density and copies icons/rivers/text from the source rather than redistributing them across a
+	 * new polygon grid. The rendered result is compared per-pixel to its expected image.
+	 */
+	@Test
+	public void subMapOfSimpleSmallWorldUpperRightAtSourceDetail()
+	{
+		MapSettings originalSettings = new MapSettings(Paths.get("unit test files", "map settings", "simpleSmallWorld.nort").toString());
+		WorldGraph originalGraph = MapCreator.createGraphForUnitTests(originalSettings);
+
+		// The upper-right corner of the source map, in RI (resolution-invariant) coordinates (top edge y=0, right edge x+width=4096).
+		Rectangle selectionBoundsRI = new Rectangle(2048, 0, 2048, 2048);
+		// "Match source detail" keeps the source's polygon density for the selected region.
+		int worldSize = SubMapDialog.computeDefaultWorldSize(originalSettings, selectionBoundsRI);
+
+		long seed = 987654321L;
+		// redistributeIconsAndRivers = false: match-source-detail copies icons/rivers/text instead of redistributing them.
+		MapSettings subMapSettings = SubMapCreator.createSubMapSettings(originalSettings, originalGraph, selectionBoundsRI, worldSize, originalSettings.resolution, seed, false);
+
+		assertEquals(worldSize, subMapSettings.worldSize, "Sub-map should be generated at the source detail level (world size)");
+
+		WorldGraph subMapGraph = MapCreator.createGraphForUnitTests(subMapSettings);
+		// Every sub-map center should have land/water (and region) assigned from the source map.
+		assertEquals(subMapGraph.centers.size(), subMapSettings.edits.centerEdits.size(), "Every sub-map center should have a transferred CenterEdit");
+
+		try (Image actual = new MapCreator().createMap(subMapSettings, null, null))
+		{
+			MapTestUtil.compareToExpectedMap(actual, "subMapOfSimpleSmallWorldUpperRightAtSourceDetail", expectedMapsFolderName, failedMapsFolderName, 0);
+		}
+	}
+
+	/**
+	 * Creates a sub-map of the upper-right corner of simpleSmallWorld using the "Choose" detail option in SubMapDialog at a polygon count
+	 * approximately equal to the source map's detail level. The Choose slider snaps to even multiples of 1000, so this simulates the dialog by
+	 * rounding the source-detail world size to the nearest 1000 ("approximately" source detail). Unlike "Match source detail", Choose mode
+	 * redistributes icons/rivers/text across the new polygon grid. The rendered result is compared per-pixel to its expected image.
+	 */
+	@Test
+	public void subMapOfSimpleSmallWorldUpperRightAtChosenSourceLikeDetail()
+	{
+		MapSettings originalSettings = new MapSettings(Paths.get("unit test files", "map settings", "simpleSmallWorld.nort").toString());
+		WorldGraph originalGraph = MapCreator.createGraphForUnitTests(originalSettings);
+
+		// The upper-right corner of the source map, in RI (resolution-invariant) coordinates (top edge y=0, right edge x+width=4096).
+		Rectangle selectionBoundsRI = new Rectangle(2048, 0, 2048, 2048);
+
+		int matchWorldSize = SubMapDialog.computeDefaultWorldSize(originalSettings, selectionBoundsRI);
+		// The Choose slider snaps to multiples of 1000 (SubMapDialog's minor tick spacing, with a minimum of 1000), so simulate the dialog by
+		// rounding the source-detail world size to the nearest 1000. This is the "approximately source detail" Choose-mode case.
+		int worldSize = (int) Math.clamp(Math.round(matchWorldSize / 1000.0) * 1000, 1000, SettingsGenerator.maxWorldSize);
+
+		long seed = 987654321L;
+		// redistributeIconsAndRivers = true: Choose mode redistributes icons/rivers/text across the new polygon grid.
+		MapSettings subMapSettings = SubMapCreator.createSubMapSettings(originalSettings, originalGraph, selectionBoundsRI, worldSize, originalSettings.resolution, seed, true);
+
+		assertEquals(worldSize, subMapSettings.worldSize, "Sub-map should be generated at the chosen (multiple-of-1000) world size");
+
+		WorldGraph subMapGraph = MapCreator.createGraphForUnitTests(subMapSettings);
+		// Every sub-map center should have land/water (and region) assigned from the source map.
+		assertEquals(subMapGraph.centers.size(), subMapSettings.edits.centerEdits.size(), "Every sub-map center should have a transferred CenterEdit");
+
+		try (Image actual = new MapCreator().createMap(subMapSettings, null, null))
+		{
+			MapTestUtil.compareToExpectedMap(actual, "subMapOfSimpleSmallWorldUpperRightAtChosenSourceLikeDetail", expectedMapsFolderName, failedMapsFolderName, 0);
+		}
+	}
+
 	private Image createMapUsingUpdater(MapUpdater updater, Tuple1<Image> mapTuple, Tuple1<Boolean> doneTuple)
 	{
 		doneTuple.set(false);

@@ -38,7 +38,7 @@ public class MapSettings implements Serializable
 	/**
 	 * When updating this, also update installers/version.txt
 	 */
-	public static final String currentVersion = "3.19";
+	public static final String currentVersion = "3.20";
 	public static final String fileExtension = "nort";
 	public static final String fileExtensionWithDot = "." + fileExtension;
 	public static final double defaultPointPrecision = 2.0;
@@ -47,7 +47,13 @@ public class MapSettings implements Serializable
 	private final double defaultRoadWidth = 1.0;
 	private final Stroke defaultRoadStyle = new Stroke(StrokeType.Dots, (float) (MapCreator.calcSizeMultiplierFromResolutionScaleRounded(1.0) * defaultRoadWidth));
 	private final Color defaultRoadColor = Color.black;
-	public static final Color defaultIconFillColor = Color.create(155, 105, 49, (int) (255 * 0.7));
+	public static final Color defaultIconFillColor = Color.gray;
+	/**
+	 * The value of defaultIconFillColor before version 3.20. Retained because maps saved before 3.20 omitted an icon's (or icon type's) fill
+	 * color when it equaled the default of the time, so on load a visible icon left at the old default must be resolved back to this value to
+	 * preserve its color rather than picking up the new default.
+	 */
+	public static final Color defaultIconFillColorBeforeV3_20 = Color.create(155, 105, 49, (int) (255 * 0.7));
 	public static final HSBColor defaultIconFilterColor = new HSBColor(0, 0, 0, 0);
 
 	public String version;
@@ -472,7 +478,13 @@ public class MapSettings implements Serializable
 				IconType key = entry.getKey();
 				Color value = entry.getValue();
 
-				iconFillColorsObj.put(key, colorToString(value));
+				// Only persist the type's fill color when it is actually shown for that type or it differs from the default. Otherwise leave
+				// it out so it tracks defaultIconFillColor, mirroring how individual icons are saved. This lets a later change to the default
+				// take effect for types that aren't filling with a color.
+				if (getFillWithColorForType(key) || !value.equals(defaultIconFillColor))
+				{
+					iconFillColorsObj.put(key, colorToString(value));
+				}
 			}
 			root.put("iconColorsByType", iconFillColorsObj);
 		}
@@ -659,7 +671,10 @@ public class MapSettings implements Serializable
 			{
 				iconObj.put("density", icon.density);
 			}
-			if (icon.fillColor != null && !icon.fillColor.equals(defaultIconFillColor))
+			// Only persist the fill color when it is actually shown (fillWithColor) or it differs from the default. A hidden default color is
+			// left out so it tracks defaultIconFillColor, which keeps files small and lets a later change to the default take effect for icons
+			// that aren't displaying a color. A shown default color is written explicitly so changing the default won't alter existing maps.
+			if (icon.fillColor != null && (icon.fillWithColor || !icon.fillColor.equals(defaultIconFillColor)))
 			{
 				iconObj.put("color", colorToString(icon.fillColor));
 			}
@@ -1387,6 +1402,29 @@ public class MapSettings implements Serializable
 		runConversionToFixCompassRosesGroupId();
 		runConversionToFillInLandShape();
 		runConversionForRegionCount();
+		runConversionForIconFillColorDefaultChange();
+	}
+
+	/**
+	 * defaultIconFillColor changed in version 3.20. Per-type fill colors are stored explicitly for every type in older maps, so without this
+	 * a type that was left at the old default would stay frozen at it. Release any per-type fill color that was at the old default and isn't
+	 * being shown so it tracks the new default. Types the user actually colored, or that have fill enabled, are left untouched. Individual
+	 * icons are handled inline in parseIconEdits.
+	 */
+	private void runConversionForIconFillColorDefaultChange()
+	{
+		if (isVersionGreaterThanOrEqualTo(version, "3.20"))
+		{
+			return;
+		}
+
+		for (IconType iconType : IconType.values())
+		{
+			if (!getFillWithColorForType(iconType) && defaultIconFillColorBeforeV3_20.equals(iconFillColorsByType.get(iconType)))
+			{
+				iconFillColorsByType.put(iconType, defaultIconFillColor);
+			}
+		}
 	}
 
 	private void runConversionForRegionCount()
@@ -1458,7 +1496,9 @@ public class MapSettings implements Serializable
 				if (iconFillColorsByType.containsKey(iconType))
 				{
 					Color color = iconFillColorsByType.get(iconType);
-					fillWithColorByType.put(iconType, !color.equals(Color.transparentBlack) && !color.equals(defaultIconFillColor));
+					// Compare against the default of this conversion's era (pre-3.17, when the default was the old brown), not the current
+					// default, so changing defaultIconFillColor doesn't alter how old maps are converted.
+					fillWithColorByType.put(iconType, !color.equals(Color.transparentBlack) && !color.equals(defaultIconFillColorBeforeV3_20));
 
 					if (iconFillColorsByType.get(iconType).equals(Color.transparentBlack))
 					{
@@ -1885,20 +1925,6 @@ public class MapSettings implements Serializable
 			}
 			double density = iconObj.containsKey("density") ? (double) iconObj.get("density") : 0.0;
 			Color fillColorFromJSon = iconObj.containsKey("color") ? parseColor((String) iconObj.get("color")) : null;
-			Color fillColor;
-			// The old default fill color was transparent black, which causes the icon to not be filled with color. So if that was selected,
-			// set the fill color to the default fill color. The fillWithColor setting will be used to prevent drawing the fill color.
-			if (convertFillColor && fillColorFromJSon == null)
-			{
-				fillColor = defaultIconFillColor;
-			}
-			else
-			{
-				fillColor = fillColorFromJSon == null ? defaultIconFillColor : fillColorFromJSon;
-			}
-
-			HSBColor filterColor = iconObj.containsKey("filterColor") ? HSBColor.fromJson((JSONObject) iconObj.get("filterColor")) : defaultIconFilterColor;
-			boolean maximizeOpacity = iconObj.containsKey("maximizeOpacity") ? (Boolean) iconObj.get("maximizeOpacity") : false;
 
 			boolean fillWithColor;
 			if (convertFillColor)
@@ -1909,6 +1935,26 @@ public class MapSettings implements Serializable
 			{
 				fillWithColor = iconObj.containsKey("fillWithColor") ? (Boolean) iconObj.get("fillWithColor") : false;
 			}
+
+			Color fillColor;
+			if (fillColorFromJSon != null)
+			{
+				fillColor = fillColorFromJSon;
+			}
+			else if (fillWithColor && !isVersionGreaterThanOrEqualTo(version, "3.20"))
+			{
+				// The color was omitted, which means it equaled the default when the file was saved. For maps saved before 3.20 (when the
+				// default fill color changed) a shown color was displaying the old default, so resolve it back to that to preserve the icon's
+				// appearance. A hidden omitted color falls through to the current default below so it tracks the new default.
+				fillColor = defaultIconFillColorBeforeV3_20;
+			}
+			else
+			{
+				fillColor = defaultIconFillColor;
+			}
+
+			HSBColor filterColor = iconObj.containsKey("filterColor") ? HSBColor.fromJson((JSONObject) iconObj.get("filterColor")) : defaultIconFilterColor;
+			boolean maximizeOpacity = iconObj.containsKey("maximizeOpacity") ? (Boolean) iconObj.get("maximizeOpacity") : false;
 
 			double originalScale;
 			if (iconObj.containsKey("originalScale") && iconObj.get("originalScale") != null)

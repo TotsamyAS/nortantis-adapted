@@ -536,13 +536,10 @@ public class SubMapDialog
 		sliderRowHider = detailSliderWithValue.addToOrganizer(controlOrganizer, "", polygonsTooltip);
 		sliderRowHider.setVisible(!matchDetailPossible);
 
-		// Warning shown when Choose mode is selected (indented to match slider).
+		// Warning shown when Choose mode is selected.
 		JLabel customWarningLabel = new JLabel(Translation.get("subMapDialog.step2.customWarning"));
 		customWarningLabel.setForeground(warningMessageColor);
-		JPanel customWarningWrapper = new JPanel(new BorderLayout());
-		customWarningWrapper.setBorder(BorderFactory.createEmptyBorder(0, 20, 0, 0));
-		customWarningWrapper.add(customWarningLabel);
-		customWarningRowHider = controlOrganizer.addLeftAlignedComponent(customWarningWrapper, 2, 8, false);
+		customWarningRowHider = controlOrganizer.addLeftAlignedComponent(customWarningLabel, 2, 8, false);
 		customWarningRowHider.setVisible(!matchDetailPossible);
 
 		// Wire radio button listeners.
