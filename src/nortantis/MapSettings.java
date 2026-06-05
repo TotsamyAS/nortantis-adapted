@@ -1398,11 +1398,11 @@ public class MapSettings implements Serializable
 		runConversionOnFadingConcentricWaves();
 		runConversionToRemoveRegionIdsOfEditsThatAreWater();
 		runConversionForNewRangesForRandomRegionColorGeneratorSettings();
-		runConversionOnFillWithColorByType();
 		runConversionToFixCompassRosesGroupId();
 		runConversionToFillInLandShape();
 		runConversionForRegionCount();
 		runConversionForIconFillColorDefaultChange();
+		runConversionOnFillWithColorByType();
 	}
 
 	/**
@@ -1483,7 +1483,7 @@ public class MapSettings implements Serializable
 
 	private void runConversionOnFillWithColorByType()
 	{
-		if (isVersionGreaterThanOrEqualTo(version, "3.17"))
+		if (isVersionGreaterThanOrEqualTo(version, "3.20"))
 		{
 			return;
 		}
@@ -1496,9 +1496,11 @@ public class MapSettings implements Serializable
 				if (iconFillColorsByType.containsKey(iconType))
 				{
 					Color color = iconFillColorsByType.get(iconType);
-					// Compare against the default of this conversion's era (pre-3.17, when the default was the old brown), not the current
-					// default, so changing defaultIconFillColor doesn't alter how old maps are converted.
-					fillWithColorByType.put(iconType, !color.equals(Color.transparentBlack) && !color.equals(defaultIconFillColorBeforeV3_20));
+					// This conversion only runs for maps old enough (<= 3.14) to predate per-type fill colors, so every type's color here was
+					// just populated with the current defaultIconFillColor above (these files have no stored iconColorsByType). Compare against
+					// that same current default so a populated default is correctly read as "not filling" - otherwise every icon would fill
+					// with the default color. transparentBlack was the even-older "no fill" sentinel.
+					fillWithColorByType.put(iconType, !color.equals(Color.transparentBlack) && !color.equals(defaultIconFillColor));
 
 					if (iconFillColorsByType.get(iconType).equals(Color.transparentBlack))
 					{
