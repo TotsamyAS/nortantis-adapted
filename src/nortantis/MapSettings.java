@@ -38,7 +38,7 @@ public class MapSettings implements Serializable
 	/**
 	 * When updating this, also update installers/version.txt
 	 */
-	public static final String currentVersion = "3.20";
+	public static final String currentVersion = "3.2";
 	public static final String fileExtension = "nort";
 	public static final String fileExtensionWithDot = "." + fileExtension;
 	public static final double defaultPointPrecision = 2.0;
@@ -49,7 +49,7 @@ public class MapSettings implements Serializable
 	private final Color defaultRoadColor = Color.black;
 	public static final Color defaultIconFillColor = Color.gray;
 	/**
-	 * The value of defaultIconFillColor before version 3.20. Retained because maps saved before 3.20 omitted an icon's (or icon type's) fill
+	 * The value of defaultIconFillColor before version 3.2. Retained because maps saved before 3.2 omitted an icon's (or icon type's) fill
 	 * color when it equaled the default of the time, so on load a visible icon left at the old default must be resolved back to this value to
 	 * preserve its color rather than picking up the new default.
 	 */
@@ -1447,14 +1447,14 @@ public class MapSettings implements Serializable
 	}
 
 	/**
-	 * defaultIconFillColor changed in version 3.20. Per-type fill colors are stored explicitly for every type in older maps, so without this
+	 * defaultIconFillColor changed in version 3.2. Per-type fill colors are stored explicitly for every type in older maps, so without this
 	 * a type that was left at the old default would stay frozen at it. Release any per-type fill color that was at the old default and isn't
 	 * being shown so it tracks the new default. Types the user actually colored, or that have fill enabled, are left untouched. Individual
 	 * icons are handled inline in parseIconEdits.
 	 */
 	private void runConversionForIconFillColorDefaultChange()
 	{
-		if (isVersionGreaterThanOrEqualTo(version, "3.20"))
+		if (isVersionGreaterThanOrEqualTo(version, "3.2"))
 		{
 			return;
 		}
@@ -1524,7 +1524,7 @@ public class MapSettings implements Serializable
 
 	private void runConversionOnFillWithColorByType()
 	{
-		if (isVersionGreaterThanOrEqualTo(version, "3.20"))
+		if (isVersionGreaterThanOrEqualTo(version, "3.2"))
 		{
 			return;
 		}
@@ -1985,9 +1985,9 @@ public class MapSettings implements Serializable
 			{
 				fillColor = fillColorFromJSon;
 			}
-			else if (fillWithColor && !isVersionGreaterThanOrEqualTo(version, "3.20"))
+			else if (fillWithColor && !isVersionGreaterThanOrEqualTo(version, "3.2"))
 			{
-				// The color was omitted, which means it equaled the default when the file was saved. For maps saved before 3.20 (when the
+				// The color was omitted, which means it equaled the default when the file was saved. For maps saved before 3.2 (when the
 				// default fill color changed) a shown color was displaying the old default, so resolve it back to that to preserve the icon's
 				// appearance. A hidden omitted color falls through to the current default below so it tracks the new default.
 				fillColor = defaultIconFillColorBeforeV3_20;

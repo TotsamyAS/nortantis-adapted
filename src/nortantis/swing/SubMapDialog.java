@@ -926,7 +926,8 @@ public class SubMapDialog
 		mainWindow.mapEditingPanel.clearSelectionBox();
 		step2Dialog.dispose();
 		step2Dialog = null;
-		mainWindow.enableOrDisableFieldsThatRequireMap(true, settings, true);
+		// Re-enable the menu bar that was locked while the dialog was open. The map-related field state is left to loadSettingsIntoGUI below,
+		// which decides it authoritatively based on whether the sub-map's edits are initialized (they always are).
 		mainWindow.setMenuBarEnabled(true);
 		mainWindow.clearOpenSettingsFilePath();
 		mainWindow.loadSettingsIntoGUI(settings);
