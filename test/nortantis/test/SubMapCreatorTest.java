@@ -618,6 +618,104 @@ public class SubMapCreatorTest
 	}
 
 	/**
+	 * Verifies that when a small region is extracted from {@code simpleSmallWorld.nort} — too small to match the source detail level, so it
+	 * is redistributed ({@code redistributeIconsAndRivers == true}) — the source icons inside the selection are carried into the sub-map.
+	 * Specifically the selection contains an "octopus" decoration (group "creatures") and a "town with castle" city (group "flat"), and the
+	 * resulting {@link MapSettings} should contain exactly one of each. The selection is far below the minimum polygon count for "Match
+	 * source detail", which is why redistribution is forced.
+	 * <p>
+	 * This is a regression test for a bug where these icons vanished only in the editor (not in earlier single-resolution tests). The editor
+	 * builds the source graph at the display quality scale but {@code getSettingsFromGUI} sets {@code originalSettings.resolution} to the
+	 * (different) export resolution, while {@code SubMapDialog} passes the display scale as {@code originalResolution}. {@code SubMapCreator}
+	 * built its source {@code IconDrawer} from {@code originalSettings}, so city/decoration draw bounds were scaled by the export resolution
+	 * but converted back to RI with the display resolution — landing outside the selection, so {@code doesIconOverlapSelection} rejected them
+	 * all. This test reproduces that by building the graph at one resolution and then setting {@code originalSettings.resolution} to a
+	 * different value before calling {@code createSubMapSettings} (using the editor values that triggered the report: display 0.75, export
+	 * 0.25). The icons are checked both in the in-memory result and after a JSON round-trip.
+	 * </p>
+	 */
+	@Test
+	public void subMapPreservesDecorationAndCityIcons() throws Exception
+	{
+		// Set to true to force this test to write its result map to the failed sub-maps folder, even when it passes.
+		boolean forceWrite = false;
+
+		String originalSettingsPath = Paths.get("unit test files", "map settings", "simpleSmallWorld.nort").toString();
+		MapSettings originalSettings = new MapSettings(originalSettingsPath);
+
+		// In the editor, the source graph is built at the display quality scale, and SubMapDialog passes that scale as originalResolution.
+		double displayResolution = 0.75;
+		originalSettings.resolution = displayResolution;
+		WorldGraph originalGraph = MapCreator.createGraphForUnitTests(originalSettings);
+
+		// getSettingsFromGUI overwrites originalSettings.resolution with the export resolution, which can differ from the display scale. Set
+		// it here so originalSettings.resolution != originalResolution, exactly as it is in the editor when the bug appears.
+		originalSettings.resolution = 0.25;
+
+		// Sub-map selection bounds in RI (resolution-invariant) coordinates.
+		Rectangle selectionBoundsRI = new Rectangle(152, 1549, 627, 389);
+
+		// This selection is far too small to reach the minimum polygon count, so "Match source detail" is unavailable and the sub-map must
+		// be redistributed. computeDefaultWorldSize clamps the 1x polygon count up to that minimum, which we verify mirrors the dialog's
+		// decision to force redistribution.
+		double oneXWorldSize = originalSettings.worldSize * (selectionBoundsRI.width * selectionBoundsRI.height)
+				/ (originalSettings.generatedWidth * (double) originalSettings.generatedHeight);
+		int worldSize = SubMapDialog.computeDefaultWorldSize(originalSettings, selectionBoundsRI);
+		boolean redistributeIconsAndRivers = oneXWorldSize < worldSize;
+		assertTrue(redistributeIconsAndRivers, "Selection should be too small for 'Match source detail', forcing redistribution");
+
+		long seed = 643229385L;
+		MapSettings subMapSettings = SubMapCreator.createSubMapSettings(originalSettings, originalGraph, selectionBoundsRI, worldSize, displayResolution, seed, redistributeIconsAndRivers);
+
+		if (forceWrite || forceWriteAllMaps)
+		{
+			saveFailedMap(subMapSettings, "subMapPreservesDecorationAndCityIcons");
+		}
+
+		// The in-memory result of createSubMapSettings should contain both icons.
+		assertSubMapHasExpectedIcons(subMapSettings, "in-memory sub-map settings");
+
+		// Round-trip the settings through JSON serialization (writeToFile) and deserialization (new MapSettings) using MapSettings's own
+		// APIs, then re-check, to confirm the icons survive a save/reload as well as living in memory.
+		File tempNort = File.createTempFile("subMapPreservesDecorationAndCityIcons", ".nort");
+		try
+		{
+			subMapSettings.writeToFile(tempNort.getAbsolutePath());
+			MapSettings reloadedSettings = new MapSettings(tempNort.getAbsolutePath());
+			assertSubMapHasExpectedIcons(reloadedSettings, "sub-map settings reloaded from JSON");
+		}
+		finally
+		{
+			tempNort.delete();
+		}
+	}
+
+	/**
+	 * Asserts that {@code settings} contains exactly one "octopus" decoration (group "creatures") and exactly one "town with castle" city
+	 * (group "flat") among its free icons. {@code context} is included in failure messages to identify which stage failed (in-memory vs.
+	 * reloaded from JSON).
+	 */
+	private static void assertSubMapHasExpectedIcons(MapSettings settings, String context)
+	{
+		int octopusCount = 0;
+		int townWithCastleCount = 0;
+		for (FreeIcon icon : settings.edits.freeIcons)
+		{
+			if (icon.type == IconType.decorations && "creatures".equals(icon.groupId) && "octopus".equals(icon.iconName))
+			{
+				octopusCount++;
+			}
+			else if (icon.type == IconType.cities && "flat".equals(icon.groupId) && "town with castle".equals(icon.iconName))
+			{
+				townWithCastleCount++;
+			}
+		}
+
+		assertEquals(1, octopusCount, "Expected exactly 1 'octopus' decoration from group 'creatures' (" + context + ")");
+		assertEquals(1, townWithCastleCount, "Expected exactly 1 'town with castle' city from group 'flat' (" + context + ")");
+	}
+
+	/**
 	 * Returns true if the new-graph corner closest to the given river-path endpoint (in RI coordinates) is adjacent to the ocean — i.e. it
 	 * is a coast or ocean corner, or it touches a water center. Sub-map rivers are freehand polylines, so a river that reaches the sea ends
 	 * at a shoreline corner; an interior confluence/junction endpoint sits inland and does not match.

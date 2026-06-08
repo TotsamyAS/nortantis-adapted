@@ -156,7 +156,17 @@ public class SubMapCreator
 		// An IconDrawer over the source graph, used to compute each city/decoration icon's drawn bounds so icons that overlap the selection
 		// are kept even when their anchor point lies just outside it (city labels sit below their icon, so a city near the top edge has its
 		// icon above the selection but its image still reaching into it).
-		IconDrawer sourceIconDrawer = new IconDrawer(originalGraph, new Random(seed), originalSettings);
+		//
+		// The IconDrawer must use originalResolution, the scale originalGraph was built at, so its draw bounds (in graph pixels) convert back
+		// to RI correctly in doesIconOverlapSelection. originalSettings.resolution cannot be trusted here: in the editor getSettingsFromGUI
+		// sets it to the export resolution, which differs from the display quality scale that originalGraph and originalResolution use. Using
+		// originalSettings.resolution then scaled icon positions by the wrong factor, placing every city/decoration outside the selection so
+		// they were all dropped. Copy the settings (sharing edits, which are already initialized so the IconDrawer does not wipe freeIcons)
+		// and set the resolution to match originalGraph.
+		MapSettings sourceSettingsAtGraphResolution = originalSettings.deepCopyExceptEdits();
+		sourceSettingsAtGraphResolution.edits = originalSettings.edits;
+		sourceSettingsAtGraphResolution.resolution = originalResolution;
+		IconDrawer sourceIconDrawer = new IconDrawer(originalGraph, new Random(seed), sourceSettingsAtGraphResolution);
 
 		transferFreeIcons(originalSettings.edits, originalGraph, newGraph, selectionBoundsRI, originalResolution, newEdits, newGenWidth, newGenHeight, redistributeIconsAndRivers, seed,
 				sourceIconDrawer);

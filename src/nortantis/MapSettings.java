@@ -36,7 +36,10 @@ import java.util.concurrent.CopyOnWriteArrayList;
 public class MapSettings implements Serializable
 {
 	/**
-	 * When updating this, also update installers/version.txt
+	 * When updating this, also update installers/version.txt.
+	 *
+	 * This must not contain trailing zeros (use "3.2", not "3.20"), since versions are compared numerically and a trailing zero would
+	 * change the value.
 	 */
 	public static final String currentVersion = "3.2";
 	public static final String fileExtension = "nort";
@@ -53,7 +56,7 @@ public class MapSettings implements Serializable
 	 * color when it equaled the default of the time, so on load a visible icon left at the old default must be resolved back to this value to
 	 * preserve its color rather than picking up the new default.
 	 */
-	public static final Color defaultIconFillColorBeforeV3_20 = Color.create(155, 105, 49, (int) (255 * 0.7));
+	public static final Color defaultIconFillColorBeforeV3_2 = Color.create(155, 105, 49, (int) (255 * 0.7));
 	public static final HSBColor defaultIconFilterColor = new HSBColor(0, 0, 0, 0);
 
 	public String version;
@@ -1461,7 +1464,7 @@ public class MapSettings implements Serializable
 
 		for (IconType iconType : IconType.values())
 		{
-			if (!getFillWithColorForType(iconType) && defaultIconFillColorBeforeV3_20.equals(iconFillColorsByType.get(iconType)))
+			if (!getFillWithColorForType(iconType) && defaultIconFillColorBeforeV3_2.equals(iconFillColorsByType.get(iconType)))
 			{
 				iconFillColorsByType.put(iconType, defaultIconFillColor);
 			}
@@ -1990,7 +1993,7 @@ public class MapSettings implements Serializable
 				// The color was omitted, which means it equaled the default when the file was saved. For maps saved before 3.2 (when the
 				// default fill color changed) a shown color was displaying the old default, so resolve it back to that to preserve the icon's
 				// appearance. A hidden omitted color falls through to the current default below so it tracks the new default.
-				fillColor = defaultIconFillColorBeforeV3_20;
+				fillColor = defaultIconFillColorBeforeV3_2;
 			}
 			else
 			{
