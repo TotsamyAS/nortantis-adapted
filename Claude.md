@@ -68,7 +68,7 @@ src/nortantis/
 PlatformFactory.setInstance(new AwtFactory());
 ```
 
-The platform abstraction layer allows different rendering backends. The Skia backend has been moved to the Android project.
+The platform abstraction layer allows different rendering backends.
 
 ### Resource Management
 `Image` and `Painter` implement `AutoCloseable`. Always use try-with-resources for Painters:
@@ -160,9 +160,5 @@ Image (final rendered map)
 - **Voronoi Diagrams:** Fortune's Algorithm with Lloyd Relaxation
 - **Rivers:** Flow from high to low elevation along Voronoi edges
 - **Names:** N-gram generation from classic literature (`assets/books/`)
-
-## Android / Skia
-
-The Skia rendering backend has been moved to the Android project (`NortantisTest`). This project produces a JAR (`./gradlew jar`) that the Android project depends on. See the Android project's CLAUDE.md for details.
 
 If you discover anything to be incorrect in these instructions, please update them in CLAUDE.md.

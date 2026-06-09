@@ -1,10 +1,6 @@
 package nortantis;
 
-import nortantis.editor.CenterEdit;
-import nortantis.editor.CenterIconType;
-import nortantis.editor.CenterTrees;
-import nortantis.editor.FreeIcon;
-import nortantis.editor.IconColors;
+import nortantis.editor.*;
 import nortantis.geom.*;
 import nortantis.graph.voronoi.Center;
 import nortantis.graph.voronoi.Corner;
@@ -466,7 +462,12 @@ public class IconDrawer
 			// in the draw tasks. Without this, when a converted icon (e.g. a tall mountain) extends beyond
 			// replaceBounds, icons in the expanded region would be missing from the draw tasks and get erased
 			// when the snippet is pasted over the expanded replaceBounds in incrementalUpdateForCentersAndEdges.
-			Rectangle filterBounds = Rectangle.add(replaceBounds, conversionBoundsOfIconsChanged);
+			//
+			// Only filter when this is an incremental draw (replaceBounds != null). On a full draw replaceBounds is null and every free icon
+			// must be drawn; without this guard, when there are CenterIcons to convert (e.g. a redistributed sub-map's mountains/hills/trees)
+			// conversionBoundsOfIconsChanged is non-null, so filterBounds would become that bounding box and free icons outside it (such as
+			// cities away from the converted terrain) would be wrongly skipped.
+			Rectangle filterBounds = replaceBounds == null ? null : Rectangle.add(replaceBounds, conversionBoundsOfIconsChanged);
 			Rectangle removedOrReplacedChangeBounds = createDrawTasksForFreeIconsAndRemovedFailedIcons(warningLogger, filterBounds);
 			Rectangle combined = Rectangle.add(conversionBoundsOfIconsChanged, removedOrReplacedChangeBounds);
 			if (combined == null)

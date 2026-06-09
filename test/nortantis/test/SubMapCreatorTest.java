@@ -1,37 +1,25 @@
 package nortantis.test;
 
-import nortantis.IconType;
-import nortantis.MapCreator;
-import nortantis.MapSettings;
-import nortantis.MapText;
-import nortantis.SettingsGenerator;
-import nortantis.SubMapCreator;
-import nortantis.TextType;
+import nortantis.*;
 import nortantis.editor.FreeIcon;
 import nortantis.editor.River;
-import nortantis.WorldGraph;
 import nortantis.geom.Point;
 import nortantis.geom.Rectangle;
-import nortantis.swing.MapEdits;
-import nortantis.swing.SubMapDialog;
-import nortantis.util.OrderlessPair;
 import nortantis.platform.Image;
 import nortantis.platform.ImageHelper;
 import nortantis.platform.PlatformFactory;
 import nortantis.platform.awt.AwtFactory;
+import nortantis.swing.MapEdits;
+import nortantis.swing.SubMapDialog;
+import nortantis.util.OrderlessPair;
+import org.apache.commons.io.FileUtils;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Paths;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-
-import org.apache.commons.io.FileUtils;
+import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -713,6 +701,80 @@ public class SubMapCreatorTest
 
 		assertEquals(1, octopusCount, "Expected exactly 1 'octopus' decoration from group 'creatures' (" + context + ")");
 		assertEquals(1, townWithCastleCount, "Expected exactly 1 'town with castle' city from group 'flat' (" + context + ")");
+	}
+
+	/**
+	 * Verifies that coastline cities in a redistributed sub-map are actually drawn (not just present in the edits). The selection contains a
+	 * "town with castle" and a "town on two hills" (both group "flat") near the coast; both must appear in the rendered map.
+	 * <p>
+	 * Regression test for a bug where these cities vanished from the sub-map. A redistributed sub-map stores its mountains/hills/trees as
+	 * {@code CenterIcon}s, which {@link IconDrawer#addOrUpdateIconsFromEdits} converts to free icons on the first draw. That conversion
+	 * returned a non-null bounds, and on a full draw (where {@code replaceBounds} is null) the bounds were used as a draw filter, so free-icon
+	 * cities lying outside the converted-terrain bounding box were skipped — coastal cities (away from the inland mountains) fell outside it.
+	 * The icons remained in {@code edits.freeIcons} (so a membership check passed falsely); they were only missing from the draw tasks. This
+	 * test asserts the cities are in the {@link IconDrawer}'s draw tasks after a full draw, which catches the skip.
+	 * </p>
+	 */
+	@Test
+	public void subMapCoastlineCitiesAreNotDroppedByWaterCheck() throws Exception
+	{
+		// Set to true to force this test to write its result map to the failed sub-maps folder, even when it passes.
+		boolean forceWrite = false;
+
+		String originalSettingsPath = Paths.get("unit test files", "map settings", "simpleSmallWorld.nort").toString();
+		MapSettings originalSettings = new MapSettings(originalSettingsPath);
+		originalSettings.resolution = 0.5;
+		WorldGraph originalGraph = MapCreator.createGraphForUnitTests(originalSettings);
+
+		// Sub-map selection bounds in RI (resolution-invariant) coordinates. Contains a "town with castle" at ~(657, 1920) and a
+		// "town on two hills" at ~(770, 1981), both near the coastline.
+		Rectangle selectionBoundsRI = new Rectangle(410, 1710, 787, 621);
+
+		// Selection too small for "Match source detail", so icons and rivers are redistributed.
+		double oneXWorldSize = originalSettings.worldSize * (selectionBoundsRI.width * selectionBoundsRI.height)
+				/ (originalSettings.generatedWidth * (double) originalSettings.generatedHeight);
+		int worldSize = SubMapDialog.computeDefaultWorldSize(originalSettings, selectionBoundsRI);
+		boolean redistributeIconsAndRivers = oneXWorldSize < worldSize;
+		assertTrue(redistributeIconsAndRivers, "Selection should be too small for 'Match source detail', forcing redistribution");
+
+		long seed = 1160170610L;
+		MapSettings subMapSettings = SubMapCreator.createSubMapSettings(originalSettings, originalGraph, selectionBoundsRI, worldSize, originalSettings.resolution, seed, redistributeIconsAndRivers);
+
+		// Draw the (fresh) sub-map. Passing mapParts lets us inspect the icon draw tasks the draw actually produced.
+		nortantis.editor.MapParts mapParts = new nortantis.editor.MapParts();
+		new MapCreator().createMap(subMapSettings, null, mapParts);
+
+		if (forceWrite || forceWriteAllMaps)
+		{
+			saveFailedMap(subMapSettings, "subMapCoastlineCitiesAreNotDroppedByWaterCheck");
+		}
+
+		List<IconDrawTask> drawTasks = mapParts.iconDrawer.getTasksInDrawBoundsSortedAndScaled(null);
+
+		// The two in-bounds cities, at their sub-map RI positions (verified from the transferred free icons).
+		assertCityIsDrawn(drawTasks, subMapSettings, "town with castle", new Point(1287.34, 1092.15));
+		assertCityIsDrawn(drawTasks, subMapSettings, "town on two hills", new Point(1874.58, 1409.64));
+	}
+
+	/**
+	 * Asserts that some icon draw task covers {@code cityLocationRI} (the city's resolution-invariant position), i.e. the city icon was
+	 * actually queued to draw rather than skipped. Skipped icons stay in {@code edits.freeIcons} but produce no draw task, so this checks the
+	 * draw tasks, not edits membership. The cities sit away from the redistributed terrain icons, so a task covering this point is the city.
+	 */
+	private static void assertCityIsDrawn(List<IconDrawTask> drawTasks, MapSettings subMapSettings, String cityName, Point cityLocationRI)
+	{
+		double pixelX = cityLocationRI.x * subMapSettings.resolution;
+		double pixelY = cityLocationRI.y * subMapSettings.resolution;
+		boolean drawn = false;
+		for (IconDrawTask task : drawTasks)
+		{
+			if (task.createBounds().contains(pixelX, pixelY))
+			{
+				drawn = true;
+				break;
+			}
+		}
+		assertTrue(drawn, "City '" + cityName + "' near sub-map RI " + cityLocationRI + " should be drawn, but no icon draw task covers it (it was skipped)");
 	}
 
 	/**
