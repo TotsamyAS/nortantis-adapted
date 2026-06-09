@@ -1196,94 +1196,7 @@ public class ThemePanel extends JTabbedPane
 
 	private void triggerRebuildAllAnchoredTrees()
 	{
-		mainWindow.edits.freeIcons.doWithLock(() ->
-		{
-			Random rand = new Random();
-			// Reassign the random seeds to all CenterTrees that still exist because they failed to create any trees in their previous
-			// attempt
-			// to draw. Doing this causes those center trees to possibly show up. Without it, they would gradually disappear as you changed
-			// the
-			// tree height slider, especially on the higher ends of the tree height values.
-			// Also mark CenterTrees as not dormant so they will try to draw again.
-			// Also remove CenterTrees that are not close to any trees that are visible so that they don't randomly pop up when you change
-			// the
-			// tree height slider.
-			for (Map.Entry<Integer, CenterEdit> entry : mainWindow.edits.centerEdits.entrySet())
-			{
-				CenterTrees cTrees = entry.getValue().trees;
-				if (cTrees != null)
-				{
-					if (mainWindow.edits.freeIcons.hasTrees(entry.getKey()))
-					{
-						// Visible trees override invisible ones.
-						mainWindow.edits.centerEdits.put(entry.getKey(), entry.getValue().copyWithTrees(null));
-					}
-					else
-					{
-						if (hasVisibleTreeWithinDistance(entry.getKey(), 3))
-						{
-							// Carry the dormant trees' remembered colors forward so they reappear with their original color (see IconDrawer's
-							// dormant-tree handling), rather than the current per-type tree color.
-							mainWindow.edits.centerEdits.put(entry.getKey(),
-									entry.getValue().copyWithTrees(new CenterTrees(cTrees.artPack, cTrees.treeType, cTrees.density, rand.nextLong(), false, cTrees.colors)));
-						}
-						else
-						{
-							mainWindow.edits.centerEdits.put(entry.getKey(), entry.getValue().copyWithTrees(null));
-						}
-					}
-				}
-			}
-
-			for (int centerIndex : mainWindow.edits.freeIcons.iterateTreeAnchors())
-			{
-				List<FreeIcon> trees = mainWindow.edits.freeIcons.getTrees(centerIndex);
-				if (trees == null || trees.isEmpty())
-				{
-					continue;
-				}
-
-				Tuple2Comp<String, String> tuple = getMostCommonTreeType(trees);
-				if (tuple == null)
-				{
-					// This shouldn't happen because we checked that trees was not null or empty.
-					assert false;
-					continue;
-				}
-				String artPack = tuple.getFirst();
-				String treeType = tuple.getSecond();
-				assert artPack != null;
-				assert treeType != null;
-
-				double density = trees.stream().mapToDouble(t -> t.density).average().getAsDouble();
-
-				assert density > 0;
-
-				// Carry the visible trees' colors onto the rebuilt CenterTrees so they keep their (possibly custom-edited) color instead of
-				// snapping back to the current per-type tree color when reflowed.
-				IconColors colors = getRepresentativeTreeColors(trees, artPack, treeType);
-				CenterTrees cTrees = new CenterTrees(artPack, treeType, density, rand.nextLong(), false, colors);
-				CenterEdit cEdit = mainWindow.edits.centerEdits.get(centerIndex);
-				mainWindow.edits.centerEdits.put(centerIndex, cEdit.copyWithTrees(cTrees));
-			}
-		});
-	}
-
-	/**
-	 * Returns the colors of a representative tree from {@code trees} (one matching the chosen {@code artPack}/{@code treeType} if possible,
-	 * else the first), used to give a rebuilt {@link CenterTrees} the same colors as the visible trees it is re-anchoring.
-	 */
-	private IconColors getRepresentativeTreeColors(List<FreeIcon> trees, String artPack, String treeType)
-	{
-		for (FreeIcon tree : trees)
-		{
-			if (Objects.equals(tree.artPack, artPack) && Objects.equals(tree.groupId, treeType))
-			{
-				return new IconColors(tree.fillColor, tree.filterColor, tree.maximizeOpacity, tree.fillWithColor);
-			}
-		}
-		FreeIcon first = trees.get(0);
-		return new IconColors(first.fillColor, first.filterColor, first.maximizeOpacity, first.fillWithColor);
+		IconDrawer.rebuildAnchoredTrees(mainWindow.edits, mainWindow.updater.mapParts.graph, new Random());
 	}
 
 	/**
@@ -1365,29 +1278,6 @@ public class ThemePanel extends JTabbedPane
 			}
 		});
 
-	}
-
-	private Tuple2Comp<String, String> getMostCommonTreeType(List<FreeIcon> trees)
-	{
-		Counter<Tuple2Comp<String, String>> counter = new ComparableCounter<>();
-		trees.stream().forEach(tree -> counter.incrementCount(new Tuple2Comp<>(tree.artPack, tree.groupId)));
-		return counter.argmax();
-	}
-
-	private boolean hasVisibleTreeWithinDistance(int centerStartIndex, int maxSearchDistance)
-	{
-		MapEdits edits = mainWindow.edits;
-		WorldGraph graph = mainWindow.updater.mapParts.graph;
-		Center start = graph.centers.get(centerStartIndex);
-		Center found = graph.breadthFirstSearchForGoal((ignored1, ignored2, distanceFromStart) ->
-		{
-			return distanceFromStart < maxSearchDistance;
-		}, (c) ->
-		{
-			return edits.freeIcons.hasTrees(c.index);
-		}, start);
-
-		return found != null;
 	}
 
 	private boolean disableCoastShadingColorDisplayHandler = false;

@@ -479,6 +479,131 @@ public class IconDrawer
 		});
 	}
 
+	/**
+	 * When trees are drawn at a low density, some places the user marked for trees produce no visible tree. To preserve the user's intended
+	 * planting (so trees don't become sparse when shrunk or overly dense when grown), those places are kept as dormant {@link CenterTrees}.
+	 * This rebuilds the anchored {@link CenterTrees} in {@code edits} from the current tree state so that, when redrawn, trees are replanted
+	 * at the intended density and locations:
+	 * <ul>
+	 * <li>A {@code CenterTrees} whose center now has visible tree free icons is dropped (the visible trees take over).</li>
+	 * <li>A {@code CenterTrees} with no visible trees of its own (dormant or failed-to-draw) is re-seeded as non-dormant if there is a
+	 * visible tree within {@link #treeReplantVisibleTreeSearchDistance} centers (so it gets another chance to grow), or dropped otherwise (so
+	 * it does not pop up far from any trees).</li>
+	 * <li>Each center with visible tree free icons gets a fresh non-dormant {@code CenterTrees} carrying the most common tree type, the
+	 * average density, and a representative color of those trees.</li>
+	 * </ul>
+	 * The {@code CenterTrees}' random seeds are drawn from {@code rand}, so pass a seeded {@link Random} when deterministic output is needed
+	 * (e.g. sub-map creation). Mutates {@code edits.centerEdits}; {@code edits.freeIcons} is only read. Used both when the tree height
+	 * changes in the theme panel and when a sub-map redistributes icons, so dormant trees are handled the same way in both.
+	 */
+	public static void rebuildAnchoredTrees(MapEdits edits, WorldGraph graph, Random rand)
+	{
+		edits.freeIcons.doWithLock(() ->
+		{
+			// Reassign the random seeds to all CenterTrees that still exist because they failed to create any visible trees, and mark them
+			// not dormant so they try to draw again. Drop those that are not close to any visible tree so they don't randomly pop up.
+			for (Map.Entry<Integer, CenterEdit> entry : edits.centerEdits.entrySet())
+			{
+				CenterTrees cTrees = entry.getValue().trees;
+				if (cTrees == null)
+				{
+					continue;
+				}
+				if (edits.freeIcons.hasTrees(entry.getKey()))
+				{
+					// Visible trees override invisible ones.
+					edits.centerEdits.put(entry.getKey(), entry.getValue().copyWithTrees(null));
+				}
+				else if (hasVisibleTreeWithinDistance(edits, graph, entry.getKey(), treeReplantVisibleTreeSearchDistance))
+				{
+					// Carry the dormant trees' remembered colors forward so they reappear with their original color rather than the current
+					// per-type tree color.
+					edits.centerEdits.put(entry.getKey(),
+							entry.getValue().copyWithTrees(new CenterTrees(cTrees.artPack, cTrees.treeType, cTrees.density, rand.nextLong(), false, cTrees.colors)));
+				}
+				else
+				{
+					edits.centerEdits.put(entry.getKey(), entry.getValue().copyWithTrees(null));
+				}
+			}
+
+			for (int centerIndex : edits.freeIcons.iterateTreeAnchors())
+			{
+				List<FreeIcon> trees = edits.freeIcons.getTrees(centerIndex);
+				if (trees == null || trees.isEmpty())
+				{
+					continue;
+				}
+
+				Tuple2Comp<String, String> tuple = getMostCommonTreeType(trees);
+				if (tuple == null)
+				{
+					// This shouldn't happen because we checked that trees was not null or empty.
+					assert false;
+					continue;
+				}
+				String artPack = tuple.getFirst();
+				String treeType = tuple.getSecond();
+				assert artPack != null;
+				assert treeType != null;
+
+				double density = trees.stream().mapToDouble(t -> t.density).average().getAsDouble();
+				assert density > 0;
+
+				// Carry the visible trees' colors onto the rebuilt CenterTrees so they keep their (possibly custom-edited) color instead of
+				// snapping back to the current per-type tree color when reflowed.
+				IconColors colors = getRepresentativeTreeColors(trees, artPack, treeType);
+				CenterTrees cTrees = new CenterTrees(artPack, treeType, density, rand.nextLong(), false, colors);
+				CenterEdit cEdit = edits.centerEdits.get(centerIndex);
+				edits.centerEdits.put(centerIndex, cEdit.copyWithTrees(cTrees));
+			}
+		});
+	}
+
+	/**
+	 * The maximum number of centers away a visible tree may be for a dormant/failed {@link CenterTrees} to be kept and replanted by
+	 * {@link #rebuildAnchoredTrees}. Beyond this, the dormant trees are dropped so they don't pop up far from any visible trees.
+	 */
+	private static final int treeReplantVisibleTreeSearchDistance = 3;
+
+	private static Tuple2Comp<String, String> getMostCommonTreeType(List<FreeIcon> trees)
+	{
+		Counter<Tuple2Comp<String, String>> counter = new ComparableCounter<>();
+		trees.stream().forEach(tree -> counter.incrementCount(new Tuple2Comp<>(tree.artPack, tree.groupId)));
+		return counter.argmax();
+	}
+
+	/**
+	 * Returns the colors of a representative tree from {@code trees} (one matching the chosen {@code artPack}/{@code treeType} if possible,
+	 * else the first), used to give a rebuilt {@link CenterTrees} the same colors as the visible trees it is re-anchoring.
+	 */
+	private static IconColors getRepresentativeTreeColors(List<FreeIcon> trees, String artPack, String treeType)
+	{
+		for (FreeIcon tree : trees)
+		{
+			if (Objects.equals(tree.artPack, artPack) && Objects.equals(tree.groupId, treeType))
+			{
+				return new IconColors(tree.fillColor, tree.filterColor, tree.maximizeOpacity, tree.fillWithColor);
+			}
+		}
+		FreeIcon first = trees.get(0);
+		return new IconColors(first.fillColor, first.filterColor, first.maximizeOpacity, first.fillWithColor);
+	}
+
+	private static boolean hasVisibleTreeWithinDistance(MapEdits edits, WorldGraph graph, int centerStartIndex, int maxSearchDistance)
+	{
+		Center start = graph.centers.get(centerStartIndex);
+		Center found = graph.breadthFirstSearchForGoal((ignored1, ignored2, distanceFromStart) ->
+		{
+			return distanceFromStart < maxSearchDistance;
+		}, (c) ->
+		{
+			return edits.freeIcons.hasTrees(c.index);
+		}, start);
+
+		return found != null;
+	}
+
 	private Rectangle createDrawTasksForFreeIconsAndRemovedFailedIcons(WarningLogger warningLogger, Rectangle replaceBounds)
 	{
 		iconsToDraw.clear();

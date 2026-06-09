@@ -573,11 +573,17 @@ public class SubMapCreator
 			originalCenterToIcons.computeIfAbsent(originalCenterIndex, k -> new ArrayList<>()).add(icon);
 		}
 
-		// Build lookup for tree redistribution: original center index → CenterTrees (includes dormant trees).
-		// This is the primary source; visible tree FreeIcons are the fallback for centers whose CenterTrees
-		// was cleared after being converted to FreeIcons.
+		// Replant the source's ANCHORED trees the same way the theme panel does when the tree height changes (see
+		// IconDrawer.rebuildAnchoredTrees), so dormant trees (places the user marked for trees that did not grow at the source's low density)
+		// are handled consistently: visible trees become CenterTrees at their anchors, dormant trees near a visible tree are kept and
+		// re-seeded as non-dormant so they can grow at the sub-map's polygon sizes, and dormant trees far from any visible tree are dropped.
+		// Work on a copy so the source edits are not mutated, and seed it so sub-map creation stays deterministic.
+		MapEdits replantedSource = originalEdits.deepCopy();
+		IconDrawer.rebuildAnchoredTrees(replantedSource, originalGraph, new Random(seed));
+
+		// Build lookup for tree redistribution: original center index → replanted (non-dormant) CenterTrees.
 		Map<Integer, CenterTrees> originalCenterToCenterTrees = new HashMap<>();
-		for (Map.Entry<Integer, CenterEdit> entry : originalEdits.centerEdits.entrySet())
+		for (Map.Entry<Integer, CenterEdit> entry : replantedSource.centerEdits.entrySet())
 		{
 			if (entry.getValue().trees != null)
 			{
@@ -585,37 +591,30 @@ public class SubMapCreator
 			}
 		}
 
-		// Fallback: build lookup for visible tree FreeIcons on centers with no CenterTrees.
-		Map<Integer, List<FreeIcon>> originalCenterToTreeIcons = new HashMap<>();
+		// rebuildAnchoredTrees only handles anchored trees. Unanchored tree FreeIcons (centerIndex == null) are not represented by any
+		// CenterTrees, so redistribute them like mountains: map each to the original center it sits on and derive a CenterTrees there
+		// (unless that center already has replanted trees). Without this, unanchored trees disappear from the sub-map.
+		Map<Integer, List<FreeIcon>> originalCenterToUnanchoredTreeIcons = new HashMap<>();
 		for (FreeIcon icon : originalEdits.freeIcons)
 		{
-			if (icon.type != IconType.trees)
+			if (icon.type != IconType.trees || icon.centerIndex != null)
 			{
 				continue;
 			}
-			int originalCenterIndex;
-			if (icon.centerIndex != null)
+			Point scaledPoint = new Point(icon.locationResolutionInvariant.x * originalResolution, icon.locationResolutionInvariant.y * originalResolution);
+			Center nearest = originalGraph.findClosestCenter(scaledPoint, false);
+			if (nearest == null)
 			{
-				originalCenterIndex = icon.centerIndex;
+				continue;
 			}
-			else
+			if (!originalCenterToCenterTrees.containsKey(nearest.index))
 			{
-				Point scaledPoint = new Point(icon.locationResolutionInvariant.x * originalResolution, icon.locationResolutionInvariant.y * originalResolution);
-				Center nearest = originalGraph.findClosestCenter(scaledPoint, false);
-				if (nearest == null)
-				{
-					continue;
-				}
-				originalCenterIndex = nearest.index;
-			}
-			if (!originalCenterToCenterTrees.containsKey(originalCenterIndex))
-			{
-				originalCenterToTreeIcons.computeIfAbsent(originalCenterIndex, k -> new ArrayList<>()).add(icon);
+				originalCenterToUnanchoredTreeIcons.computeIfAbsent(nearest.index, k -> new ArrayList<>()).add(icon);
 			}
 		}
 
 		boolean hasNonTreeData = !originalCenterToIcons.isEmpty();
-		boolean hasTreeData = !originalCenterToCenterTrees.isEmpty() || !originalCenterToTreeIcons.isEmpty();
+		boolean hasTreeData = !originalCenterToCenterTrees.isEmpty() || !originalCenterToUnanchoredTreeIcons.isEmpty();
 
 		for (Center newCenter : newGraph.centers)
 		{
@@ -646,10 +645,9 @@ public class SubMapCreator
 			}
 
 			// --- Trees: direct mapping from original center. ---
-			// Copy CenterTrees (including dormant) from the original center at this location. IconDrawer
-			// naturally places trees at the right density for the new polygon sizes during rendering.
-			// Fallback: if the original center has visible tree FreeIcons but no CenterTrees, derive
-			// CenterTrees from those icons.
+			// Copy the replanted (non-dormant) CenterTrees from the original center at this location. IconDrawer naturally places trees at
+			// the right density for the new polygon sizes during rendering. Fallback: if the original center had only unanchored tree
+			// FreeIcons (no CenterTrees), derive a CenterTrees from those icons.
 			if (hasTreeData && originalCenterAtLocation != null)
 			{
 				CenterTrees originalTrees = originalCenterToCenterTrees.get(originalCenterAtLocation.index);
@@ -664,7 +662,7 @@ public class SubMapCreator
 				}
 				else
 				{
-					List<FreeIcon> treeFreeIcons = originalCenterToTreeIcons.get(originalCenterAtLocation.index);
+					List<FreeIcon> treeFreeIcons = originalCenterToUnanchoredTreeIcons.get(originalCenterAtLocation.index);
 					if (treeFreeIcons != null && !treeFreeIcons.isEmpty())
 					{
 						String artPack = treeFreeIcons.get(0).artPack;
