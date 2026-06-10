@@ -449,6 +449,23 @@ public class SubMapDialog
 		}
 	}
 
+	/**
+	 * Tears down step 2 and restores the main window. Shared by the Cancel button and the dialog's window-close (X) handler so the two
+	 * paths can't drift apart.
+	 */
+	private void cancelStep2()
+	{
+		stopPreviewUpdater();
+		mainWindow.mapEditingPanel.clearSelectionBox();
+		if (step2Dialog != null)
+		{
+			step2Dialog.dispose();
+			step2Dialog = null;
+		}
+		mainWindow.enableOrDisableFieldsThatRequireMap(true, mainWindow.getSettingsFromGUI(false), true);
+		mainWindow.setMenuBarEnabled(true);
+	}
+
 	// -------------------------------------------------------------------------
 	// Step 2: Detail level + preview
 	// -------------------------------------------------------------------------
@@ -669,15 +686,7 @@ public class SubMapDialog
 		});
 
 		JButton cancelButton = new JButton(Translation.get("common.cancel"));
-		cancelButton.addActionListener(e ->
-		{
-			stopPreviewUpdater();
-			mainWindow.mapEditingPanel.clearSelectionBox();
-			step2Dialog.dispose();
-			step2Dialog = null;
-			mainWindow.enableOrDisableFieldsThatRequireMap(true, mainWindow.getSettingsFromGUI(false), true);
-			mainWindow.setMenuBarEnabled(true);
-		});
+		cancelButton.addActionListener(e -> cancelStep2());
 
 		// Reuse NewSettingsDialog's Create label so both Create buttons stay consistent. The label is HTML that underlines the
 		// mnemonic letter for each language. Alt+C triggers Create and, unlike Ctrl+C, does not collide with the Copy binding of
@@ -728,12 +737,7 @@ public class SubMapDialog
 			@Override
 			public void windowClosing(WindowEvent e)
 			{
-				stopPreviewUpdater();
-				mainWindow.mapEditingPanel.clearSelectionBox();
-				step2Dialog.dispose();
-				step2Dialog = null;
-				mainWindow.enableOrDisableFieldsThatRequireMap(true, mainWindow.getSettingsFromGUI(false), true);
-				mainWindow.setMenuBarEnabled(true);
+				cancelStep2();
 			}
 		});
 
