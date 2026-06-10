@@ -809,6 +809,12 @@ public class MapSettings implements Serializable
 					{
 						nodeJson.put("edgeIndexToNext", (long) node.getEdgeIndexToNext());
 					}
+					// Persist the Voronoi corner a mouth node is anchored to so it still tracks the coast after a
+					// save/reload. Omitted when CORNER_INDEX_NONE to keep non-mouth nodes' JSON unchanged.
+					if (node.getCornerIndexAnchor() != RiverPathNode.CORNER_INDEX_NONE)
+					{
+						nodeJson.put("cornerIndexAnchor", (long) node.getCornerIndexAnchor());
+					}
 					nodesJson.add(nodeJson);
 				}
 			}
@@ -2100,7 +2106,8 @@ public class MapSettings implements Serializable
 					int widthToNext = nodeJson.containsKey("widthToNext") ? (int) (long) nodeJson.get("widthToNext") : 0;
 					long seedToNext = nodeJson.containsKey("seedToNext") ? (long) nodeJson.get("seedToNext") : 0L;
 					int edgeIndexToNext = nodeJson.containsKey("edgeIndexToNext") ? (int) (long) nodeJson.get("edgeIndexToNext") : RiverPathNode.EDGE_INDEX_NONE;
-					nodes.add(new RiverPathNode(loc, widthToNext, seedToNext, edgeIndexToNext));
+					int cornerIndexAnchor = nodeJson.containsKey("cornerIndexAnchor") ? (int) (long) nodeJson.get("cornerIndexAnchor") : RiverPathNode.CORNER_INDEX_NONE;
+					nodes.add(new RiverPathNode(loc, widthToNext, seedToNext, edgeIndexToNext, cornerIndexAnchor));
 				}
 			}
 			rivers.add(new River(nodes));

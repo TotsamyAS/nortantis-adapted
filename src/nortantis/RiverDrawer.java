@@ -835,7 +835,8 @@ public class RiverDrawer
 					{
 						updated = new ArrayList<>(nodes);
 					}
-					updated.set(i, new RiverPathNode(newStart, startNode.getWidthLevelToNext(), startNode.getSeedToNext(), startNode.getEdgeIndexToNext()));
+					updated.set(i, new RiverPathNode(newStart, startNode.getWidthLevelToNext(), startNode.getSeedToNext(), startNode.getEdgeIndexToNext(),
+							startNode.getCornerIndexAnchor()));
 				}
 				if (!endNode.getLoc().equals(newEnd))
 				{
@@ -843,7 +844,61 @@ public class RiverDrawer
 					{
 						updated = new ArrayList<>(nodes);
 					}
-					updated.set(i + 1, new RiverPathNode(newEnd, endNode.getWidthLevelToNext(), endNode.getSeedToNext(), endNode.getEdgeIndexToNext()));
+					updated.set(i + 1, new RiverPathNode(newEnd, endNode.getWidthLevelToNext(), endNode.getSeedToNext(), endNode.getEdgeIndexToNext(),
+							endNode.getCornerIndexAnchor()));
+				}
+			}
+
+			// Second pass: maintain corner anchors on mouth nodes. A freehand mouth that ends exactly on a water-adjacent corner is
+			// anchored to that corner so it tracks the coast/lakeshore across smoothing (an unanchored mouth would be stranded on land
+			// when the coast shifts, e.g. on a line-style change). This pass is self-healing and runs every draw:
+			// - it CREATES an anchor on either river endpoint that sits exactly on a mouth corner (so an anchor that some node rebuild
+			//   dropped, e.g. a width change using the anchor-less constructor, is restored). Exact-match keeps near-coast freehand
+			//   endpoints that the user deliberately placed off a corner from being grabbed;
+			// - it CLEARS an anchor that is no longer applicable (the node is no longer an endpoint, or its corner is no longer a mouth
+			//   corner because the user grew land over it), leaving the node where it is;
+			// - it SNAPS a still-anchored node onto its corner's current location. This runs after the edge pass so an explicit
+			//   anchor wins for the rare node that is both edge-snapped and anchored.
+			for (int i = 0; i < nodes.size(); i++)
+			{
+				RiverPathNode node = updated != null ? updated.get(i) : nodes.get(i);
+				boolean isEndpoint = i == 0 || i == nodes.size() - 1;
+				int cornerIndex = node.getCornerIndexAnchor();
+
+				if (cornerIndex != RiverPathNode.CORNER_INDEX_NONE)
+				{
+					Corner corner = cornerIndex >= 0 && cornerIndex < graph.corners.size() ? graph.corners.get(cornerIndex) : null;
+					if (!isEndpoint || corner == null || corner.loc == null || !isMouthCorner(corner))
+					{
+						// Anchor no longer applies: drop it but leave the node where it is.
+						if (updated == null)
+						{
+							updated = new ArrayList<>(nodes);
+						}
+						updated.set(i, new RiverPathNode(node.getLoc(), node.getWidthLevelToNext(), node.getSeedToNext(), node.getEdgeIndexToNext()));
+						continue;
+					}
+					Point cornerRI = corner.loc.mult(1.0 / resolutionScale);
+					if (!node.getLoc().equals(cornerRI))
+					{
+						if (updated == null)
+						{
+							updated = new ArrayList<>(nodes);
+						}
+						updated.set(i, new RiverPathNode(cornerRI, node.getWidthLevelToNext(), node.getSeedToNext(), node.getEdgeIndexToNext(), cornerIndex));
+					}
+				}
+				else if (isEndpoint)
+				{
+					Corner corner = graph.findClosestCorner(node.getLoc().mult(resolutionScale));
+					if (corner != null && corner.loc != null && isMouthCorner(corner) && node.getLoc().isCloseEnough(corner.loc.mult(1.0 / resolutionScale)))
+					{
+						if (updated == null)
+						{
+							updated = new ArrayList<>(nodes);
+						}
+						updated.set(i, new RiverPathNode(node.getLoc(), node.getWidthLevelToNext(), node.getSeedToNext(), node.getEdgeIndexToNext(), corner.index));
+					}
 				}
 			}
 			if (updated != null)
@@ -854,6 +909,37 @@ public class RiverDrawer
 			}
 		}
 		return changed;
+	}
+
+	/**
+	 * Returns true if {@code corner} is a mouth corner: it touches at least one water {@link Center} and at least one land Center. This
+	 * covers both ocean coastlines and lakeshores (water includes lakes), so a river ending exactly on such a corner is a mouth that
+	 * should be anchored to it (see {@link #resyncRiverNodeLocationsToGraph}).
+	 */
+	static boolean isMouthCorner(Corner corner)
+	{
+		if (corner == null || corner.touches == null)
+		{
+			return false;
+		}
+		boolean hasWater = false;
+		boolean hasLand = false;
+		for (Center center : corner.touches)
+		{
+			if (center.isWater)
+			{
+				hasWater = true;
+			}
+			else
+			{
+				hasLand = true;
+			}
+			if (hasWater && hasLand)
+			{
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**

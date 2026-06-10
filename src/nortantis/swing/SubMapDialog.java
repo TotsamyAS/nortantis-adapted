@@ -17,6 +17,7 @@ import javax.swing.event.DocumentListener;
 import java.awt.*;
 import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
+import java.awt.event.KeyEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.awt.image.BufferedImage;
@@ -678,7 +679,11 @@ public class SubMapDialog
 			mainWindow.setMenuBarEnabled(true);
 		});
 
-		createButton = new JButton(Translation.get("subMapDialog.step2.create"));
+		// Reuse NewSettingsDialog's Create label so both Create buttons stay consistent. The label is HTML that underlines the
+		// mnemonic letter for each language. Alt+C triggers Create and, unlike Ctrl+C, does not collide with the Copy binding of
+		// the spinners and seed text field.
+		createButton = new JButton(Translation.get("newSettingsDialog.create"));
+		createButton.setMnemonic(KeyEvent.VK_C);
 		createButton.addActionListener(e -> handleCreate());
 
 		buttonRow.add(backButton);

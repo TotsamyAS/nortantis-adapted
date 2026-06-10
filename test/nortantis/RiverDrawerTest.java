@@ -3,9 +3,15 @@ package nortantis;
 import nortantis.editor.River;
 import nortantis.editor.RiverPathNode;
 import nortantis.geom.Point;
+import nortantis.graph.voronoi.Center;
+import nortantis.graph.voronoi.Corner;
+import nortantis.platform.PlatformFactory;
+import nortantis.platform.awt.AwtFactory;
 import nortantis.util.OrderlessPair;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -23,6 +29,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 public class RiverDrawerTest
 {
 	private static final int WIDTH = 5;
+
+	@BeforeAll
+	public static void setUpBeforeClass()
+	{
+		PlatformFactory.setInstance(new AwtFactory());
+		nortantis.swing.translation.Translation.initialize();
+	}
 
 	private static River river(int widthLevel, Point... locations)
 	{
@@ -244,6 +257,93 @@ public class RiverDrawerTest
 		}
 		Set<Point> neighbors = new HashSet<>(PathOperations.findInnerNeighborsOfCutEndpoints(nodeLists, segmentsToRemove));
 		assertEquals(new HashSet<>(Arrays.asList(c)), neighbors);
+	}
+
+	/**
+	 * The user's concern: adding a one-segment polygon river that connects a freehand river to a coastline corner. When that segment's
+	 * edge is filtered out (it is a coast edge), LandWaterTool builds a synthetic bridge whose coast end is a freehand node
+	 * ({@link RiverPathNode#EDGE_INDEX_NONE}) sitting exactly on the corner. This verifies the resync pass anchors that node to the corner
+	 * so it tracks the coast across smoothing (rather than being left unanchored and stranded on a later line-style change).
+	 */
+	@Test
+	public void resyncAnchorsFreehandMouthEndingExactlyOnACoastCorner()
+	{
+		MapSettings settings = new MapSettings(Paths.get("unit test files", "map settings", "riversForSubMaps.nort").toString());
+		settings.resolution = 0.5;
+		double resolution = settings.resolution;
+		WorldGraph graph = MapCreator.createGraphForUnitTests(settings);
+
+		Corner mouthCorner = null;
+		Center landNeighbor = null;
+		for (Corner corner : graph.corners)
+		{
+			if (RiverDrawer.isMouthCorner(corner))
+			{
+				for (Center center : corner.touches)
+				{
+					if (!center.isWater)
+					{
+						landNeighbor = center;
+						break;
+					}
+				}
+				if (landNeighbor != null)
+				{
+					mouthCorner = corner;
+					break;
+				}
+			}
+		}
+		assertNotNull(mouthCorner, "Test settings should contain a coastline (a mouth corner adjacent to water and land)");
+
+		// A freehand river whose terminal sits exactly on the coast corner (like LandWaterTool's synthetic-bridge node at start.loc),
+		// flowing inland to a point that is not on any corner.
+		Point mouthRI = mouthCorner.loc.mult(1.0 / resolution);
+		Point inlandRI = mouthCorner.loc.add(landNeighbor.loc).mult(0.5).mult(1.0 / resolution);
+		River river = new River(new CopyOnWriteArrayList<>(Arrays.asList(new RiverPathNode(mouthRI, WIDTH, 1L), new RiverPathNode(inlandRI, 0, 0L))));
+		List<River> rivers = new ArrayList<>(Collections.singletonList(river));
+
+		RiverDrawer.resyncRiverNodeLocationsToGraph(rivers, graph, resolution);
+
+		assertEquals(mouthCorner.index, river.nodes.get(0).getCornerIndexAnchor(),
+				"A freehand mouth ending exactly on a coast corner should be anchored to that corner");
+		assertEquals(RiverPathNode.CORNER_INDEX_NONE, river.nodes.get(1).getCornerIndexAnchor(), "The inland endpoint should not be anchored");
+	}
+
+	/**
+	 * The contract guard: a freehand mouth that ends merely <em>near</em> the coast (not exactly on a corner) must NOT be anchored.
+	 * Anchoring it would drag the user's deliberately-placed endpoint onto a corner; the user confirmed an appears-connected freehand mouth
+	 * breaking on a line-style change is user error, out of scope.
+	 */
+	@Test
+	public void resyncDoesNotAnchorFreehandMouthThatEndsNearButNotOnACoastCorner()
+	{
+		MapSettings settings = new MapSettings(Paths.get("unit test files", "map settings", "riversForSubMaps.nort").toString());
+		settings.resolution = 0.5;
+		double resolution = settings.resolution;
+		WorldGraph graph = MapCreator.createGraphForUnitTests(settings);
+
+		Corner mouthCorner = null;
+		for (Corner corner : graph.corners)
+		{
+			if (RiverDrawer.isMouthCorner(corner))
+			{
+				mouthCorner = corner;
+				break;
+			}
+		}
+		assertNotNull(mouthCorner, "Test settings should contain a coastline");
+
+		// Endpoints offset a few RI off the corner — near the coast, but not exactly on it.
+		Point nearCoastRI = mouthCorner.loc.mult(1.0 / resolution).add(new Point(3, 3));
+		Point inlandRI = nearCoastRI.add(new Point(20, 20));
+		River river = new River(new CopyOnWriteArrayList<>(Arrays.asList(new RiverPathNode(nearCoastRI, WIDTH, 1L), new RiverPathNode(inlandRI, 0, 0L))));
+		List<River> rivers = new ArrayList<>(Collections.singletonList(river));
+
+		RiverDrawer.resyncRiverNodeLocationsToGraph(rivers, graph, resolution);
+
+		assertEquals(RiverPathNode.CORNER_INDEX_NONE, river.nodes.get(0).getCornerIndexAnchor(),
+				"A freehand mouth that ends near but not exactly on a coast corner must not be anchored");
 	}
 
 }

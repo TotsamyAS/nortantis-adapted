@@ -243,7 +243,8 @@ public class NewSettingsDialog extends JDialog
 		JPanel bottomButtonsPanel = new JPanel();
 		bottomButtonsPanel.setLayout(new FlowLayout(FlowLayout.RIGHT));
 		JButton createMapButton = new JButton(Translation.get("newSettingsDialog.create"));
-		createMapButton.setMnemonic(KeyEvent.VK_R);
+		// The label underlines 'C' (see newSettingsDialog.create), so the mnemonic must be C for the advertised Alt+C to work.
+		createMapButton.setMnemonic(KeyEvent.VK_C);
 		bottomButtonsPanel.add(createMapButton);
 		createMapButton.addActionListener(new ActionListener()
 		{
