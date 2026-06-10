@@ -4732,10 +4732,14 @@ public class LandWaterTool extends EditorTool
 		}
 		if ((riversButton.isSelected() || roadsButton.isSelected()) && modeWidget.isEditMode())
 		{
-			// Clear hover state and the hover ring, but keep the sticky-line CPs and segment highlight
-			// visible so the user can see what they had selected even with the cursor off the map.
+			// Clear hover state and all the brush-hover preview visuals (the hover ring, the orange would-be-selected CP
+			// circles, and the orange hover polylines), but keep the sticky-line CPs and segment highlight visible so the
+			// user can see what they had selected even with the cursor off the map. With a wide brush, an edge river can be
+			// under the brush as the cursor leaves the map, so these previews must be cleared or they stick on screen.
 			clearHoverState();
 			mapEditingPanel.clearHoveredControlPoint();
+			mapEditingPanel.clearRoadControlPointCircles();
+			mapEditingPanel.clearHoverPolylines();
 		}
 		mapEditingPanel.hideBrush();
 		mapEditingPanel.repaint();
