@@ -1412,7 +1412,9 @@ public class SubMapCreator
 			Point prev = nodes.get(i - 1).getLoc();
 			Point curr = nodes.get(i).getLoc();
 			int rawWidth = nodes.get(i - 1).getWidthLevelToNext();
-			int scaledWidth = Math.min(GraphRiver.MAX_RIVER_LEVEL, (int) Math.round(rawWidth * riverLevelScale));
+			// Snap the scaled width to the discrete set the editor's width slider can produce (this also caps at MAX_RIVER_LEVEL), so
+			// sub-map river widths stay consistent with widths a user could draw or edit.
+			int scaledWidth = GraphRiver.snapToAllowedRiverLevel((int) Math.round(rawWidth * riverLevelScale));
 			boolean currInside = selectionBounds.contains(curr);
 
 			if (prevInside && currInside)

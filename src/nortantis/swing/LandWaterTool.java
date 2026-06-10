@@ -296,7 +296,7 @@ public class LandWaterTool extends EditorTool
 					Translation.get("landWaterTool.editRiverOrRoad"), () -> brushActionListener.actionPerformed(null));
 			modeHider = modeWidget.addToOrganizer(organizer, Translation.get("landWaterTool.riverMode.help"));
 
-			int maxSliderValue = 1 + (int) Math.round(Math.sqrt((GraphRiver.MAX_RIVER_LEVEL - GraphRiver.RIVERS_THIS_SIZE_OR_SMALLER_WILL_NOT_BE_DRAWN - 1) / 2.0));
+			int maxSliderValue = GraphRiver.MAX_RIVER_SLIDER_BASE + 1;
 			riverWidthSlider = new JSlider(1, maxSliderValue);
 			final int initialValue = 1;
 			riverWidthSlider.setValue(initialValue);
@@ -1093,7 +1093,7 @@ public class LandWaterTool extends EditorTool
 			if (activeType == LineType.RIVER)
 			{
 				List<Integer> widthLevels = copiedRiverWidthLevels != null && runIdx < copiedRiverWidthLevels.size() ? copiedRiverWidthLevels.get(runIdx) : null;
-				int defaultWidthLevel = GraphRiver.RIVERS_THIS_SIZE_OR_SMALLER_WILL_NOT_BE_DRAWN + 1;
+				int defaultWidthLevel = GraphRiver.MIN_DRAWN_RIVER_LEVEL;
 				List<RiverPathNode> newNodes = new ArrayList<>(translated.size());
 				Random random = new Random();
 				for (int i = 0; i < translated.size(); i++)
@@ -1319,9 +1319,7 @@ public class LandWaterTool extends EditorTool
 		List<List<Point>> pathsForCenters;
 		if (type == LineType.RIVER)
 		{
-			int sliderWidth = riverWidthSlider.getValue();
-			int base = sliderWidth - 1;
-			int riverLevel = base * base * 2 + GraphRiver.RIVERS_THIS_SIZE_OR_SMALLER_WILL_NOT_BE_DRAWN + 1;
+			int riverLevel = sliderValueToRiverLevel(riverWidthSlider.getValue());
 			List<River> newRivers = RiverDrawer.addFreeHandRiverFromPoints(pathToCommit, riverLevel, mainWindow.edits.rivers, updater.mapParts.graph, mainWindow.displayQualityScale);
 			if (newRivers.isEmpty())
 			{
@@ -1755,23 +1753,16 @@ public class LandWaterTool extends EditorTool
 		}
 	}
 
-	/** Returns the river level for {@code sliderValue} using the same formula as the draw-mode press handlers. */
+	/** Returns the river level for {@code sliderValue}. The slider value is one greater than the river level "base" index. */
 	private int sliderValueToRiverLevel(int sliderValue)
 	{
-		int base = sliderValue - 1;
-		return base * base * 2 + GraphRiver.RIVERS_THIS_SIZE_OR_SMALLER_WILL_NOT_BE_DRAWN + 1;
+		return GraphRiver.sliderBaseToRiverLevel(sliderValue - 1);
 	}
 
 	/** Inverse of {@link #sliderValueToRiverLevel(int)}; clamped to the slider's bounds. */
 	private int riverLevelToSliderValue(int riverLevel)
 	{
-		int adjusted = riverLevel - GraphRiver.RIVERS_THIS_SIZE_OR_SMALLER_WILL_NOT_BE_DRAWN - 1;
-		if (adjusted < 0)
-		{
-			adjusted = 0;
-		}
-		int base = (int) Math.round(Math.sqrt(adjusted / 2.0));
-		int value = base + 1;
+		int value = GraphRiver.riverLevelToSliderBase(riverLevel) + 1;
 		if (value < riverWidthSlider.getMinimum())
 		{
 			value = riverWidthSlider.getMinimum();
@@ -4154,8 +4145,7 @@ public class LandWaterTool extends EditorTool
 					System.out.println("  index=" + edge.index);
 				}
 			}
-			int base = (riverWidthSlider.getValue() - 1);
-			int riverLevel = base * base * 2 + GraphRiver.RIVERS_THIS_SIZE_OR_SMALLER_WILL_NOT_BE_DRAWN + 1;
+			int riverLevel = sliderValueToRiverLevel(riverWidthSlider.getValue());
 			List<River> newRivers = RiverDrawer.addRiversFromEdgesInEditor(river, start, riverLevel, mainWindow.displayQualityScale, mainWindow.edits.rivers);
 
 			// Empty-path case: the user pressed and released at the same Corner (or so close that findPathGreedy returned no edges),

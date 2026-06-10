@@ -134,7 +134,10 @@ public class MapEdits implements Serializable
 				if (i < edges.size())
 				{
 					Edge segmentEdge = edges.get(i);
-					nodes.add(new RiverPathNode(loc, segmentEdge.river, segmentEdge.noisyEdgesSeed, segmentEdge.index));
+					// Constrain generated river widths to the discrete set the editor's width slider can produce, so a generated river
+					// looks like one the user could have drawn and the width slider snaps cleanly to it when selected.
+					int widthLevel = GraphRiver.snapToAllowedRiverLevel(segmentEdge.river);
+					nodes.add(new RiverPathNode(loc, widthLevel, segmentEdge.noisyEdgesSeed, segmentEdge.index));
 				}
 				else
 				{

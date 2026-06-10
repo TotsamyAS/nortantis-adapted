@@ -8,11 +8,61 @@ import java.util.*;
 public class GraphRiver implements Iterable<Edge>
 {
 	public static final int RIVERS_THIS_SIZE_OR_SMALLER_WILL_NOT_BE_DRAWN = 2;
+
+	/**
+	 * The smallest river level that is actually drawn, and the smallest width the editor's river width slider can produce (slider base 0).
+	 */
+	public static final int MIN_DRAWN_RIVER_LEVEL = RIVERS_THIS_SIZE_OR_SMALLER_WILL_NOT_BE_DRAWN + 1;
+
+	/**
+	 * The largest river width slider "base" index (slider value minus 1). Determines the maximum drawable river width and, via
+	 * {@link #MAX_RIVER_LEVEL}, the cap used when scaling river levels in sub-maps.
+	 */
+	public static final int MAX_RIVER_SLIDER_BASE = 14;
+
 	/**
 	 * Maximum river level, corresponding to the maximum drawable width in LandWaterTool's river width slider. Used to cap scaled river
 	 * levels in sub-maps.
 	 */
-	public static final int MAX_RIVER_LEVEL = (14 * 14 * 2) + RIVERS_THIS_SIZE_OR_SMALLER_WILL_NOT_BE_DRAWN + 1;
+	public static final int MAX_RIVER_LEVEL = sliderBaseToRiverLevel(MAX_RIVER_SLIDER_BASE);
+
+	/**
+	 * Converts a river width slider "base" index (slider value minus 1) to its river width level. This is the single source of truth for
+	 * the discrete set of river widths the editor can produce; both user-drawn rivers (via LandWaterTool's slider) and procedurally
+	 * generated rivers (via {@link #snapToAllowedRiverLevel}) route through it, so the two stay consistent.
+	 */
+	public static int sliderBaseToRiverLevel(int base)
+	{
+		return base * base * 2 + MIN_DRAWN_RIVER_LEVEL;
+	}
+
+	/**
+	 * Converts an arbitrary river level to the nearest slider "base" index, clamped to the drawable range [0,
+	 * {@link #MAX_RIVER_SLIDER_BASE}]. Inverse of {@link #sliderBaseToRiverLevel(int)}.
+	 */
+	public static int riverLevelToSliderBase(int riverLevel)
+	{
+		int adjusted = riverLevel - MIN_DRAWN_RIVER_LEVEL;
+		if (adjusted < 0)
+		{
+			adjusted = 0;
+		}
+		int base = (int) Math.round(Math.sqrt(adjusted / 2.0));
+		if (base > MAX_RIVER_SLIDER_BASE)
+		{
+			base = MAX_RIVER_SLIDER_BASE;
+		}
+		return base;
+	}
+
+	/**
+	 * Snaps an arbitrary river level to the nearest width the editor's river width slider can produce, clamped to the drawable range. This
+	 * keeps procedurally generated river widths consistent with the discrete widths a user can draw or edit.
+	 */
+	public static int snapToAllowedRiverLevel(int riverLevel)
+	{
+		return sliderBaseToRiverLevel(riverLevelToSliderBase(riverLevel));
+	}
 
 
 	private List<Edge> edges;
