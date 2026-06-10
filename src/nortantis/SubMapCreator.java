@@ -10,6 +10,7 @@ import nortantis.editor.RegionEdit;
 import nortantis.editor.Road;
 import nortantis.geom.Point;
 import nortantis.geom.Rectangle;
+import nortantis.geom.RotatedRectangle;
 import nortantis.graph.voronoi.Center;
 import nortantis.graph.voronoi.Corner;
 import nortantis.graph.voronoi.Edge;
@@ -163,7 +164,8 @@ public class SubMapCreator
 		double sourceMeanPolygonWidthRI = originalGraph.getMeanCenterWidthBetweenNeighbors() / originalResolution;
 		double sourceCityFontSize = originalSettings.citiesFont.getSize();
 
-		transferText(originalSettings.edits, selectionBoundsRI, newEdits, newGenWidth, newGenHeight, fontScale, iconSizeRatio, sourceMeanPolygonWidthRI, sourceCityFontSize);
+		transferText(originalSettings.edits, selectionBoundsRI, newEdits, newGenWidth, newGenHeight, fontScale, iconSizeRatio, sourceMeanPolygonWidthRI, sourceCityFontSize,
+				originalResolution);
 
 		// An IconDrawer over the source graph, used to compute each city/decoration icon's drawn bounds so icons that overlap the selection
 		// are kept even when their anchor point lies just outside it (city labels sit below their icon, so a city near the top edge has its
@@ -211,14 +213,14 @@ public class SubMapCreator
 	}
 
 	private static void transferText(MapEdits originalEdits, Rectangle selectionBoundsRI, MapEdits newEdits, int newGenWidth, int newGenHeight, double fontScale, double iconSizeRatio,
-			double sourceMeanPolygonWidthRI, double sourceCityFontSize)
+			double sourceMeanPolygonWidthRI, double sourceCityFontSize, double originalResolution)
 	{
-		// Copy MapText entries whose location falls inside selectionBoundsRI.
+		// Copy MapText entries whose drawn extent intersects selectionBoundsRI.
 		newEdits.text = new CopyOnWriteArrayList<>();
 		double maxCityLabelAssociationDistanceRI = sourceMeanPolygonWidthRI * cityLabelToIconMaxAssociationWidths;
 		for (MapText text : originalEdits.text)
 		{
-			if (selectionBoundsRI.containsOrOverlaps(text.location))
+			if (doesTextOverlapSelection(text, selectionBoundsRI, originalResolution))
 			{
 				MapText newText = text.deepCopy();
 
@@ -265,6 +267,30 @@ public class SubMapCreator
 				newEdits.text.add(newText);
 			}
 		}
+	}
+
+	/**
+	 * Returns true if the given text should be included in the sub-map, i.e. its drawn extent intersects the selection. Text whose box
+	 * straddles the selection boundary is included even though part of it extends outside the selection; only text entirely outside the
+	 * selection is excluded.
+	 *
+	 * The text's drawn bounds ({@link MapText#line1Bounds}/{@link MapText#line2Bounds}) are a rendering cache in pixel coordinates at the
+	 * draw resolution, which equals {@code originalResolution} (the scale originalGraph was created at). The selection is scaled into that
+	 * same pixel space for the overlap test. If the bounds have not been populated yet (e.g. the text has never been drawn), we fall back to
+	 * testing the text's center point.
+	 */
+	private static boolean doesTextOverlapSelection(MapText text, Rectangle selectionBoundsRI, double originalResolution)
+	{
+		RotatedRectangle line1Bounds = text.line1Bounds;
+		RotatedRectangle line2Bounds = text.line2Bounds;
+		if (line1Bounds == null && line2Bounds == null)
+		{
+			// No rendered bounds available, so fall back to the text's center point.
+			return selectionBoundsRI.containsOrOverlaps(text.location);
+		}
+
+		RotatedRectangle selectionBoundsPixels = new RotatedRectangle(selectionBoundsRI.scaleAboutOrigin(originalResolution));
+		return (line1Bounds != null && selectionBoundsPixels.overlaps(line1Bounds)) || (line2Bounds != null && selectionBoundsPixels.overlaps(line2Bounds));
 	}
 
 	/** Maximum distance, in multiples of the source mean polygon width, a city label may be from a city icon to be associated with it. */
