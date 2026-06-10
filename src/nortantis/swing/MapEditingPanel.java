@@ -1023,7 +1023,7 @@ public class MapEditingPanel extends UnscaledImagePanel
 
 	private double getRoadControlPointRadiusExact()
 	{
-		return graph.getMeanCenterWidth() * 0.14;
+		return graph.getMeanCenterWidth() * 0.16;
 	}
 
 	/**
