@@ -836,6 +836,39 @@ public class MapCreatorTest
 		}
 	}
 
+	/**
+	 * Creates a redistributed sub-map of simpleSmallWorld over a region containing a small lake that does not survive the sub-map's regrid,
+	 * and compares the rendered result per-pixel to its expected image. A river empties into that lake in the source map; when the lake
+	 * disappears, the river's mouth must end inland where the lake was, rather than being re-routed across many polygons to the distant
+	 * ocean. This is a regression test for a bug where the mouth-to-water search was unbounded, so a mouth whose water body vanished was
+	 * connected to an unrelated, far-away body of water — inventing a long river that spanned a large part of the sub-map. The search is now
+	 * bounded to a few Voronoi centers, so such a mouth simply ends inland.
+	 */
+	@Test
+	public void subMapOfSimpleSmallWorldWithDisappearingLake()
+	{
+		MapSettings originalSettings = new MapSettings(Paths.get("unit test files", "map settings", "simpleSmallWorld.nort").toString());
+		WorldGraph originalGraph = MapCreator.createGraphForUnitTests(originalSettings);
+
+		// A sub-region of the source map, in RI (resolution-invariant) coordinates, containing a small lake that the sub-map's regrid votes
+		// to land, so the lake disappears.
+		Rectangle selectionBoundsRI = new Rectangle(0, 1730, 1054, 1243);
+		int worldSize = SubMapDialog.computeDefaultWorldSize(originalSettings, selectionBoundsRI);
+
+		long seed = 233510192L;
+		// redistributeIconsAndRivers = true: redistribute mode re-routes rivers through the new polygon grid - the path the bug lived in.
+		MapSettings subMapSettings = SubMapCreator.createSubMapSettings(originalSettings, originalGraph, selectionBoundsRI, worldSize, originalSettings.resolution, seed, true);
+
+		WorldGraph subMapGraph = MapCreator.createGraphForUnitTests(subMapSettings);
+		// Every sub-map center should have land/water (and region) assigned from the source map.
+		assertEquals(subMapGraph.centers.size(), subMapSettings.edits.centerEdits.size(), "Every sub-map center should have a transferred CenterEdit");
+
+		try (Image actual = new MapCreator().createMap(subMapSettings, null, null))
+		{
+			MapTestUtil.compareToExpectedMap(actual, "subMapOfSimpleSmallWorldWithDisappearingLake", expectedMapsFolderName, failedMapsFolderName, 0);
+		}
+	}
+
 	private Image createMapUsingUpdater(MapUpdater updater, Tuple1<Image> mapTuple, Tuple1<Boolean> doneTuple)
 	{
 		doneTuple.set(false);

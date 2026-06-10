@@ -863,13 +863,13 @@ public class SubMapCreator
 	/**
 	 * Snaps the river endpoint at {@code index} onto the nearest sub-map mouth corner and anchors it there, so an exact-copied mouth lands
 	 * on (and stays on) the redrawn coast/lakeshore. Does nothing — leaving the endpoint exactly as copied — when no mouth corner is within
-	 * {@link #mouthAnchorMaxCenterHops} centers, so a mouth genuinely far from the redrawn water is not dragged across the map. Returns true
+	 * {@link #mouthWaterSearchMaxCenterHops} centers, so a mouth genuinely far from the redrawn water is not dragged across the map. Returns true
 	 * if the node was changed.
 	 */
 	private static boolean anchorMouthEndpointToShore(List<RiverPathNode> nodes, int index, WorldGraph newGraph, double resolution)
 	{
 		RiverPathNode node = nodes.get(index);
-		Corner corner = findNearestMouthCorner(newGraph, node.getLoc().mult(resolution));
+		Corner corner = findNearestCornerWithinCenterHops(newGraph, node.getLoc().mult(resolution), mouthWaterSearchMaxCenterHops, RiverDrawer::isMouthCorner);
 		if (corner == null || corner.loc == null)
 		{
 			return false;
@@ -880,12 +880,12 @@ public class SubMapCreator
 	}
 
 	/**
-	 * Returns the nearest mouth corner (one adjacent to both water and land, per {@link RiverDrawer#isMouthCorner}) to {@code pixel}
-	 * (graph/pixel coordinates), searching outward over centers up to {@link #mouthAnchorMaxCenterHops} hops, or {@code null} if none is
-	 * found within that bound. The hop bound keeps the snap local: a mouth with no redrawn coast nearby is left where it was copied rather
-	 * than anchored to a distant shore.
+	 * Returns the nearest corner satisfying {@code predicate} to {@code pixel} (graph/pixel coordinates), searching outward breadth-first
+	 * over center neighbors up to {@code maxCenterHops} hops, or {@code null} if none is found within that bound. The hop bound keeps the
+	 * search local: a river mouth whose source water body (e.g. a small lake) did not survive the regrid is left where it was rather than
+	 * dragged across many polygons to a distant, unrelated shore.
 	 */
-	private static Corner findNearestMouthCorner(WorldGraph graph, Point pixel)
+	private static Corner findNearestCornerWithinCenterHops(WorldGraph graph, Point pixel, int maxCenterHops, Predicate<Corner> predicate)
 	{
 		Center startCenter = graph.findClosestCenter(pixel, true);
 		if (startCenter == null)
@@ -898,14 +898,14 @@ public class SubMapCreator
 		frontier.add(startCenter);
 		Corner nearest = null;
 		double nearestDistance = Double.MAX_VALUE;
-		for (int hop = 0; hop <= mouthAnchorMaxCenterHops; hop++)
+		for (int hop = 0; hop <= maxCenterHops; hop++)
 		{
 			List<Center> nextFrontier = new ArrayList<>();
 			for (Center center : frontier)
 			{
 				for (Corner corner : center.corners)
 				{
-					if (corner.loc == null || !RiverDrawer.isMouthCorner(corner))
+					if (corner.loc == null || !predicate.test(corner))
 					{
 						continue;
 					}
@@ -968,8 +968,13 @@ public class SubMapCreator
 	 */
 	private static final double mouthReachToleranceInPixels = 1.0;
 
-	/** Maximum number of Voronoi centers an exact-copied river mouth is searched outward to find a sub-map mouth corner to anchor to. */
-	private static final int mouthAnchorMaxCenterHops = 3;
+	/**
+	 * Maximum number of Voronoi centers a river mouth is searched outward (breadth-first over center neighbors) to find a sub-map shore
+	 * corner to attach to — used both when anchoring an exact-copied mouth to the redrawn coast and when snapping a redistributed mouth to a
+	 * water-adjacent corner. The bound keeps the search local so a mouth whose source water body (e.g. a small lake) did not survive the
+	 * regrid is left ending inland rather than connected by a long invented river to a distant, unrelated body of water.
+	 */
+	private static final int mouthWaterSearchMaxCenterHops = 3;
 
 	/**
 	 * Removes duplicated segments where two transferred rivers overlap. Rivers are routed through the new graph independently, so where a
@@ -1096,7 +1101,12 @@ public class SubMapCreator
 			Corner corner;
 			if (isMouthNode)
 			{
-				corner = findClosestCornerMatching(newGraph.corners, newGraphPoint, isWaterAdjacent);
+				// Snap the mouth to a nearby water-adjacent corner so the river reaches the sea, but only search outward a bounded number
+				// of centers (the same limit exact-copy mode uses to anchor mouths). If the source water body the river emptied into (e.g.
+				// a small lake) did not survive the regrid, the nearest water-adjacent corner can be many polygons away; snapping to it
+				// would invent a long river connecting the mouth to a distant, unrelated body of water. When none is within reach we fall
+				// back to the plain nearest corner so the river simply ends inland where its water used to be.
+				corner = findNearestCornerWithinCenterHops(newGraph, newGraphPoint, mouthWaterSearchMaxCenterHops, isWaterAdjacent);
 				if (corner == null)
 				{
 					corner = newGraph.findClosestCorner(newGraphPoint);
@@ -1515,30 +1525,6 @@ public class SubMapCreator
 			}
 		}
 		return false;
-	}
-
-	/**
-	 * Returns the closest corner in {@code corners} to {@code target} that satisfies {@code predicate}, or {@code null} if none match.
-	 */
-	private static Corner findClosestCornerMatching(List<Corner> corners, Point target, Predicate<Corner> predicate)
-	{
-		double bestDist = Double.MAX_VALUE;
-		Corner bestCorner = null;
-		for (Corner corner : corners)
-		{
-			if (predicate.test(corner))
-			{
-				double dx = corner.loc.x - target.x;
-				double dy = corner.loc.y - target.y;
-				double dist = dx * dx + dy * dy;
-				if (dist < bestDist)
-				{
-					bestDist = dist;
-					bestCorner = corner;
-				}
-			}
-		}
-		return bestCorner;
 	}
 
 	private static final float maxFontSize = 240f;
