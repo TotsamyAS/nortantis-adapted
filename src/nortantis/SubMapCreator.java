@@ -137,6 +137,20 @@ public class SubMapCreator
 		newGraph.markLakes();
 		newGraph.updateCoastAndCornerFlags();
 
+		// Smooth newGraph's coastlines and rebuild its noisy edges to match what MapCreator does when it actually renders the sub-map (see
+		// applyCenterEdits, which smooths the coast after applying water edits). Without this, newGraph keeps the raw, unsmoothed coastline,
+		// so river-mouth water checks (doesPointReachWater / findShorelineConnector in transferRivers) follow a coast in a different place
+		// than the one drawn. The connector then marches a mouth to water on the unsmoothed coast, but the rendered (smoothed) coast lies
+		// elsewhere, leaving generated river mouths visibly short of the ocean. (Hand-drawn mouths are dragged well into open water, so they
+		// stay wet after smoothing and never exposed this.) Smoothing only moves corner locations; it does not change which centers are
+		// water, so the transferred edits remain consistent.
+		Set<Center> centersChangedBySmoothing = newGraph.smoothCoastlinesAndRegionBoundariesIfNeeded(newGraph.centers, newGraph.noisyEdges.getLineStyle(), newSettings.areRegionBoundariesVisible());
+		for (Center center : centersChangedBySmoothing)
+		{
+			newGraph.rebuildNoisyEdgesForCenter(center, centersChangedBySmoothing);
+		}
+		newGraph.resetCenterLookupTable();
+
 		// Build remaining MapEdits.
 
 		transferRegionEdits(originalGraph, originalSettings.edits, originalRegionToNewCenters, newEdits);

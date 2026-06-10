@@ -606,6 +606,86 @@ public class SubMapCreatorTest
 	}
 
 	/**
+	 * Regression test for a bug where, at "match source detail" ({@code redistributeIcons == false}), rivers from a <em>generated</em> source
+	 * map fail to reach the ocean in the sub-map even though the connector code (added for the match-source-detail case) is supposed to extend
+	 * such mouths to the redrawn coast. The map {@code riversInSubmapsMeetWater.nort} was reduced by hand to exactly two rivers, both of which
+	 * end at the ocean in the source. The bug reproduces with generated rivers but not with hand-drawn ones, so this captures the generated
+	 * case.
+	 * <p>
+	 * The check mirrors {@link #subMapExactCopyRiverMouthsReachRedrawnCoast}: each source river endpoint that is a water mouth in the source
+	 * and lies inside the selection is mapped to the sub-map, and the nearest sub-map river endpoint must reach the redrawn water per
+	 * {@link SubMapCreator#doesPointReachWater}.
+	 * </p>
+	 */
+	@Test
+	public void subMapGeneratedRiverMouthsReachOcean() throws Exception
+	{
+		// Set to true to force this test to write its result map to the failed sub-maps folder, even when it passes.
+		boolean forceWrite = false;
+
+		String originalSettingsPath = Paths.get("unit test files", "map settings", "riversInSubmapsMeetWater.nort").toString();
+		MapSettings originalSettings = new MapSettings(originalSettingsPath);
+
+		WorldGraph originalGraph = MapCreator.createGraphForUnitTests(originalSettings);
+
+		Rectangle selectionBoundsRI = new Rectangle(1043, 53, 808, 708);
+		int worldSize = SubMapDialog.computeDefaultWorldSize(originalSettings, selectionBoundsRI);
+
+		long seed = 323066151L;
+		// redistributeIcons=false: "match source detail" copies rivers exactly, then extends mouths to the redrawn coast.
+		MapSettings subMapSettings = SubMapCreator.createSubMapSettings(originalSettings, originalGraph, selectionBoundsRI, worldSize, originalSettings.resolution, seed, false);
+		WorldGraph newGraph = MapCreator.createGraphForUnitTests(subMapSettings);
+
+		// Sub-map river endpoints, to match each source mouth to its copied-over end.
+		List<Point> subMapEndpoints = new ArrayList<>();
+		for (River river : subMapSettings.edits.rivers)
+		{
+			subMapEndpoints.add(river.nodes.get(0).getLoc());
+			subMapEndpoints.add(river.nodes.get(river.nodes.size() - 1).getLoc());
+		}
+
+		int sourceMouthsInSelection = 0;
+		int reachedCoast = 0;
+		for (River sourceRiver : originalSettings.edits.rivers)
+		{
+			for (int end = 0; end < 2; end++)
+			{
+				Point sourcePoint = (end == 0 ? sourceRiver.nodes.get(0) : sourceRiver.nodes.get(sourceRiver.nodes.size() - 1)).getLoc();
+				boolean isSourceMouth = selectionBoundsRI.contains(sourcePoint.x, sourcePoint.y) && riverEndpointTouchesCoastOrOcean(sourcePoint, originalGraph, originalSettings.resolution);
+				if (!isSourceMouth)
+				{
+					continue;
+				}
+				sourceMouthsInSelection++;
+				Point subMapPoint = new Point((sourcePoint.x - selectionBoundsRI.x) / selectionBoundsRI.width * subMapSettings.generatedWidth,
+						(sourcePoint.y - selectionBoundsRI.y) / selectionBoundsRI.height * subMapSettings.generatedHeight);
+				Point nearestEnd = null;
+				double bestDistance = Double.MAX_VALUE;
+				for (Point endpoint : subMapEndpoints)
+				{
+					if (endpoint.distanceTo(subMapPoint) < bestDistance)
+					{
+						bestDistance = endpoint.distanceTo(subMapPoint);
+						nearestEnd = endpoint;
+					}
+				}
+				if (nearestEnd != null && SubMapCreator.doesPointReachWater(nearestEnd.mult(subMapSettings.resolution), newGraph))
+				{
+					reachedCoast++;
+				}
+			}
+		}
+
+		if (forceWrite || forceWriteAllMaps)
+		{
+			saveFailedMap(subMapSettings, "subMapGeneratedRiverMouthsReachOcean");
+		}
+		assertTrue(sourceMouthsInSelection > 0, "Expected the selection to contain at least one source river mouth");
+		assertEquals(sourceMouthsInSelection, reachedCoast,
+				"Every source river mouth should reach the sub-map's redrawn ocean, but " + (sourceMouthsInSelection - reachedCoast) + " of " + sourceMouthsInSelection + " did not");
+	}
+
+	/**
 	 * Verifies that when a small region is extracted from {@code simpleSmallWorld.nort} — too small to match the source detail level, so it
 	 * is redistributed ({@code redistributeIconsAndRivers == true}) — the source icons inside the selection are carried into the sub-map.
 	 * Specifically the selection contains an "octopus" decoration (group "creatures") and a "town with castle" city (group "flat"), and the

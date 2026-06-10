@@ -257,6 +257,16 @@ public class MapSettings implements Serializable
 		return FilenameUtils.getExtension(filePath).toLowerCase().equals("properties");
 	}
 
+	/**
+	 * Returns true if region boundaries are visible on the map, either because they are drawn explicitly ({@link #drawRegionBoundaries}) or
+	 * because region colors create visible boundaries between regions ({@link #drawRegionColors}). This drives coastline/region-boundary
+	 * smoothing and graph construction, which must treat region-color edges as boundaries to smooth even when explicit boundaries are off.
+	 */
+	public boolean areRegionBoundariesVisible()
+	{
+		return drawRegionBoundaries || drawRegionColors;
+	}
+
 	public boolean hasOldCustomImagesFolderStructure()
 	{
 		if (customImagesPath == null || customImagesPath.isEmpty())

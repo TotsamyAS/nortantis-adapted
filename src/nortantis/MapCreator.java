@@ -192,7 +192,7 @@ public class MapCreator implements WarningLogger
 		migrateLegacyRiversIfNeeded(settings, mapParts.graph);
 		applyRiverEdits(mapParts.graph, settings.edits);
 		Set<Center> centersChangedThatAffectedLandOrRegionBoundaries = applyCenterEdits(mapParts.graph, settings.edits, getCenterEditsForCenters(settings.edits, centersChanged),
-				settings.drawRegionBoundaries || settings.drawRegionColors, settings.resolution);
+				settings.areRegionBoundariesVisible(), settings.resolution);
 
 		Rectangle centersChangedBounds = WorldGraph.getBoundingBox(centersChanged);
 
@@ -1753,7 +1753,7 @@ public class MapCreator implements WarningLogger
 
 		WorldGraph graph = GraphCreator.createGraph(widthToUse, heightToUse, settings.worldSize, settings.edgeLandToWaterProbability, settings.centerLandToWaterProbability, new Random(r.nextLong()),
 				resolutionScale, settings.lineStyle, settings.pointPrecision, createElevationBiomesLakesAndRegions, settings.lloydRelaxationsScale,
-				settings.drawRegionBoundaries || settings.drawRegionColors, settings.rightRotationCount, settings.flipHorizontally, settings.flipVertically, settings.landShape, settings.regionCount);
+				settings.areRegionBoundariesVisible(), settings.rightRotationCount, settings.flipHorizontally, settings.flipVertically, settings.landShape, settings.regionCount);
 
 		// Setup region colors even if settings.drawRegionColors = false because
 		// edits need them in case someone edits a map without region colors,
@@ -1774,7 +1774,7 @@ public class MapCreator implements WarningLogger
 		{
 			applyEdgeEdits(graph, settings.edits, null);
 		}
-		applyCenterEdits(graph, settings.edits, null, settings.drawRegionBoundaries || settings.drawRegionColors, resolutionScale);
+		applyCenterEdits(graph, settings.edits, null, settings.areRegionBoundariesVisible(), resolutionScale);
 		// applyRiverEdits may trigger a premature center lookup table build (before isWater is restored by applyCenterEdits).
 		// Reset it so it rebuilds with correct state on first use.
 		graph.resetCenterLookupTable();
@@ -1918,7 +1918,7 @@ public class MapCreator implements WarningLogger
 		// positions, which would cause the editor's control points to appear off the visible river.
 		// Re-sync any polygon-mode nodes (those with an edgeIndexToNext) to their edge's current
 		// corner locations.
-		nortantis.RiverDrawer.resyncRiverNodeLocationsToGraph(edits.rivers, graph, resolutionScale);
+		RiverDrawer.resyncRiverNodeLocationsToGraph(edits.rivers, graph, resolutionScale);
 
 		return needsRebuildNoisyEdges;
 	}
