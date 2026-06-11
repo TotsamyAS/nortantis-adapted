@@ -57,7 +57,7 @@ public class BackgroundGenerator
 		int cols = ImageHelper.getInstance().getJTransformsMixedRadixSizeEqualOrLargerThan(Math.max(texture.getWidth(), targetCols));
 
 		float alpha = 0.5f;
-		float textureArea = texture.getHeight() * texture.getHeight();
+		float textureArea = texture.getWidth() * texture.getHeight();
 		float varianceScaler = (float) Math.sqrt(((float) (rows * cols)) / textureArea);
 		int alphaRows = (int) (alpha * texture.getHeight());
 		int alphaCols = (int) (alpha * texture.getWidth());

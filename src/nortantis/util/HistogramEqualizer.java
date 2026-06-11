@@ -43,13 +43,19 @@ public class HistogramEqualizer
 
 	private static int[] createLookupTable(int[] histogram, int imageArea)
 	{
-		int sum = 0;
+		long sum = 0;
 		int[] lookupTable = new int[histogram.length];
-		double scale = (lookupTable.length - 1) / (double) imageArea;
+		int maxLevel = lookupTable.length - 1;
 		for (int r = 0; r < lookupTable.length; r++)
 		{
 			sum += histogram[r];
-			lookupTable[r] = (int) (scale * sum);
+			// Use exact integer arithmetic so that the maximum cumulative sum (sum == imageArea) maps to
+			// exactly maxLevel. The previous floating-point form, (maxLevel / (double) imageArea) * sum, can
+			// evaluate to just under maxLevel for certain image areas (for example 3200x3200), which truncates
+			// to maxLevel - 1. That silently defeats the "ignore the maximum level" guard in
+			// createInverseLookupTable, collapsing all of the brightest tones onto a single level and producing
+			// scattered bright specks in histogram-matched images (visible in generated background textures).
+			lookupTable[r] = (int) (maxLevel * sum / imageArea);
 		}
 
 		return lookupTable;
