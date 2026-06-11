@@ -14,6 +14,8 @@ import javax.swing.*;
 import javax.swing.event.ChangeListener;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
+import javax.swing.plaf.basic.BasicHTML;
+import javax.swing.text.View;
 import java.awt.*;
 import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
@@ -54,8 +56,14 @@ public class SubMapDialog
 	private JButton step1NextButton;
 	/** Guards against infinite update loops between spinners and the selection box. */
 	private boolean updatingSpinnersFromBox = false;
-	/** Currently selected aspect ratio (width / height). 0 = no lock. */
+	/** Currently selected effective aspect ratio (width / height), including any 90° rotation. 0 = no lock. */
 	private double selectedAspectRatio = 0.0;
+	/** The chosen preset aspect ratio before optional 90° rotation (width / height). 0 = no lock. */
+	private double selectedBaseAspectRatio = 0.0;
+	/** When true, the selected non-square preset aspect ratio is rotated 90° (inverted) to portrait orientation. */
+	private boolean rotateAspectRatio90 = false;
+	/** Checkbox that rotates the selected aspect ratio 90°. Always visible; disabled for Custom and Square. */
+	private JCheckBox rotate90Checkbox;
 
 	// Step 2 dialog / preview state.
 	private JDialog step2Dialog;
@@ -150,31 +158,53 @@ public class SubMapDialog
 			ratioLabels[i + 1] = dims[i].displayName();
 		}
 
+		// Lay the aspect ratio toggle buttons and the Rotate 90° checkbox out in a single horizontal row. A plain BoxLayout row is used
+		// (rather than SegmentedButtonWidget) so it reports a correct single-row height in this wide dialog: the widget's preferred-size
+		// heuristic is tuned for the narrow side panel and at pack() time would assume a narrow width, wrap the buttons to several rows, and
+		// reserve extra vertical space that shows up as a large empty gap once the dialog is displayed at its real (wide) size.
+		JPanel aspectRatioRow = new JPanel();
+		aspectRatioRow.setLayout(new BoxLayout(aspectRatioRow, BoxLayout.X_AXIS));
+
 		ButtonGroup ratioGroup = new ButtonGroup();
-		List<JToggleButton> aspectRatioButtons = new ArrayList<>();
 		for (int i = 0; i < numButtons; i++)
 		{
 			final double ratio = ratios[i];
 			JToggleButton btn = new JToggleButton(ratioLabels[i]);
-			btn.setSelected(Math.abs(ratio - selectedAspectRatio) < 0.001);
+			SwingHelper.reduceHorizontalMargin(btn);
+			btn.setAlignmentY(Component.CENTER_ALIGNMENT);
+			// Compare against the base (un-rotated) ratio so the correct button stays selected even when a 90° rotation is active.
+			btn.setSelected(Math.abs(ratio - selectedBaseAspectRatio) < 0.001);
 			btn.addActionListener(e ->
 			{
-				selectedAspectRatio = ratio;
-				mainWindow.mapEditingPanel.setSelectionBoxLockedAspectRatio(ratio);
-				mainWindow.mapEditingPanel.setSelectionBoxMaxAspectRatio(ratio == 0.0 ? GeneratedDimension.MAX_ASPECT_RATIO : 0.0);
-				if (ratio > 0 && selBoundsRI != null)
-				{
-					selBoundsRI = adjustSelectionBoxToAspectRatio(selBoundsRI, ratio);
-					mainWindow.mapEditingPanel.setSelectionBoxRI(selBoundsRI);
-					updateStep1SpinnersFromBox();
-				}
+				selectedBaseAspectRatio = ratio;
+				updateRotate90CheckboxEnabled();
+				applyAspectRatioSelection();
 			});
 			ratioGroup.add(btn);
-			aspectRatioButtons.add(btn);
+			if (i > 0)
+			{
+				aspectRatioRow.add(Box.createHorizontalStrut(4));
+			}
+			aspectRatioRow.add(btn);
 		}
-		SegmentedButtonWidget segmentedButtonWidget = new SegmentedButtonWidget(aspectRatioButtons);
-		segmentedButtonWidget.addToOrganizer(organizer, Translation.get("subMapDialog.step1.aspectRatio.label"),
-				Translation.get("subMapDialog.step1.aspectRatio.help", GeneratedDimension.Custom.displayName(), GeneratedDimension.MAX_ASPECT_RATIO), topInset);
+
+		rotate90Checkbox = new JCheckBox(Translation.get("subMapDialog.step1.rotate90.label"));
+		rotate90Checkbox.setToolTipText(Translation.get("subMapDialog.step1.rotate90.help"));
+		rotate90Checkbox.setAlignmentY(Component.CENTER_ALIGNMENT);
+		rotate90Checkbox.setSelected(rotateAspectRatio90);
+		rotate90Checkbox.addActionListener(e ->
+		{
+			rotateAspectRatio90 = rotate90Checkbox.isSelected();
+			// Rotate the existing selection in place (swap width and height) so its area is preserved, rather than stretching one dimension.
+			swapSelectionBoxDimensions();
+			applyAspectRatioSelection();
+		});
+		updateRotate90CheckboxEnabled();
+
+		aspectRatioRow.add(Box.createHorizontalStrut(8));
+		aspectRatioRow.add(rotate90Checkbox);
+		organizer.addLabelAndComponent(Translation.get("subMapDialog.step1.aspectRatio.label"),
+				Translation.get("subMapDialog.step1.aspectRatio.help", GeneratedDimension.Custom.displayName(), GeneratedDimension.MAX_ASPECT_RATIO), aspectRatioRow, topInset);
 
 		// Position and size spinners (use display dimensions, which are rotated relative to generatedWidth/Height for 90°/270°)
 		int mapDisplayW = getMapDisplayWidth();
@@ -229,7 +259,12 @@ public class SubMapDialog
 		organizer.addLeftAlignedComponent(bottomRow, topInset, GridBagOrganizer.rowVerticalInset, false);
 
 		step1Dialog.add(organizer.panel);
-		step1Dialog.setPreferredSize(new Dimension(step1Dialog.getPreferredSize().width + 35, step1Dialog.getPreferredSize().height + 15));
+		// Pack once to learn the content width, then size the multi-line HTML instructions label to that width so its preferred height is
+		// computed for the width it is actually displayed at. Otherwise its height is computed for its natural single-line width, and the
+		// text is clipped once it wraps at the narrower dialog width.
+		step1Dialog.pack();
+		fitMultiLineLabelToWidth(instructionsLabel, organizer.panel.getWidth() - 10);
+		step1Dialog.setPreferredSize(new Dimension(step1Dialog.getPreferredSize().width + 15, step1Dialog.getPreferredSize().height + 15));
 		step1Dialog.pack();
 		step1Dialog.setMinimumSize(step1Dialog.getSize());
 		java.awt.Point parentLocation = mainWindow.getLocation();
@@ -412,6 +447,90 @@ public class SubMapDialog
 			return;
 		}
 		step1NextButton.setEnabled(selBoundsRI != null && validateStep1Spinners() == null);
+	}
+
+	/**
+	 * Returns the effective aspect ratio (width / height) implied by the selected preset and the 90° rotation toggle. 0 = no lock.
+	 */
+	private double effectiveAspectRatio()
+	{
+		if (selectedBaseAspectRatio == 0.0)
+		{
+			return 0.0;
+		}
+		return rotateAspectRatio90 ? 1.0 / selectedBaseAspectRatio : selectedBaseAspectRatio;
+	}
+
+	/**
+	 * Recomputes the effective aspect ratio from the selected preset and rotation toggle, applies it to the selection box constraints, and
+	 * reshapes the current selection to match.
+	 */
+	private void applyAspectRatioSelection()
+	{
+		selectedAspectRatio = effectiveAspectRatio();
+		mainWindow.mapEditingPanel.setSelectionBoxLockedAspectRatio(selectedAspectRatio);
+		mainWindow.mapEditingPanel.setSelectionBoxMaxAspectRatio(selectedAspectRatio == 0.0 ? GeneratedDimension.MAX_ASPECT_RATIO : 0.0);
+		if (selectedAspectRatio > 0 && selBoundsRI != null)
+		{
+			selBoundsRI = adjustSelectionBoxToAspectRatio(selBoundsRI, selectedAspectRatio);
+			mainWindow.mapEditingPanel.setSelectionBoxRI(selBoundsRI);
+			updateStep1SpinnersFromBox();
+		}
+	}
+
+	/**
+	 * Sizes a multi-line HTML label so its preferred height matches the height it needs when laid out at the given display width. This keeps
+	 * the text from being clipped when it wraps at a width narrower than its natural single-line width.
+	 */
+	private void fitMultiLineLabelToWidth(JLabel label, int width)
+	{
+		if (width <= 0)
+		{
+			return;
+		}
+		View view = (View) label.getClientProperty(BasicHTML.propertyKey);
+		if (view == null)
+		{
+			return;
+		}
+		view.setSize(width, 0);
+		int preferredWidth = (int) Math.ceil(view.getPreferredSpan(View.X_AXIS));
+		int preferredHeight = (int) Math.ceil(view.getPreferredSpan(View.Y_AXIS));
+		label.setPreferredSize(new Dimension(Math.min(preferredWidth, width), preferredHeight));
+	}
+
+	/**
+	 * Rotates the current selection box 90° in place by swapping its width and height (keeping the top-left corner and clamping to the map
+	 * bounds). This preserves the selection's area when the Rotate 90° checkbox is toggled, instead of stretching a single dimension.
+	 */
+	private void swapSelectionBoxDimensions()
+	{
+		if (selBoundsRI == null)
+		{
+			return;
+		}
+		double newWidth = Math.max(1, Math.min(selBoundsRI.height, getMapDisplayWidth() - selBoundsRI.x));
+		double newHeight = Math.max(1, Math.min(selBoundsRI.width, getMapDisplayHeight() - selBoundsRI.y));
+		selBoundsRI = new Rectangle(selBoundsRI.x, selBoundsRI.y, newWidth, newHeight);
+	}
+
+	/**
+	 * Enables the Rotate 90° checkbox only for non-square presets; rotating Custom or Square has no effect, so it stays disabled there.
+	 */
+	private void updateRotate90CheckboxEnabled()
+	{
+		if (rotate90Checkbox == null)
+		{
+			return;
+		}
+		boolean enabled = selectedBaseAspectRatio != 0.0 && Math.abs(selectedBaseAspectRatio - 1.0) > 0.001;
+		// If the newly selected preset can't be rotated (Custom or Square), clear any existing rotation so it doesn't silently carry over.
+		if (!enabled && rotateAspectRatio90)
+		{
+			rotateAspectRatio90 = false;
+			rotate90Checkbox.setSelected(false);
+		}
+		rotate90Checkbox.setEnabled(enabled);
 	}
 
 	/**

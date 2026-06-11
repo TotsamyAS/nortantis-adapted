@@ -4,6 +4,7 @@ import com.formdev.flatlaf.FlatDarkLaf;
 import com.formdev.flatlaf.FlatLightLaf;
 import nortantis.CancelledException;
 import nortantis.DebugFlags;
+import nortantis.GeneratedDimension;
 import nortantis.ImageCache;
 import nortantis.MapSettings;
 import nortantis.editor.*;
@@ -90,7 +91,7 @@ public class MainWindow extends JFrame implements ILoggerTarget
 	private JMenu recentSettingsMenuItem;
 	java.awt.Point mouseLocationForMiddleButtonDrag;
 	private JMenu helpMenu;
-	private JMenuItem subMapInfoMenuItem;
+	private JMenuItem mapInfoMenuItem;
 	private JMenuItem refreshMenuItem;
 	private JMenuItem customImagesMenuItem;
 	private JMenu toolsMenu;
@@ -1130,6 +1131,18 @@ public class MainWindow extends JFrame implements ILoggerTarget
 			}
 		});
 
+		// Shows info about the current map (aspect ratio, world size, dimensions), plus sub-map provenance when the map is a sub-map.
+		mapInfoMenuItem = new JMenuItem(Translation.get("menu.help.mapInfo"));
+		helpMenu.add(mapInfoMenuItem);
+		mapInfoMenuItem.addActionListener(new ActionListener()
+		{
+			@Override
+			public void actionPerformed(ActionEvent e)
+			{
+				showMapInfoDialog();
+			}
+		});
+
 		JMenuItem aboutNortantisItem = new JMenuItem(Translation.get("menu.help.aboutNortantis"));
 		helpMenu.add(aboutNortantisItem);
 		aboutNortantisItem.addActionListener(new ActionListener()
@@ -1138,19 +1151,6 @@ public class MainWindow extends JFrame implements ILoggerTarget
 			public void actionPerformed(ActionEvent e)
 			{
 				showAboutNortantisDialog();
-			}
-		});
-
-		// Only shown when the loaded map is a sub-map (it carries subMapInfo). Visibility is set in loadSettingsIntoGUI.
-		subMapInfoMenuItem = new JMenuItem(Translation.get("menu.help.subMapInfo"));
-		subMapInfoMenuItem.setVisible(false);
-		helpMenu.add(subMapInfoMenuItem);
-		subMapInfoMenuItem.addActionListener(new ActionListener()
-		{
-			@Override
-			public void actionPerformed(ActionEvent e)
-			{
-				showSubMapInfoDialog();
 			}
 		});
 	}
@@ -1446,30 +1446,50 @@ public class MainWindow extends JFrame implements ILoggerTarget
 	}
 
 	/**
-	 * Shows the sub-map provenance: the original map, selection box, detail, icon/river mode, and seed used to create the current sub-map, so
-	 * the user can recreate it. The text is selectable and can be copied to the clipboard. Only reachable when the loaded map is a sub-map.
+	 * Shows info about the current map: its dimensions, aspect ratio, and world size. When the map is a sub-map, the original map, selection
+	 * box, detail, icon/river mode, and seed used to create it are also shown so the user can recreate it. The text is selectable and can be
+	 * copied to the clipboard.
 	 */
-	private void showSubMapInfoDialog()
+	private void showMapInfoDialog()
 	{
-		MapSettings.SubMapInfo info = lastSettingsLoadedOrSaved == null ? null : lastSettingsLoadedOrSaved.subMapInfo;
-		if (info == null)
+		if (lastSettingsLoadedOrSaved == null)
 		{
 			return;
 		}
-
-		boolean hasFileName = info.originalFileName != null && !info.originalFileName.isEmpty();
-		String intro = hasFileName ? Translation.get("subMapInfo.createdFrom", info.originalFileName) : Translation.get("subMapInfo.createdFromUnsaved");
-		String iconsRivers = info.redistributeIconsAndRivers ? Translation.get("subMapInfo.iconsRivers.redistributed") : Translation.get("subMapInfo.iconsRivers.matched");
+		MapSettings settings = lastSettingsLoadedOrSaved;
 
 		// Pass numbers as strings so MessageFormat does not apply locale grouping (which would, e.g., render the seed as "174,503,823" and
 		// break copy-paste recreation).
+		MapSettings.SubMapInfo info = settings.subMapInfo;
 		StringBuilder text = new StringBuilder();
-		text.append(intro).append("\n\n");
-		text.append(Translation.get("subMapInfo.field.selection", Long.toString(Math.round(info.selectionX)), Long.toString(Math.round(info.selectionY)),
-				Long.toString(Math.round(info.selectionWidth)), Long.toString(Math.round(info.selectionHeight)))).append("\n");
-		text.append(Translation.get("subMapInfo.field.detail", Integer.toString(info.worldSize))).append("\n");
-		text.append(Translation.get("subMapInfo.field.iconsRivers", iconsRivers)).append("\n");
-		text.append(Translation.get("subMapInfo.field.seed", Long.toString(info.randomSeed)));
+		Dimension scrollPanePreferredSize;
+		if (info != null)
+		{
+			// Sub-map: show only the provenance needed to recreate it.
+			boolean hasFileName = info.originalFileName != null && !info.originalFileName.isEmpty();
+			String intro = hasFileName ? Translation.get("subMapInfo.createdFrom", info.originalFileName) : Translation.get("subMapInfo.createdFromUnsaved");
+			String iconsRivers = info.redistributeIconsAndRivers ? Translation.get("subMapInfo.iconsRivers.redistributed") : Translation.get("subMapInfo.iconsRivers.matched");
+
+			text.append(intro).append("\n\n");
+			text.append(Translation.get("subMapInfo.field.selection", Long.toString(Math.round(info.selectionX)), Long.toString(Math.round(info.selectionY)),
+					Long.toString(Math.round(info.selectionWidth)), Long.toString(Math.round(info.selectionHeight)))).append("\n");
+			text.append(Translation.get("subMapInfo.field.detail", Integer.toString(info.worldSize))).append("\n");
+			text.append(Translation.get("subMapInfo.field.iconsRivers", iconsRivers)).append("\n");
+			text.append(Translation.get("subMapInfo.field.seed", Long.toString(info.randomSeed)));
+			scrollPanePreferredSize = new Dimension(440, 130);
+		}
+		else
+		{
+			// Regular map: show the aspect ratio using the same dimension labels as NewSettingsDialog (e.g. "16 by 9 (4096 x 2304)"), plus
+			// the world size. Custom dimensions aren't a named preset, so spell out the actual size after the "Custom" label.
+			GeneratedDimension dimension = GeneratedDimension.fromDimensions(settings.generatedWidth, settings.generatedHeight);
+			String dimensionDisplay = dimension == GeneratedDimension.Custom
+					? dimension.displayName() + " (" + settings.generatedWidth + " × " + settings.generatedHeight + ")"
+					: dimension.toString();
+			text.append(Translation.get("mapInfo.aspectRatio", dimensionDisplay)).append("\n");
+			text.append(Translation.get("mapInfo.worldSize", Integer.toString(settings.worldSize)));
+			scrollPanePreferredSize = new Dimension(300, 50);
+		}
 
 		JTextArea textArea = new JTextArea(text.toString());
 		textArea.setEditable(false);
@@ -1481,12 +1501,12 @@ public class MainWindow extends JFrame implements ILoggerTarget
 		textArea.setCaretPosition(0);
 		JScrollPane scrollPane = new JScrollPane(textArea);
 		scrollPane.setBorder(null);
-		scrollPane.setPreferredSize(new Dimension(440, 150));
+		scrollPane.setPreferredSize(scrollPanePreferredSize);
 
-		Object[] options = { Translation.get("subMapInfo.copyButton"), Translation.get("subMapInfo.closeButton") };
+		Object[] options = { Translation.get("mapInfo.copyButton"), Translation.get("mapInfo.closeButton") };
 		// Build the JOptionPane and its dialog manually (rather than JOptionPane.showOptionDialog) so the dialog can be made resizable.
 		JOptionPane optionPane = new JOptionPane(scrollPane, JOptionPane.INFORMATION_MESSAGE, JOptionPane.DEFAULT_OPTION, null, options, options[1]);
-		JDialog dialog = optionPane.createDialog(this, Translation.get("subMapInfo.title"));
+		JDialog dialog = optionPane.createDialog(this, Translation.get("mapInfo.title"));
 		dialog.setResizable(true);
 		dialog.setVisible(true);
 		dialog.dispose();
@@ -2138,8 +2158,6 @@ public class MainWindow extends JFrame implements ILoggerTarget
 		mapEditingPanel.clearAllSelectionsAndHighlights();
 
 		updateLastSettingsLoadedOrSaved(settings);
-		// Show the Help > Sub-Map Info item only for sub-maps (those carrying provenance info).
-		subMapInfoMenuItem.setVisible(settings.subMapInfo != null);
 		toolsPanel.resetToolsForNewMap();
 		loadSettingsAndEditsIntoThemeAndToolsPanels(settings, false, false);
 
