@@ -41,6 +41,8 @@ public class SubMapDialog
 	private final WorldGraph origGraph;
 	/** The display-quality resolution scale at which origGraph was created. */
 	private final double origResolution;
+	/** File name (not full path) of the original map, or null if it had not been saved. Recorded in the sub-map's provenance info. */
+	private final String origFileName;
 
 	// Shared state between steps.
 	private Rectangle selBoundsRI;
@@ -106,6 +108,7 @@ public class SubMapDialog
 		this.origSettings = mainWindow.getSettingsFromGUI(false);
 		this.origGraph = mainWindow.updater.mapParts.graph;
 		this.origResolution = mainWindow.displayQualityScale;
+		this.origFileName = mainWindow.getOpenSettingsFilePath() == null ? null : mainWindow.getOpenSettingsFilePath().getFileName().toString();
 	}
 
 	// -------------------------------------------------------------------------
@@ -762,7 +765,7 @@ public class SubMapDialog
 				try
 				{
 					boolean redistributeIconsAndRivers = customRadio != null && customRadio.isSelected();
-					MapSettings settings = SubMapCreator.createSubMapSettings(origSettings, origGraph, selBoundsRI, getSubmapWorldSize(), origResolution, subMapSeed, redistributeIconsAndRivers);
+					MapSettings settings = SubMapCreator.createSubMapSettings(origSettings, origGraph, selBoundsRI, getSubmapWorldSize(), origResolution, subMapSeed, redistributeIconsAndRivers, origFileName);
 					// Set resolution to 1.0 as a baseline; MapCreator.createMap will override it via
 					// Background.calcMapBoundsAndAdjustResolutionIfNeeded to fit the maxMapSize passed to the updater.
 					settings.resolution = 1.0;

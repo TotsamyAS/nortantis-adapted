@@ -76,6 +76,62 @@ public class SubMapCreatorTest
 	}
 
 	/**
+	 * Verifies that createSubMapSettings records sub-map provenance (original file name, selection box, detail, icon/river mode, and seed) so
+	 * the user can recreate the sub-map, and that this info survives a save/load round-trip through the .nort file.
+	 */
+	@Test
+	public void subMapInfoIsRecordedAndRoundTrips() throws Exception
+	{
+		String originalSettingsPath = Paths.get("unit test files", "map settings", "riversForSubMaps.nort").toString();
+		MapSettings originalSettings = new MapSettings(originalSettingsPath);
+		originalSettings.resolution = 0.5;
+
+		WorldGraph originalGraph = MapCreator.createGraphForUnitTests(originalSettings);
+
+		Rectangle selectionBoundsRI = new Rectangle(1324, 999, 1307, 1307);
+		int worldSize = SubMapDialog.computeDefaultWorldSize(originalSettings, selectionBoundsRI);
+		long seed = 1962328436L;
+		String originalFileName = "riversForSubMaps.nort";
+
+		MapSettings subMapSettings = SubMapCreator.createSubMapSettings(originalSettings, originalGraph, selectionBoundsRI, worldSize, originalSettings.resolution, seed, false,
+				originalFileName);
+
+		assertSubMapInfoMatches(subMapSettings.subMapInfo, originalFileName, selectionBoundsRI, worldSize, seed, false, "in-memory");
+
+		// deepCopy goes through Java serialization (Helper.deepCopy), so SubMapInfo must be Serializable. This mirrors what
+		// MainWindow.updateLastSettingsLoadedOrSaved does on every load and would crash if SubMapInfo were not serializable.
+		MapSettings copied = subMapSettings.deepCopy();
+		assertSubMapInfoMatches(copied.subMapInfo, originalFileName, selectionBoundsRI, worldSize, seed, false, "after deepCopy");
+
+		// The recorded info must survive a save/load round-trip through the .nort file.
+		File tempFile = File.createTempFile("subMapInfoRoundTrip", MapSettings.fileExtensionWithDot);
+		try
+		{
+			subMapSettings.writeToFile(tempFile.getAbsolutePath());
+			MapSettings reloaded = new MapSettings(tempFile.getAbsolutePath());
+			assertSubMapInfoMatches(reloaded.subMapInfo, originalFileName, selectionBoundsRI, worldSize, seed, false, "after reload");
+		}
+		finally
+		{
+			tempFile.delete();
+		}
+	}
+
+	private static void assertSubMapInfoMatches(MapSettings.SubMapInfo info, String originalFileName, Rectangle selectionBoundsRI, int worldSize, long seed,
+			boolean redistributeIconsAndRivers, String context)
+	{
+		assertNotNull(info, "Sub-map should carry provenance info (" + context + ")");
+		assertEquals(originalFileName, info.originalFileName, context);
+		assertEquals(selectionBoundsRI.x, info.selectionX, 0.0, context);
+		assertEquals(selectionBoundsRI.y, info.selectionY, 0.0, context);
+		assertEquals(selectionBoundsRI.width, info.selectionWidth, 0.0, context);
+		assertEquals(selectionBoundsRI.height, info.selectionHeight, 0.0, context);
+		assertEquals(worldSize, info.worldSize, context);
+		assertEquals(seed, info.randomSeed, context);
+		assertEquals(redistributeIconsAndRivers, info.redistributeIconsAndRivers, context);
+	}
+
+	/**
 	 * Verifies that rivers in a sub-map contain no finger branches. A finger is a branch point — a corner with degree &gt; 2 in the
 	 * combined river edge graph — that was not present in the original map. The original map for this test case has no such branches.
 	 * <p>

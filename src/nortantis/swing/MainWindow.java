@@ -30,6 +30,7 @@ import javax.swing.*;
 import javax.swing.filechooser.FileFilter;
 import javax.swing.filechooser.FileSystemView;
 import java.awt.*;
+import java.awt.datatransfer.StringSelection;
 import java.awt.event.*;
 import java.awt.image.BufferedImage;
 import java.io.File;
@@ -89,6 +90,7 @@ public class MainWindow extends JFrame implements ILoggerTarget
 	private JMenu recentSettingsMenuItem;
 	java.awt.Point mouseLocationForMiddleButtonDrag;
 	private JMenu helpMenu;
+	private JMenuItem subMapInfoMenuItem;
 	private JMenuItem refreshMenuItem;
 	private JMenuItem customImagesMenuItem;
 	private JMenu toolsMenu;
@@ -1138,6 +1140,19 @@ public class MainWindow extends JFrame implements ILoggerTarget
 				showAboutNortantisDialog();
 			}
 		});
+
+		// Only shown when the loaded map is a sub-map (it carries subMapInfo). Visibility is set in loadSettingsIntoGUI.
+		subMapInfoMenuItem = new JMenuItem(Translation.get("menu.help.subMapInfo"));
+		subMapInfoMenuItem.setVisible(false);
+		helpMenu.add(subMapInfoMenuItem);
+		subMapInfoMenuItem.addActionListener(new ActionListener()
+		{
+			@Override
+			public void actionPerformed(ActionEvent e)
+			{
+				showSubMapInfoDialog();
+			}
+		});
 	}
 
 	private void handleLanguageChange(String languageCode)
@@ -1428,6 +1443,57 @@ public class MainWindow extends JFrame implements ILoggerTarget
 		AboutDialog dialog = new AboutDialog(this);
 		dialog.setLocationRelativeTo(this);
 		dialog.setVisible(true);
+	}
+
+	/**
+	 * Shows the sub-map provenance: the original map, selection box, detail, icon/river mode, and seed used to create the current sub-map, so
+	 * the user can recreate it. The text is selectable and can be copied to the clipboard. Only reachable when the loaded map is a sub-map.
+	 */
+	private void showSubMapInfoDialog()
+	{
+		MapSettings.SubMapInfo info = lastSettingsLoadedOrSaved == null ? null : lastSettingsLoadedOrSaved.subMapInfo;
+		if (info == null)
+		{
+			return;
+		}
+
+		boolean hasFileName = info.originalFileName != null && !info.originalFileName.isEmpty();
+		String intro = hasFileName ? Translation.get("subMapInfo.createdFrom", info.originalFileName) : Translation.get("subMapInfo.createdFromUnsaved");
+		String iconsRivers = info.redistributeIconsAndRivers ? Translation.get("subMapInfo.iconsRivers.redistributed") : Translation.get("subMapInfo.iconsRivers.matched");
+
+		// Pass numbers as strings so MessageFormat does not apply locale grouping (which would, e.g., render the seed as "174,503,823" and
+		// break copy-paste recreation).
+		StringBuilder text = new StringBuilder();
+		text.append(intro).append("\n\n");
+		text.append(Translation.get("subMapInfo.field.selection", Long.toString(Math.round(info.selectionX)), Long.toString(Math.round(info.selectionY)),
+				Long.toString(Math.round(info.selectionWidth)), Long.toString(Math.round(info.selectionHeight)))).append("\n");
+		text.append(Translation.get("subMapInfo.field.detail", Integer.toString(info.worldSize))).append("\n");
+		text.append(Translation.get("subMapInfo.field.iconsRivers", iconsRivers)).append("\n");
+		text.append(Translation.get("subMapInfo.field.seed", Long.toString(info.randomSeed)));
+
+		JTextArea textArea = new JTextArea(text.toString());
+		textArea.setEditable(false);
+		textArea.setLineWrap(true);
+		textArea.setWrapStyleWord(true);
+		textArea.setOpaque(false);
+		textArea.setBorder(null);
+		textArea.setFont(UIManager.getFont("Label.font"));
+		textArea.setCaretPosition(0);
+		JScrollPane scrollPane = new JScrollPane(textArea);
+		scrollPane.setBorder(null);
+		scrollPane.setPreferredSize(new Dimension(440, 150));
+
+		Object[] options = { Translation.get("subMapInfo.copyButton"), Translation.get("subMapInfo.closeButton") };
+		// Build the JOptionPane and its dialog manually (rather than JOptionPane.showOptionDialog) so the dialog can be made resizable.
+		JOptionPane optionPane = new JOptionPane(scrollPane, JOptionPane.INFORMATION_MESSAGE, JOptionPane.DEFAULT_OPTION, null, options, options[1]);
+		JDialog dialog = optionPane.createDialog(this, Translation.get("subMapInfo.title"));
+		dialog.setResizable(true);
+		dialog.setVisible(true);
+		dialog.dispose();
+		if (options[0].equals(optionPane.getValue()))
+		{
+			Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(text.toString()), null);
+		}
 	}
 
 	private void createOrUpdateRecentMapMenuButtons()
@@ -2072,6 +2138,8 @@ public class MainWindow extends JFrame implements ILoggerTarget
 		mapEditingPanel.clearAllSelectionsAndHighlights();
 
 		updateLastSettingsLoadedOrSaved(settings);
+		// Show the Help > Sub-Map Info item only for sub-maps (those carrying provenance info).
+		subMapInfoMenuItem.setVisible(settings.subMapInfo != null);
 		toolsPanel.resetToolsForNewMap();
 		loadSettingsAndEditsIntoThemeAndToolsPanels(settings, false, false);
 

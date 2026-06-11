@@ -218,6 +218,13 @@ public class MapSettings implements Serializable
 	public GridOverlayLayer gridOverlayLayer = GridOverlayLayer.Under_icons;
 	public boolean drawVoronoiGridOverlayOnlyOnLand = true;
 
+	/**
+	 * Provenance for sub-maps: records the inputs used to create this sub-map (original map file name, selection box, detail, icon/river mode,
+	 * and seed) so the user can recreate it later. Null for maps that are not sub-maps. Its presence is what defines a settings object as a
+	 * sub-map.
+	 */
+	public SubMapInfo subMapInfo;
+
 	public MapSettings()
 	{
 		iconFillColorsByType = new ConcurrentHashMap<>();
@@ -548,6 +555,11 @@ public class MapSettings implements Serializable
 		root.put("gridOverlayLineWidth", gridOverlayLineWidth);
 		root.put("gridOverlayLayer", enumToJson(gridOverlayLayer));
 		root.put("drawVoronoiGridOverlayOnlyOnLand", drawVoronoiGridOverlayOnlyOnLand);
+
+		if (subMapInfo != null)
+		{
+			root.put("subMapInfo", subMapInfo.toJson());
+		}
 
 		// User edits.
 		if (edits != null && !skipEdits)
@@ -1432,6 +1444,11 @@ public class MapSettings implements Serializable
 			{
 				drawVoronoiGridOverlayOnlyOnLand = (boolean) root.get("drawVoronoiGridOverlayOnlyOnLand");
 			}
+		}
+
+		if (root.containsKey("subMapInfo"))
+		{
+			subMapInfo = SubMapInfo.fromJson((JSONObject) root.get("subMapInfo"));
 		}
 
 		edits = new MapEdits();
@@ -2512,6 +2529,59 @@ public class MapSettings implements Serializable
 		MapSettings copy = Helper.deepCopy(this);
 		edits = editsTemp;
 		return copy;
+	}
+
+	/**
+	 * Records how a sub-map was created, so the user can reproduce it. See {@link MapSettings#subMapInfo}. The selection box is stored in
+	 * resolution-invariant (original-map) pixels — the same coordinates shown in the SubMapDialog spinners.
+	 */
+	public static class SubMapInfo implements java.io.Serializable
+	{
+		private static final long serialVersionUID = 1L;
+
+		/** File name (not full path) of the original map the sub-map was created from, or null if that map had not been saved. */
+		public String originalFileName;
+		public double selectionX;
+		public double selectionY;
+		public double selectionWidth;
+		public double selectionHeight;
+		/** The sub-map's detail (world size), as actually used after clamping. */
+		public int worldSize;
+		public long randomSeed;
+		/** True if icons and rivers were redistributed for the sub-map's detail; false if they were matched to the source detail. */
+		public boolean redistributeIconsAndRivers;
+
+		@SuppressWarnings("unchecked")
+		public JSONObject toJson()
+		{
+			JSONObject obj = new JSONObject();
+			if (originalFileName != null)
+			{
+				obj.put("originalFileName", originalFileName);
+			}
+			obj.put("selectionX", selectionX);
+			obj.put("selectionY", selectionY);
+			obj.put("selectionWidth", selectionWidth);
+			obj.put("selectionHeight", selectionHeight);
+			obj.put("worldSize", worldSize);
+			obj.put("randomSeed", randomSeed);
+			obj.put("redistributeIconsAndRivers", redistributeIconsAndRivers);
+			return obj;
+		}
+
+		public static SubMapInfo fromJson(JSONObject obj)
+		{
+			SubMapInfo info = new SubMapInfo();
+			info.originalFileName = (String) obj.get("originalFileName");
+			info.selectionX = ((Number) obj.get("selectionX")).doubleValue();
+			info.selectionY = ((Number) obj.get("selectionY")).doubleValue();
+			info.selectionWidth = ((Number) obj.get("selectionWidth")).doubleValue();
+			info.selectionHeight = ((Number) obj.get("selectionHeight")).doubleValue();
+			info.worldSize = ((Number) obj.get("worldSize")).intValue();
+			info.randomSeed = ((Number) obj.get("randomSeed")).longValue();
+			info.redistributeIconsAndRivers = (boolean) obj.get("redistributeIconsAndRivers");
+			return info;
+		}
 	}
 
 	public enum LineStyle

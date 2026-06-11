@@ -340,6 +340,8 @@ public class SettingsGenerator
 		settings.edits = new MapEdits();
 		settings.imageExportPath = null;
 		settings.heightmapExportPath = null;
+		// A brand new full-size map is not a sub-map, even if the theme came from one.
+		settings.subMapInfo = null;
 		// Randomize only land seed
 		settings.randomSeed = Helper.safeAbs(new Random().nextInt());
 		// Separately randomize text seed for new names

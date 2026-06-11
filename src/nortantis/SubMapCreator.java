@@ -52,6 +52,12 @@ public class SubMapCreator
 	public static MapSettings createSubMapSettings(MapSettings originalSettings, WorldGraph originalGraph, Rectangle selectionBoundsRI, int subMapWorldSize, double originalResolution, long seed,
 			boolean redistributeIconsAndRivers)
 	{
+		return createSubMapSettings(originalSettings, originalGraph, selectionBoundsRI, subMapWorldSize, originalResolution, seed, redistributeIconsAndRivers, null);
+	}
+
+	public static MapSettings createSubMapSettings(MapSettings originalSettings, WorldGraph originalGraph, Rectangle selectionBoundsRI, int subMapWorldSize, double originalResolution, long seed,
+			boolean redistributeIconsAndRivers, String originalFileName)
+	{
 		// Compute new dimensions and world size.
 		// The largest dimension of the sub-map matches the largest dimension of the original map.
 		// Whichever axis of the selection box is larger gets that max value; the other is scaled proportionally.
@@ -85,6 +91,19 @@ public class SubMapCreator
 		newSettings.rightRotationCount = 0;
 		newSettings.flipHorizontally = false;
 		newSettings.flipVertically = false;
+
+		// Record provenance so the user can recreate this sub-map later. Assign unconditionally so that if the original map was itself a
+		// sub-map (carrying its own subMapInfo via deepCopyExceptEdits), it is overwritten with this sub-map's info.
+		MapSettings.SubMapInfo subMapInfo = new MapSettings.SubMapInfo();
+		subMapInfo.originalFileName = originalFileName;
+		subMapInfo.selectionX = selectionBoundsRI.x;
+		subMapInfo.selectionY = selectionBoundsRI.y;
+		subMapInfo.selectionWidth = selectionBoundsRI.width;
+		subMapInfo.selectionHeight = selectionBoundsRI.height;
+		subMapInfo.worldSize = newWorldSize;
+		subMapInfo.randomSeed = seed;
+		subMapInfo.redistributeIconsAndRivers = redistributeIconsAndRivers;
+		newSettings.subMapInfo = subMapInfo;
 
 		// Scale font sizes to keep text proportional to the visible features.
 		//
