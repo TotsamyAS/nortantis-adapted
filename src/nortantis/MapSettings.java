@@ -53,8 +53,8 @@ public class MapSettings implements Serializable
 	public static final Color defaultIconFillColor = Color.gray;
 	/**
 	 * The value of defaultIconFillColor before version 3.2. Retained because maps saved before 3.2 omitted an icon's (or icon type's) fill
-	 * color when it equaled the default of the time, so on load a visible icon left at the old default must be resolved back to this value to
-	 * preserve its color rather than picking up the new default.
+	 * color when it equaled the default of the time, so on load a visible icon left at the old default must be resolved back to this value
+	 * to preserve its color rather than picking up the new default.
 	 */
 	public static final Color defaultIconFillColorBeforeV3_2 = Color.create(155, 105, 49, (int) (255 * 0.7));
 	public static final HSBColor defaultIconFilterColor = new HSBColor(0, 0, 0, 0);
@@ -219,9 +219,9 @@ public class MapSettings implements Serializable
 	public boolean drawVoronoiGridOverlayOnlyOnLand = true;
 
 	/**
-	 * Provenance for sub-maps: records the inputs used to create this sub-map (original map file name, selection box, detail, icon/river mode,
-	 * and seed) so the user can recreate it later. Null for maps that are not sub-maps. Its presence is what defines a settings object as a
-	 * sub-map.
+	 * Provenance for sub-maps: records the inputs used to create this sub-map (original map file name, selection box, detail, icon/river
+	 * mode, and seed) so the user can recreate it later. Null for maps that are not sub-maps. Its presence is what defines a settings
+	 * object as a sub-map.
 	 */
 	public SubMapInfo subMapInfo;
 
@@ -498,8 +498,10 @@ public class MapSettings implements Serializable
 				IconType key = entry.getKey();
 				Color value = entry.getValue();
 
-				// Only persist the type's fill color when it is actually shown for that type or it differs from the default. Otherwise leave
-				// it out so it tracks defaultIconFillColor, mirroring how individual icons are saved. This lets a later change to the default
+				// Only persist the type's fill color when it is actually shown for that type or it differs from the default. Otherwise
+				// leave
+				// it out so it tracks defaultIconFillColor, mirroring how individual icons are saved. This lets a later change to the
+				// default
 				// take effect for types that aren't filling with a color.
 				if (getFillWithColorForType(key) || !value.equals(defaultIconFillColor))
 				{
@@ -737,9 +739,12 @@ public class MapSettings implements Serializable
 			{
 				iconObj.put("density", icon.density);
 			}
-			// Only persist the fill color when it is actually shown (fillWithColor) or it differs from the default. A hidden default color is
-			// left out so it tracks defaultIconFillColor, which keeps files small and lets a later change to the default take effect for icons
-			// that aren't displaying a color. A shown default color is written explicitly so changing the default won't alter existing maps.
+			// Only persist the fill color when it is actually shown (fillWithColor) or it differs from the default. A hidden default color
+			// is
+			// left out so it tracks defaultIconFillColor, which keeps files small and lets a later change to the default take effect for
+			// icons
+			// that aren't displaying a color. A shown default color is written explicitly so changing the default won't alter existing
+			// maps.
 			if (icon.fillColor != null && (icon.fillWithColor || !icon.fillColor.equals(defaultIconFillColor)))
 			{
 				iconObj.put("color", colorToString(icon.fillColor));
@@ -1484,9 +1489,9 @@ public class MapSettings implements Serializable
 
 	/**
 	 * defaultIconFillColor changed in version 3.2. Per-type fill colors are stored explicitly for every type in older maps, so without this
-	 * a type that was left at the old default would stay frozen at it. Release any per-type fill color that was at the old default and isn't
-	 * being shown so it tracks the new default. Types the user actually colored, or that have fill enabled, are left untouched. Individual
-	 * icons are handled inline in parseIconEdits.
+	 * a type that was left at the old default would stay frozen at it. Release any per-type fill color that was at the old default and
+	 * isn't being shown so it tracks the new default. Types the user actually colored, or that have fill enabled, are left untouched.
+	 * Individual icons are handled inline in parseIconEdits.
 	 */
 	private void runConversionForIconFillColorDefaultChange()
 	{
@@ -1573,8 +1578,10 @@ public class MapSettings implements Serializable
 				if (iconFillColorsByType.containsKey(iconType))
 				{
 					Color color = iconFillColorsByType.get(iconType);
-					// This conversion only runs for maps old enough (<= 3.14) to predate per-type fill colors, so every type's color here was
-					// just populated with the current defaultIconFillColor above (these files have no stored iconColorsByType). Compare against
+					// This conversion only runs for maps old enough (<= 3.14) to predate per-type fill colors, so every type's color here
+					// was
+					// just populated with the current defaultIconFillColor above (these files have no stored iconColorsByType). Compare
+					// against
 					// that same current default so a populated default is correctly read as "not filling" - otherwise every icon would fill
 					// with the default color. transparentBlack was the even-older "no fill" sentinel.
 					fillWithColorByType.put(iconType, !color.equals(Color.transparentBlack) && !color.equals(defaultIconFillColor));
@@ -2024,7 +2031,8 @@ public class MapSettings implements Serializable
 			else if (fillWithColor && !isVersionGreaterThanOrEqualTo(version, "3.2"))
 			{
 				// The color was omitted, which means it equaled the default when the file was saved. For maps saved before 3.2 (when the
-				// default fill color changed) a shown color was displaying the old default, so resolve it back to that to preserve the icon's
+				// default fill color changed) a shown color was displaying the old default, so resolve it back to that to preserve the
+				// icon's
 				// appearance. A hidden omitted color falls through to the current default below so it tracks the new default.
 				fillColor = defaultIconFillColorBeforeV3_2;
 			}

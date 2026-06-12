@@ -20,12 +20,13 @@ import java.util.Objects;
  * matching control points to corner locations by distance.
  *
  * <p>
- * {@link #getCornerIndexAnchor()} optionally anchors <em>this node's location</em> to a specific {@link nortantis.graph.voronoi.Corner#index
- * Voronoi corner}. It is set on a freehand river's terminal node when that node is a mouth sitting exactly on a coastline (or lakeshore)
- * corner. Because coastline smoothing moves corners, an unanchored mouth would be left stranded on land when the coast shifts (e.g. on a
- * line-style change); {@link nortantis.RiverDrawer#resyncRiverNodeLocationsToGraph} snaps an anchored node back onto its corner's current
- * location so the mouth stays on the drawn coast. Unlike {@link #getEdgeIndexToNext()} (which describes the segment <em>to the next</em>
- * node), this anchors the node itself. {@link #CORNER_INDEX_NONE} means the node is not anchored.
+ * {@link #getCornerIndexAnchor()} optionally anchors <em>this node's location</em> to a specific
+ * {@link nortantis.graph.voronoi.Corner#index Voronoi corner}. It is set on a freehand river's terminal node when that node is a mouth
+ * sitting exactly on a coastline (or lakeshore) corner. Because coastline smoothing moves corners, an unanchored mouth would be left
+ * stranded on land when the coast shifts (e.g. on a line-style change); {@link nortantis.RiverDrawer#resyncRiverNodeLocationsToGraph} snaps
+ * an anchored node back onto its corner's current location so the mouth stays on the drawn coast. Unlike {@link #getEdgeIndexToNext()}
+ * (which describes the segment <em>to the next</em> node), this anchors the node itself. {@link #CORNER_INDEX_NONE} means the node is not
+ * anchored.
  */
 public final class RiverPathNode implements PathNode
 {
@@ -88,8 +89,8 @@ public final class RiverPathNode implements PathNode
 	}
 
 	/**
-	 * Voronoi corner index this node's location is anchored to, or {@link #CORNER_INDEX_NONE} if the node is not anchored. Set on a freehand
-	 * mouth node that ends exactly on a coastline/lakeshore corner so it tracks the corner across coastline smoothing.
+	 * Voronoi corner index this node's location is anchored to, or {@link #CORNER_INDEX_NONE} if the node is not anchored. Set on a
+	 * freehand mouth node that ends exactly on a coastline/lakeshore corner so it tracks the corner across coastline smoothing.
 	 */
 	public int getCornerIndexAnchor()
 	{
@@ -114,14 +115,14 @@ public final class RiverPathNode implements PathNode
 			return false;
 		}
 		RiverPathNode other = (RiverPathNode) obj;
-		return widthLevelToNext == other.widthLevelToNext && seedToNext == other.seedToNext && edgeIndexToNext == other.edgeIndexToNext
-				&& cornerIndexAnchor == other.cornerIndexAnchor && Objects.equals(loc, other.loc);
+		return widthLevelToNext == other.widthLevelToNext && seedToNext == other.seedToNext && edgeIndexToNext == other.edgeIndexToNext && cornerIndexAnchor == other.cornerIndexAnchor
+				&& Objects.equals(loc, other.loc);
 	}
 
 	@Override
 	public String toString()
 	{
-		return "RiverPathNode[loc=" + loc + ", widthToNext=" + widthLevelToNext + ", seedToNext=" + seedToNext + ", edgeIndexToNext="
-				+ edgeIndexToNext + ", cornerIndexAnchor=" + cornerIndexAnchor + "]";
+		return "RiverPathNode[loc=" + loc + ", widthToNext=" + widthLevelToNext + ", seedToNext=" + seedToNext + ", edgeIndexToNext=" + edgeIndexToNext + ", cornerIndexAnchor=" + cornerIndexAnchor
+				+ "]";
 	}
 }

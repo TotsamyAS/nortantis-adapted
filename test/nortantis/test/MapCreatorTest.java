@@ -769,9 +769,9 @@ public class MapCreatorTest
 	}
 
 	/**
-	 * Creates a sub-map of the upper-right corner of simpleSmallWorld at the source map's detail level - the "Match source detail" option in
-	 * SubMapDialog, which keeps the same polygon density and copies icons/rivers/text from the source rather than redistributing them across a
-	 * new polygon grid. The rendered result is compared per-pixel to its expected image.
+	 * Creates a sub-map of the upper-right corner of simpleSmallWorld at the source map's detail level - the "Match source detail" option
+	 * in SubMapDialog, which keeps the same polygon density and copies icons/rivers/text from the source rather than redistributing them
+	 * across a new polygon grid. The rendered result is compared per-pixel to its expected image.
 	 */
 	@Test
 	public void subMapOfSimpleSmallWorldUpperRightAtSourceDetail()
@@ -802,9 +802,9 @@ public class MapCreatorTest
 
 	/**
 	 * Creates a sub-map of the upper-right corner of simpleSmallWorld using the "Choose" detail option in SubMapDialog at a polygon count
-	 * approximately equal to the source map's detail level. The Choose slider snaps to even multiples of 1000, so this simulates the dialog by
-	 * rounding the source-detail world size to the nearest 1000 ("approximately" source detail). Unlike "Match source detail", Choose mode
-	 * redistributes icons/rivers/text across the new polygon grid. The rendered result is compared per-pixel to its expected image.
+	 * approximately equal to the source map's detail level. The Choose slider snaps to even multiples of 1000, so this simulates the dialog
+	 * by rounding the source-detail world size to the nearest 1000 ("approximately" source detail). Unlike "Match source detail", Choose
+	 * mode redistributes icons/rivers/text across the new polygon grid. The rendered result is compared per-pixel to its expected image.
 	 */
 	@Test
 	public void subMapOfSimpleSmallWorldUpperRightAtChosenSourceLikeDetail()
@@ -816,7 +816,8 @@ public class MapCreatorTest
 		Rectangle selectionBoundsRI = new Rectangle(2048, 0, 2048, 2048);
 
 		int matchWorldSize = SubMapDialog.computeDefaultWorldSize(originalSettings, selectionBoundsRI);
-		// The Choose slider snaps to multiples of 1000 (SubMapDialog's minor tick spacing, with a minimum of 1000), so simulate the dialog by
+		// The Choose slider snaps to multiples of 1000 (SubMapDialog's minor tick spacing, with a minimum of 1000), so simulate the dialog
+		// by
 		// rounding the source-detail world size to the nearest 1000. This is the "approximately source detail" Choose-mode case.
 		int worldSize = (int) Math.clamp(Math.round(matchWorldSize / 1000.0) * 1000, 1000, SettingsGenerator.maxWorldSize);
 
@@ -841,8 +842,8 @@ public class MapCreatorTest
 	 * and compares the rendered result per-pixel to its expected image. A river empties into that lake in the source map; when the lake
 	 * disappears, the river's mouth must end inland where the lake was, rather than being re-routed across many polygons to the distant
 	 * ocean. This is a regression test for a bug where the mouth-to-water search was unbounded, so a mouth whose water body vanished was
-	 * connected to an unrelated, far-away body of water — inventing a long river that spanned a large part of the sub-map. The search is now
-	 * bounded to a few Voronoi centers, so such a mouth simply ends inland.
+	 * connected to an unrelated, far-away body of water — inventing a long river that spanned a large part of the sub-map. The search is
+	 * now bounded to a few Voronoi centers, so such a mouth simply ends inland.
 	 */
 	@Test
 	public void subMapOfSimpleSmallWorldWithDisappearingLake()

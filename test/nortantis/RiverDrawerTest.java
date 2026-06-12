@@ -260,8 +260,8 @@ public class RiverDrawerTest
 	}
 
 	/**
-	 * The user's concern: adding a one-segment polygon river that connects a freehand river to a coastline corner. When that segment's
-	 * edge is filtered out (it is a coast edge), LandWaterTool builds a synthetic bridge whose coast end is a freehand node
+	 * The user's concern: adding a one-segment polygon river that connects a freehand river to a coastline corner. When that segment's edge
+	 * is filtered out (it is a coast edge), LandWaterTool builds a synthetic bridge whose coast end is a freehand node
 	 * ({@link RiverPathNode#EDGE_INDEX_NONE}) sitting exactly on the corner. This verifies the resync pass anchors that node to the corner
 	 * so it tracks the coast across smoothing (rather than being left unanchored and stranded on a later line-style change).
 	 */
@@ -305,8 +305,7 @@ public class RiverDrawerTest
 
 		RiverDrawer.resyncRiverNodeLocationsToGraph(rivers, graph, resolution);
 
-		assertEquals(mouthCorner.index, river.nodes.get(0).getCornerIndexAnchor(),
-				"A freehand mouth ending exactly on a coast corner should be anchored to that corner");
+		assertEquals(mouthCorner.index, river.nodes.get(0).getCornerIndexAnchor(), "A freehand mouth ending exactly on a coast corner should be anchored to that corner");
 		assertEquals(RiverPathNode.CORNER_INDEX_NONE, river.nodes.get(1).getCornerIndexAnchor(), "The inland endpoint should not be anchored");
 	}
 
@@ -342,8 +341,7 @@ public class RiverDrawerTest
 
 		RiverDrawer.resyncRiverNodeLocationsToGraph(rivers, graph, resolution);
 
-		assertEquals(RiverPathNode.CORNER_INDEX_NONE, river.nodes.get(0).getCornerIndexAnchor(),
-				"A freehand mouth that ends near but not exactly on a coast corner must not be anchored");
+		assertEquals(RiverPathNode.CORNER_INDEX_NONE, river.nodes.get(0).getCornerIndexAnchor(), "A freehand mouth that ends near but not exactly on a coast corner must not be anchored");
 	}
 
 }

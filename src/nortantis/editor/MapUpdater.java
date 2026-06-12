@@ -27,6 +27,12 @@ import java.util.stream.Collectors;
 public abstract class MapUpdater
 {
 	private boolean isMapBeingDrawn;
+	/**
+	 * City icons dropped from the most recent full draw because they landed on water (see
+	 * {@link MapCreator#getCitiesRemovedForTouchingWater()}). Set just before {@link #onFinishedDrawingFull} so subclasses that care (the
+	 * sub-map preview) can read it there via {@link #getCitiesRemovedForTouchingWaterFromLastFullDraw()}; empty when no cities were lost.
+	 */
+	private List<IconDrawer.CityIconRemovedForWater> citiesRemovedForTouchingWaterFromLastFullDraw = new ArrayList<>();
 	private ReentrantLock drawLock;
 	private ReentrantLock interactionsLock;
 	public MapParts mapParts;
@@ -661,6 +667,7 @@ public abstract class MapUpdater
 							}
 							else
 							{
+								citiesRemovedForTouchingWaterFromLastFullDraw = result.citiesRemovedForTouchingWater;
 								onFinishedDrawingFull(map, anotherDrawIsQueued, scaledBorderWidth, warningMessages);
 							}
 						}
@@ -761,7 +768,9 @@ public abstract class MapUpdater
 		}
 
 		System.gc();
-		return new UpdateResult(map, null, currentMapCreator.getWarningMessages());
+		UpdateResult result = new UpdateResult(map, null, currentMapCreator.getWarningMessages());
+		result.citiesRemovedForTouchingWater = currentMapCreator.getCitiesRemovedForTouchingWater();
+		return result;
 	}
 
 	private void addLowPriorityCentersToRedraw(Map<Integer, Center> toAdd)
@@ -777,6 +786,8 @@ public abstract class MapUpdater
 		public Image map;
 		public IntRectangle replaceBounds;
 		public List<String> warningMessages;
+		/** City icons dropped because they landed on water (full draws only); empty otherwise. */
+		public List<IconDrawer.CityIconRemovedForWater> citiesRemovedForTouchingWater = new ArrayList<>();
 		public Exception exception;
 
 		public UpdateResult(Image map, IntRectangle replaceBounds, List<String> warningMessages)
@@ -802,6 +813,15 @@ public abstract class MapUpdater
 	}
 
 	public abstract MapSettings getSettingsFromGUI();
+
+	/**
+	 * Returns the city icons dropped from the most recent full draw because they landed on water (duplicates kept, so the size is the number
+	 * of cities lost). Valid to call from within {@link #onFinishedDrawingFull}. Empty when no cities were lost.
+	 */
+	protected List<IconDrawer.CityIconRemovedForWater> getCitiesRemovedForTouchingWaterFromLastFullDraw()
+	{
+		return citiesRemovedForTouchingWaterFromLastFullDraw;
+	}
 
 	protected abstract void onFinishedDrawingFull(Image map, boolean anotherDrawIsQueued, int borderPaddingAsDrawn, List<String> warningMessages);
 

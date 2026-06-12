@@ -266,8 +266,10 @@ public class MainWindow extends JFrame implements ILoggerTarget
 		helpMenu.setEnabled(enabled);
 
 		// Disabling a JMenu greys it out but does not suppress its items' keyboard accelerators - those fire from the focused-window input
-		// map regardless of the parent menu's enabled state. Disable at the item level the two whose accelerators would load a different map,
-		// File -> New (Ctrl+N) and File -> Open (Ctrl+O), so they are fully blocked while the menu bar is locked. The other accelerator items
+		// map regardless of the parent menu's enabled state. Disable at the item level the two whose accelerators would load a different
+		// map,
+		// File -> New (Ctrl+N) and File -> Open (Ctrl+O), so they are fully blocked while the menu bar is locked. The other accelerator
+		// items
 		// (Save, Refresh, Undo, Redo, Search) are already disabled by enableOrDisableFieldsThatRequireMap during the sub-map dialog.
 		newRandomMapMenuItem.setEnabled(enabled);
 		loadSettingsMenuItem.setEnabled(enabled);
@@ -1446,9 +1448,9 @@ public class MainWindow extends JFrame implements ILoggerTarget
 	}
 
 	/**
-	 * Shows info about the current map: its dimensions, aspect ratio, and world size. When the map is a sub-map, the original map, selection
-	 * box, detail, icon/river mode, and seed used to create it are also shown so the user can recreate it. The text is selectable and can be
-	 * copied to the clipboard.
+	 * Shows info about the current map: its dimensions, aspect ratio, and world size. When the map is a sub-map, the original map,
+	 * selection box, detail, icon/river mode, and seed used to create it are also shown so the user can recreate it. The text is selectable
+	 * and can be copied to the clipboard.
 	 */
 	private void showMapInfoDialog()
 	{
@@ -1483,9 +1485,7 @@ public class MainWindow extends JFrame implements ILoggerTarget
 			// Regular map: show the aspect ratio using the same dimension labels as NewSettingsDialog (e.g. "16 by 9 (4096 x 2304)"), plus
 			// the world size. Custom dimensions aren't a named preset, so spell out the actual size after the "Custom" label.
 			GeneratedDimension dimension = GeneratedDimension.fromDimensions(settings.generatedWidth, settings.generatedHeight);
-			String dimensionDisplay = dimension == GeneratedDimension.Custom
-					? dimension.displayName() + " (" + settings.generatedWidth + " × " + settings.generatedHeight + ")"
-					: dimension.toString();
+			String dimensionDisplay = dimension == GeneratedDimension.Custom ? dimension.displayName() + " (" + settings.generatedWidth + " × " + settings.generatedHeight + ")" : dimension.toString();
 			text.append(Translation.get("mapInfo.aspectRatio", dimensionDisplay)).append("\n");
 			text.append(Translation.get("mapInfo.worldSize", Integer.toString(settings.worldSize)));
 			scrollPanePreferredSize = new Dimension(300, 50);

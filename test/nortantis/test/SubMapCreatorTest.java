@@ -76,8 +76,8 @@ public class SubMapCreatorTest
 	}
 
 	/**
-	 * Verifies that createSubMapSettings records sub-map provenance (original file name, selection box, detail, icon/river mode, and seed) so
-	 * the user can recreate the sub-map, and that this info survives a save/load round-trip through the .nort file.
+	 * Verifies that createSubMapSettings records sub-map provenance (original file name, selection box, detail, icon/river mode, and seed)
+	 * so the user can recreate the sub-map, and that this info survives a save/load round-trip through the .nort file.
 	 */
 	@Test
 	public void subMapInfoIsRecordedAndRoundTrips() throws Exception
@@ -93,8 +93,7 @@ public class SubMapCreatorTest
 		long seed = 1962328436L;
 		String originalFileName = "riversForSubMaps.nort";
 
-		MapSettings subMapSettings = SubMapCreator.createSubMapSettings(originalSettings, originalGraph, selectionBoundsRI, worldSize, originalSettings.resolution, seed, false,
-				originalFileName);
+		MapSettings subMapSettings = SubMapCreator.createSubMapSettings(originalSettings, originalGraph, selectionBoundsRI, worldSize, originalSettings.resolution, seed, false, originalFileName);
 
 		assertSubMapInfoMatches(subMapSettings.subMapInfo, originalFileName, selectionBoundsRI, worldSize, seed, false, "in-memory");
 
@@ -117,8 +116,8 @@ public class SubMapCreatorTest
 		}
 	}
 
-	private static void assertSubMapInfoMatches(MapSettings.SubMapInfo info, String originalFileName, Rectangle selectionBoundsRI, int worldSize, long seed,
-			boolean redistributeIconsAndRivers, String context)
+	private static void assertSubMapInfoMatches(MapSettings.SubMapInfo info, String originalFileName, Rectangle selectionBoundsRI, int worldSize, long seed, boolean redistributeIconsAndRivers,
+			String context)
 	{
 		assertNotNull(info, "Sub-map should carry provenance info (" + context + ")");
 		assertEquals(originalFileName, info.originalFileName, context);
@@ -662,15 +661,15 @@ public class SubMapCreatorTest
 	}
 
 	/**
-	 * Regression test for a bug where, at "match source detail" ({@code redistributeIcons == false}), rivers from a <em>generated</em> source
-	 * map fail to reach the ocean in the sub-map even though the connector code (added for the match-source-detail case) is supposed to extend
-	 * such mouths to the redrawn coast. The map {@code riversInSubmapsMeetWater.nort} was reduced by hand to exactly two rivers, both of which
-	 * end at the ocean in the source. The bug reproduces with generated rivers but not with hand-drawn ones, so this captures the generated
-	 * case.
+	 * Regression test for a bug where, at "match source detail" ({@code redistributeIcons == false}), rivers from a <em>generated</em>
+	 * source map fail to reach the ocean in the sub-map even though the connector code (added for the match-source-detail case) is supposed
+	 * to extend such mouths to the redrawn coast. The map {@code riversInSubmapsMeetWater.nort} was reduced by hand to exactly two rivers,
+	 * both of which end at the ocean in the source. The bug reproduces with generated rivers but not with hand-drawn ones, so this captures
+	 * the generated case.
 	 * <p>
-	 * The check mirrors {@link #subMapExactCopyRiverMouthsReachRedrawnCoast}: each source river endpoint that is a water mouth in the source
-	 * and lies inside the selection is mapped to the sub-map, and the nearest sub-map river endpoint must reach the redrawn water per
-	 * {@link SubMapCreator#doesPointReachWater}.
+	 * The check mirrors {@link #subMapExactCopyRiverMouthsReachRedrawnCoast}: each source river endpoint that is a water mouth in the
+	 * source and lies inside the selection is mapped to the sub-map, and the nearest sub-map river endpoint must reach the redrawn water
+	 * per {@link SubMapCreator#doesPointReachWater}.
 	 * </p>
 	 */
 	@Test
@@ -748,14 +747,15 @@ public class SubMapCreatorTest
 	 * resulting {@link MapSettings} should contain exactly one of each. The selection is far below the minimum polygon count for "Match
 	 * source detail", which is why redistribution is forced.
 	 * <p>
-	 * This is a regression test for a bug where these icons vanished only in the editor (not in earlier single-resolution tests). The editor
-	 * builds the source graph at the display quality scale but {@code getSettingsFromGUI} sets {@code originalSettings.resolution} to the
-	 * (different) export resolution, while {@code SubMapDialog} passes the display scale as {@code originalResolution}. {@code SubMapCreator}
-	 * built its source {@code IconDrawer} from {@code originalSettings}, so city/decoration draw bounds were scaled by the export resolution
-	 * but converted back to RI with the display resolution — landing outside the selection, so {@code doesIconOverlapSelection} rejected them
-	 * all. This test reproduces that by building the graph at one resolution and then setting {@code originalSettings.resolution} to a
-	 * different value before calling {@code createSubMapSettings} (using the editor values that triggered the report: display 0.75, export
-	 * 0.25). The icons are checked both in the in-memory result and after a JSON round-trip.
+	 * This is a regression test for a bug where these icons vanished only in the editor (not in earlier single-resolution tests). The
+	 * editor builds the source graph at the display quality scale but {@code getSettingsFromGUI} sets {@code originalSettings.resolution}
+	 * to the (different) export resolution, while {@code SubMapDialog} passes the display scale as {@code originalResolution}.
+	 * {@code SubMapCreator} built its source {@code IconDrawer} from {@code originalSettings}, so city/decoration draw bounds were scaled
+	 * by the export resolution but converted back to RI with the display resolution — landing outside the selection, so
+	 * {@code doesIconOverlapSelection} rejected them all. This test reproduces that by building the graph at one resolution and then
+	 * setting {@code originalSettings.resolution} to a different value before calling {@code createSubMapSettings} (using the editor values
+	 * that triggered the report: display 0.75, export 0.25). The icons are checked both in the in-memory result and after a JSON
+	 * round-trip.
 	 * </p>
 	 */
 	@Test
@@ -772,7 +772,8 @@ public class SubMapCreatorTest
 		originalSettings.resolution = displayResolution;
 		WorldGraph originalGraph = MapCreator.createGraphForUnitTests(originalSettings);
 
-		// getSettingsFromGUI overwrites originalSettings.resolution with the export resolution, which can differ from the display scale. Set
+		// getSettingsFromGUI overwrites originalSettings.resolution with the export resolution, which can differ from the display scale.
+		// Set
 		// it here so originalSettings.resolution != originalResolution, exactly as it is in the editor when the bug appears.
 		originalSettings.resolution = 0.25;
 
@@ -782,8 +783,7 @@ public class SubMapCreatorTest
 		// This selection is far too small to reach the minimum polygon count, so "Match source detail" is unavailable and the sub-map must
 		// be redistributed. computeDefaultWorldSize clamps the 1x polygon count up to that minimum, which we verify mirrors the dialog's
 		// decision to force redistribution.
-		double oneXWorldSize = originalSettings.worldSize * (selectionBoundsRI.width * selectionBoundsRI.height)
-				/ (originalSettings.generatedWidth * (double) originalSettings.generatedHeight);
+		double oneXWorldSize = originalSettings.worldSize * (selectionBoundsRI.width * selectionBoundsRI.height) / (originalSettings.generatedWidth * (double) originalSettings.generatedHeight);
 		int worldSize = SubMapDialog.computeDefaultWorldSize(originalSettings, selectionBoundsRI);
 		boolean redistributeIconsAndRivers = oneXWorldSize < worldSize;
 		assertTrue(redistributeIconsAndRivers, "Selection should be too small for 'Match source detail', forcing redistribution");
@@ -840,15 +840,15 @@ public class SubMapCreatorTest
 	}
 
 	/**
-	 * Verifies that coastline cities in a redistributed sub-map are actually drawn (not just present in the edits). The selection contains a
-	 * "town with castle" and a "town on two hills" (both group "flat") near the coast; both must appear in the rendered map.
+	 * Verifies that coastline cities in a redistributed sub-map are actually drawn (not just present in the edits). The selection contains
+	 * a "town with castle" and a "town on two hills" (both group "flat") near the coast; both must appear in the rendered map.
 	 * <p>
 	 * Regression test for a bug where these cities vanished from the sub-map. A redistributed sub-map stores its mountains/hills/trees as
 	 * {@code CenterIcon}s, which {@link IconDrawer#addOrUpdateIconsFromEdits} converts to free icons on the first draw. That conversion
-	 * returned a non-null bounds, and on a full draw (where {@code replaceBounds} is null) the bounds were used as a draw filter, so free-icon
-	 * cities lying outside the converted-terrain bounding box were skipped — coastal cities (away from the inland mountains) fell outside it.
-	 * The icons remained in {@code edits.freeIcons} (so a membership check passed falsely); they were only missing from the draw tasks. This
-	 * test asserts the cities are in the {@link IconDrawer}'s draw tasks after a full draw, which catches the skip.
+	 * returned a non-null bounds, and on a full draw (where {@code replaceBounds} is null) the bounds were used as a draw filter, so
+	 * free-icon cities lying outside the converted-terrain bounding box were skipped — coastal cities (away from the inland mountains) fell
+	 * outside it. The icons remained in {@code edits.freeIcons} (so a membership check passed falsely); they were only missing from the
+	 * draw tasks. This test asserts the cities are in the {@link IconDrawer}'s draw tasks after a full draw, which catches the skip.
 	 * </p>
 	 */
 	@Test
@@ -867,8 +867,7 @@ public class SubMapCreatorTest
 		Rectangle selectionBoundsRI = new Rectangle(410, 1710, 787, 621);
 
 		// Selection too small for "Match source detail", so icons and rivers are redistributed.
-		double oneXWorldSize = originalSettings.worldSize * (selectionBoundsRI.width * selectionBoundsRI.height)
-				/ (originalSettings.generatedWidth * (double) originalSettings.generatedHeight);
+		double oneXWorldSize = originalSettings.worldSize * (selectionBoundsRI.width * selectionBoundsRI.height) / (originalSettings.generatedWidth * (double) originalSettings.generatedHeight);
 		int worldSize = SubMapDialog.computeDefaultWorldSize(originalSettings, selectionBoundsRI);
 		boolean redistributeIconsAndRivers = oneXWorldSize < worldSize;
 		assertTrue(redistributeIconsAndRivers, "Selection should be too small for 'Match source detail', forcing redistribution");
@@ -894,8 +893,9 @@ public class SubMapCreatorTest
 
 	/**
 	 * Asserts that some icon draw task covers {@code cityLocationRI} (the city's resolution-invariant position), i.e. the city icon was
-	 * actually queued to draw rather than skipped. Skipped icons stay in {@code edits.freeIcons} but produce no draw task, so this checks the
-	 * draw tasks, not edits membership. The cities sit away from the redistributed terrain icons, so a task covering this point is the city.
+	 * actually queued to draw rather than skipped. Skipped icons stay in {@code edits.freeIcons} but produce no draw task, so this checks
+	 * the draw tasks, not edits membership. The cities sit away from the redistributed terrain icons, so a task covering this point is the
+	 * city.
 	 */
 	private static void assertCityIsDrawn(List<IconDrawTask> drawTasks, MapSettings subMapSettings, String cityName, Point cityLocationRI)
 	{
@@ -1202,6 +1202,46 @@ public class SubMapCreatorTest
 			}
 		}
 		return found;
+	}
+
+	/**
+	 * Verifies that when a sub-map is made of an entire map that is densely packed with cities, the cities that land on water on the
+	 * sub-map's freshly generated grid are dropped from the draw and reported by {@link MapCreator#getCitiesRemovedForTouchingWater()} (so
+	 * the sub-map dialog can warn the user). The sub-map regenerates the whole map on a new Voronoi grid, so its coastline differs slightly
+	 * from the source; with so many cities, a large number end up over the redrawn water.
+	 */
+	@Test
+	public void subMapOfManyCitiesMapReportsManyCitiesOnWater() throws Exception
+	{
+		// Set to true to force this test to write its result map to the failed sub-maps folder, even when it passes.
+		boolean forceWrite = false;
+
+		MapSettings originalSettings = new MapSettings(Paths.get("unit test files", "map settings", "manyCitiesForSubMapWaterWarning.nort").toString());
+		originalSettings.resolution = 0.5;
+		WorldGraph originalGraph = MapCreator.createGraphForUnitTests(originalSettings);
+
+		// A sub-map of the entire map.
+		Rectangle selectionBoundsRI = new Rectangle(0, 0, originalSettings.generatedWidth, originalSettings.generatedHeight);
+		int worldSize = SubMapDialog.computeDefaultWorldSize(originalSettings, selectionBoundsRI);
+		double oneXWorldSize = originalSettings.worldSize * (selectionBoundsRI.width * selectionBoundsRI.height) / (originalSettings.generatedWidth * (double) originalSettings.generatedHeight);
+		boolean redistributeIconsAndRivers = oneXWorldSize < worldSize;
+
+		long seed = 12345L;
+		MapSettings subMapSettings = SubMapCreator.createSubMapSettings(originalSettings, originalGraph, selectionBoundsRI, worldSize, originalSettings.resolution, seed, redistributeIconsAndRivers);
+
+		MapCreator mapCreator = new MapCreator();
+		mapCreator.createMap(subMapSettings, null, new nortantis.editor.MapParts());
+		int count = mapCreator.getCitiesRemovedForTouchingWater().size();
+
+		if (forceWrite || forceWriteAllMaps)
+		{
+			saveFailedMap(subMapSettings, "subMapOfManyCitiesMapReportsManyCitiesOnWater");
+		}
+
+		// This selection and seed drop ~121 cities onto the redrawn water. Assert a high lower bound rather than the exact value so the test
+		// proves "many cities are reported" and catches a regression to near-zero, without being brittle to a few borderline coastal cities
+		// shifting across the water line.
+		assertTrue(count >= 50, "Expected many cities (>= 50) to land on water in a full-map sub-map of a city-dense map, but got " + count);
 	}
 
 }

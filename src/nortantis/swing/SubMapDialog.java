@@ -75,6 +75,12 @@ public class SubMapDialog
 	private JButton createButton;
 	private JSlider detailSlider;
 	private JProgressBar previewProgressBar;
+	/** Inline, wrap-capable warning shown under the preview when cities near the shore disappear onto water in the sub-map. */
+	private JTextArea citiesOnWaterWarningArea;
+	/** The text last shown in {@link #citiesOnWaterWarningArea} ("" when hidden), used to detect when the warning changed and the preview must be redrawn. */
+	private String lastCitiesOnWaterWarningText = "";
+	/** True while the next preview draw is the one-shot redraw requested because the warning changed the preview height, so it does not request yet another. */
+	private boolean isRedrawForWarning = false;
 	private Timer progressBarTimer;
 	/** Stable seed for the sub-map graph; generated once per step-2 session so re-draws produce the same Voronoi layout. */
 	private long subMapSeed;
@@ -160,7 +166,8 @@ public class SubMapDialog
 
 		// Lay the aspect ratio toggle buttons and the Rotate 90° checkbox out in a single horizontal row. A plain BoxLayout row is used
 		// (rather than SegmentedButtonWidget) so it reports a correct single-row height in this wide dialog: the widget's preferred-size
-		// heuristic is tuned for the narrow side panel and at pack() time would assume a narrow width, wrap the buttons to several rows, and
+		// heuristic is tuned for the narrow side panel and at pack() time would assume a narrow width, wrap the buttons to several rows,
+		// and
 		// reserve extra vertical space that shows up as a large empty gap once the dialog is displayed at its real (wide) size.
 		JPanel aspectRatioRow = new JPanel();
 		aspectRatioRow.setLayout(new BoxLayout(aspectRatioRow, BoxLayout.X_AXIS));
@@ -195,7 +202,8 @@ public class SubMapDialog
 		rotate90Checkbox.addActionListener(e ->
 		{
 			rotateAspectRatio90 = rotate90Checkbox.isSelected();
-			// Rotate the existing selection in place (swap width and height) so its area is preserved, rather than stretching one dimension.
+			// Rotate the existing selection in place (swap width and height) so its area is preserved, rather than stretching one
+			// dimension.
 			swapSelectionBoxDimensions();
 			applyAspectRatioSelection();
 		});
@@ -245,11 +253,13 @@ public class SubMapDialog
 			if (selBoundsRI != null && validateStep1Spinners() == null)
 			{
 				// Quantize the selection to whole RI pixels before it is used to build the sub-map. The box is captured from the mouse (and
-				// adjusted by the aspect-ratio presets) in sub-pixel RI coordinates, but the spinners only display — and the user only reasons
+				// adjusted by the aspect-ratio presets) in sub-pixel RI coordinates, but the spinners only display — and the user only
+				// reasons
 				// about — integer RI values. Building the sub-map from sub-pixel bounds makes two selections that look identical in the
 				// spinners produce slightly different sub-maps: every road and city is offset by ~1px (the sub-pixel shift magnified by the
 				// zoom), borderline coastline polygons flip between land and water, and icons appear or disappear as sample points cross
-				// center boundaries. Rounding the same way updateStep1SpinnersFromBox does makes the bounds used exactly equal the displayed
+				// center boundaries. Rounding the same way updateStep1SpinnersFromBox does makes the bounds used exactly equal the
+				// displayed
 				// values, so the same spinner values always reproduce the same sub-map. validateStep1Spinners has already confirmed the
 				// rounded values are in bounds.
 				selBoundsRI = roundToIntegerBounds(selBoundsRI);
@@ -425,9 +435,9 @@ public class SubMapDialog
 	}
 
 	/**
-	 * Returns {@code box} with each field rounded to the nearest whole RI pixel, matching exactly how
-	 * {@link #updateStep1SpinnersFromBox} rounds for display (so the snapped bounds equal the values shown in the spinners). Width and
-	 * height are floored at 1. Returns null if {@code box} is null.
+	 * Returns {@code box} with each field rounded to the nearest whole RI pixel, matching exactly how {@link #updateStep1SpinnersFromBox}
+	 * rounds for display (so the snapped bounds equal the values shown in the spinners). Width and height are floored at 1. Returns null if
+	 * {@code box} is null.
 	 */
 	private static Rectangle roundToIntegerBounds(Rectangle box)
 	{
@@ -502,8 +512,8 @@ public class SubMapDialog
 	}
 
 	/**
-	 * Sizes a multi-line HTML label so its preferred height matches the height it needs when laid out at the given display width. This keeps
-	 * the text from being clipped when it wraps at a width narrower than its natural single-line width.
+	 * Sizes a multi-line HTML label so its preferred height matches the height it needs when laid out at the given display width. This
+	 * keeps the text from being clipped when it wraps at a width narrower than its natural single-line width.
 	 */
 	private void fitMultiLineLabelToWidth(JLabel label, int width)
 	{
@@ -797,6 +807,24 @@ public class SubMapDialog
 
 		previewWrapper.add(previewContainer, BorderLayout.CENTER);
 
+		// Inline warning shown under the preview when shore-side cities disappear onto water in the sub-map. A JTextArea (styled to look like
+		// a label) is used so a long list of city file names wraps. It lives in the preview area's bottom slot and starts hidden. When it
+		// appears or disappears it takes height from (or returns it to) the preview, so onFinishedDrawingFull redraws the preview once at the
+		// new size; that does not loop because the redraw produces the same warning, leaving its size unchanged (see updateCitiesOnWaterWarning).
+		lastCitiesOnWaterWarningText = "";
+		isRedrawForWarning = false;
+		citiesOnWaterWarningArea = new JTextArea();
+		citiesOnWaterWarningArea.setEditable(false);
+		citiesOnWaterWarningArea.setFocusable(false);
+		citiesOnWaterWarningArea.setLineWrap(true);
+		citiesOnWaterWarningArea.setWrapStyleWord(true);
+		citiesOnWaterWarningArea.setOpaque(false);
+		citiesOnWaterWarningArea.setForeground(warningMessageColor);
+		citiesOnWaterWarningArea.setFont(UIManager.getFont("Label.font"));
+		citiesOnWaterWarningArea.setBorder(BorderFactory.createEmptyBorder(4, 0, 0, 0));
+		citiesOnWaterWarningArea.setVisible(false);
+		previewWrapper.add(citiesOnWaterWarningArea, BorderLayout.SOUTH);
+
 		mainPanel.add(previewWrapper, BorderLayout.CENTER);
 
 		// -- Bottom: progress bar + buttons --
@@ -907,7 +935,8 @@ public class SubMapDialog
 				try
 				{
 					boolean redistributeIconsAndRivers = customRadio != null && customRadio.isSelected();
-					MapSettings settings = SubMapCreator.createSubMapSettings(origSettings, origGraph, selBoundsRI, getSubmapWorldSize(), origResolution, subMapSeed, redistributeIconsAndRivers, origFileName);
+					MapSettings settings = SubMapCreator.createSubMapSettings(origSettings, origGraph, selBoundsRI, getSubmapWorldSize(), origResolution, subMapSeed, redistributeIconsAndRivers,
+							origFileName);
 					// Set resolution to 1.0 as a baseline; MapCreator.createMap will override it via
 					// Background.calcMapBoundsAndAdjustResolutionIfNeeded to fit the maxMapSize passed to the updater.
 					settings.resolution = 1.0;
@@ -934,15 +963,31 @@ public class SubMapDialog
 					previewPanel.setImage(AwtBridge.toBufferedImage(map));
 					previewPanel.setBorderPadding(borderPaddingAsDrawn);
 
+					boolean warningChanged = false;
 					if (!anotherDrawIsQueued)
 					{
 						enableOrDisableProgressBar(false);
+						// Only update the warning once the latest draw has settled, so it reflects what is actually shown.
+						warningChanged = updateCitiesOnWaterWarning(getCitiesRemovedForTouchingWaterFromLastFullDraw());
 					}
 
 					if (step2Dialog != null)
 					{
 						step2Dialog.revalidate();
 						step2Dialog.repaint();
+					}
+
+					// Showing or hiding the warning changes the preview area's height, so the map just drawn no longer fits it (its bottom
+					// would be covered by the warning, or leave a gap). Redraw once at the new size, the same way a window resize does. The
+					// isRedrawForWarning latch makes this provably loop-free: a warning-triggered redraw is never allowed to trigger another,
+					// so at most one extra draw happens. (In practice the extra draw reproduces the same warning and would not re-trigger
+					// anyway, because whether a city lands on water is detected resolution-independently.)
+					boolean wasRedrawForWarning = isRedrawForWarning;
+					isRedrawForWarning = false;
+					if (warningChanged && !wasRedrawForWarning)
+					{
+						isRedrawForWarning = true;
+						triggerPreviewRedraw();
 					}
 				});
 			}
@@ -1027,6 +1072,61 @@ public class SubMapDialog
 		}
 	}
 
+	/**
+	 * Shows or hides the inline warning listing cities that disappeared onto water in the sub-map. {@code removedCities} is the dropped
+	 * cities (duplicates kept, so its size is the number of cities lost); the warning reports that count and the distinct cities — each as
+	 * its quoted file name with its group and art pack — worded singular when only one city was lost. An empty or null list hides the
+	 * warning.
+	 *
+	 * @return true if the displayed warning text changed (shown, hidden, or different text) from the previous call. The caller uses this to
+	 *         redraw the preview once at the new size, since showing or hiding the warning changes the preview area's height.
+	 */
+	private boolean updateCitiesOnWaterWarning(List<IconDrawer.CityIconRemovedForWater> removedCities)
+	{
+		if (citiesOnWaterWarningArea == null)
+		{
+			return false;
+		}
+		String newText;
+		if (removedCities == null || removedCities.isEmpty())
+		{
+			newText = "";
+		}
+		else
+		{
+			// Distinct entries (a sub-map can drop several cities that use the same icon), each formatted as its quoted name plus its group
+			// and art pack. Sorted for a stable order.
+			java.util.SortedSet<String> distinctEntries = new java.util.TreeSet<>();
+			for (IconDrawer.CityIconRemovedForWater city : removedCities)
+			{
+				distinctEntries.add(Translation.get("subMapDialog.step2.cityOnWaterListEntry", city.fileName, city.groupId, city.artPack));
+			}
+			String cityList = String.join(", ", distinctEntries);
+			if (removedCities.size() == 1)
+			{
+				newText = Translation.get("subMapDialog.step2.cityOnWaterWarning", cityList);
+			}
+			else
+			{
+				// Pass the count as a string so MessageFormat does not apply locale digit grouping to it.
+				newText = Translation.get("subMapDialog.step2.citiesOnWaterWarning", String.valueOf(removedCities.size()), cityList);
+			}
+		}
+
+		if (newText.equals(lastCitiesOnWaterWarningText))
+		{
+			return false;
+		}
+		lastCitiesOnWaterWarningText = newText;
+		citiesOnWaterWarningArea.setText(newText);
+		citiesOnWaterWarningArea.setVisible(!newText.isEmpty());
+		if (!newText.isEmpty())
+		{
+			citiesOnWaterWarningArea.setCaretPosition(0);
+		}
+		return true;
+	}
+
 	private nortantis.geom.Dimension getPreviewContainerSize()
 	{
 		if (previewContainer == null)
@@ -1080,7 +1180,8 @@ public class SubMapDialog
 		mainWindow.mapEditingPanel.clearSelectionBox();
 		step2Dialog.dispose();
 		step2Dialog = null;
-		// Re-enable the menu bar that was locked while the dialog was open. The map-related field state is left to loadSettingsIntoGUI below,
+		// Re-enable the menu bar that was locked while the dialog was open. The map-related field state is left to loadSettingsIntoGUI
+		// below,
 		// which decides it authoritatively based on whether the sub-map's edits are initialized (they always are).
 		mainWindow.setMenuBarEnabled(true);
 		mainWindow.clearOpenSettingsFilePath();

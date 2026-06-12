@@ -34,6 +34,12 @@ public class MapCreator implements WarningLogger
 	private static final double concentricWaveLineWidth = 1.8;
 	private boolean isCanceled;
 	private final List<String> warningMessages;
+	/**
+	 * City icons dropped from this draw because they landed on water (see {@link IconDrawer#getCitiesRemovedForTouchingWater()}). Captured
+	 * from the icon drawer during the draw so callers (the sub-map preview) can report which shore-side cities disappeared without reaching
+	 * into the draw internals. Empty unless cities were lost.
+	 */
+	private List<IconDrawer.CityIconRemovedForWater> citiesRemovedForTouchingWater = new ArrayList<>();
 	public ConcurrentHashMap<Integer, Center> centersToRedrawLowPriority;
 	private Boolean memoryModeOverride;
 
@@ -1132,6 +1138,10 @@ public class MapCreator implements WarningLogger
 			iconDrawer.addOrUpdateIconsFromEdits(settings.edits, graph.centers, null, this);
 		}
 
+		// Capture cities lost to water during this full draw so callers (the sub-map preview) can warn about shore-side cities that
+		// disappeared. Read from the local iconDrawer rather than mapParts because the sub-map preview draws without mapParts.
+		citiesRemovedForTouchingWater = iconDrawer.getCitiesRemovedForTouchingWater();
+
 		checkForCancel();
 
 		List<IconDrawTask> iconsToDraw = iconDrawer.getTasksInDrawBoundsSortedAndScaled(null);
@@ -1752,8 +1762,8 @@ public class MapCreator implements WarningLogger
 		}
 
 		WorldGraph graph = GraphCreator.createGraph(widthToUse, heightToUse, settings.worldSize, settings.edgeLandToWaterProbability, settings.centerLandToWaterProbability, new Random(r.nextLong()),
-				resolutionScale, settings.lineStyle, settings.pointPrecision, createElevationBiomesLakesAndRegions, settings.lloydRelaxationsScale,
-				settings.areRegionBoundariesVisible(), settings.rightRotationCount, settings.flipHorizontally, settings.flipVertically, settings.landShape, settings.regionCount);
+				resolutionScale, settings.lineStyle, settings.pointPrecision, createElevationBiomesLakesAndRegions, settings.lloydRelaxationsScale, settings.areRegionBoundariesVisible(),
+				settings.rightRotationCount, settings.flipHorizontally, settings.flipVertically, settings.landShape, settings.regionCount);
 
 		// Setup region colors even if settings.drawRegionColors = false because
 		// edits need them in case someone edits a map without region colors,
@@ -2107,6 +2117,15 @@ public class MapCreator implements WarningLogger
 	public List<String> getWarningMessages()
 	{
 		return warningMessages;
+	}
+
+	/**
+	 * Returns the city icons dropped from the last full draw because they landed on water. The list keeps duplicates (so its size is the
+	 * number of cities lost) and is empty when no cities were lost.
+	 */
+	public List<IconDrawer.CityIconRemovedForWater> getCitiesRemovedForTouchingWater()
+	{
+		return citiesRemovedForTouchingWater;
 	}
 
 	private static void drawOverlayImageIfNeededAndUpdateMapParts(Image map, MapSettings settings)

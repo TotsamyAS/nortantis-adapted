@@ -158,8 +158,10 @@ public class SubMapCreator
 		newGraph.updateCoastAndCornerFlags();
 
 		// Smooth newGraph's coastlines and rebuild its noisy edges to match what MapCreator does when it actually renders the sub-map (see
-		// applyCenterEdits, which smooths the coast after applying water edits). Without this, newGraph keeps the raw, unsmoothed coastline,
-		// so the exact-copy mouth anchoring (anchorExactCopyMouths in transferRivers) would snap mouths to corners on a coast in a different
+		// applyCenterEdits, which smooths the coast after applying water edits). Without this, newGraph keeps the raw, unsmoothed
+		// coastline,
+		// so the exact-copy mouth anchoring (anchorExactCopyMouths in transferRivers) would snap mouths to corners on a coast in a
+		// different
 		// place than the one drawn, leaving them visibly short of the rendered (smoothed) ocean. Smoothing only moves corner locations; it
 		// does not change which centers are water, so the transferred edits remain consistent.
 		Set<Center> centersChangedBySmoothing = newGraph.smoothCoastlinesAndRegionBoundariesIfNeeded(newGraph.centers, newGraph.noisyEdges.getLineStyle(), newSettings.areRegionBoundariesVisible());
@@ -183,17 +185,19 @@ public class SubMapCreator
 		double sourceMeanPolygonWidthRI = originalGraph.getMeanCenterWidthBetweenNeighbors() / originalResolution;
 		double sourceCityFontSize = originalSettings.citiesFont.getSize();
 
-		transferText(originalSettings.edits, selectionBoundsRI, newEdits, newGenWidth, newGenHeight, fontScale, iconSizeRatio, sourceMeanPolygonWidthRI, sourceCityFontSize,
-				originalResolution);
+		transferText(originalSettings.edits, selectionBoundsRI, newEdits, newGenWidth, newGenHeight, fontScale, iconSizeRatio, sourceMeanPolygonWidthRI, sourceCityFontSize, originalResolution);
 
 		// An IconDrawer over the source graph, used to compute each city/decoration icon's drawn bounds so icons that overlap the selection
 		// are kept even when their anchor point lies just outside it (city labels sit below their icon, so a city near the top edge has its
 		// icon above the selection but its image still reaching into it).
 		//
-		// The IconDrawer must use originalResolution, the scale originalGraph was built at, so its draw bounds (in graph pixels) convert back
+		// The IconDrawer must use originalResolution, the scale originalGraph was built at, so its draw bounds (in graph pixels) convert
+		// back
 		// to RI correctly in doesIconOverlapSelection. originalSettings.resolution cannot be trusted here: in the editor getSettingsFromGUI
-		// sets it to the export resolution, which differs from the display quality scale that originalGraph and originalResolution use. Using
-		// originalSettings.resolution then scaled icon positions by the wrong factor, placing every city/decoration outside the selection so
+		// sets it to the export resolution, which differs from the display quality scale that originalGraph and originalResolution use.
+		// Using
+		// originalSettings.resolution then scaled icon positions by the wrong factor, placing every city/decoration outside the selection
+		// so
 		// they were all dropped. Copy the settings (sharing edits, which are already initialized so the IconDrawer does not wipe freeIcons)
 		// and set the resolution to match originalGraph.
 		MapSettings sourceSettingsAtGraphResolution = originalSettings.deepCopyExceptEdits();
@@ -295,8 +299,8 @@ public class SubMapCreator
 	 *
 	 * The text's drawn bounds ({@link MapText#line1Bounds}/{@link MapText#line2Bounds}) are a rendering cache in pixel coordinates at the
 	 * draw resolution, which equals {@code originalResolution} (the scale originalGraph was created at). The selection is scaled into that
-	 * same pixel space for the overlap test. If the bounds have not been populated yet (e.g. the text has never been drawn), we fall back to
-	 * testing the text's center point.
+	 * same pixel space for the overlap test. If the bounds have not been populated yet (e.g. the text has never been drawn), we fall back
+	 * to testing the text's center point.
 	 */
 	private static boolean doesTextOverlapSelection(MapText text, Rectangle selectionBoundsRI, double originalResolution)
 	{
@@ -631,9 +635,11 @@ public class SubMapCreator
 		}
 
 		// Replant the source's ANCHORED trees the same way the theme panel does when the tree height changes (see
-		// IconDrawer.rebuildAnchoredTrees), so dormant trees (places the user marked for trees that did not grow at the source's low density)
+		// IconDrawer.rebuildAnchoredTrees), so dormant trees (places the user marked for trees that did not grow at the source's low
+		// density)
 		// are handled consistently: visible trees become CenterTrees at their anchors, dormant trees near a visible tree are kept and
-		// re-seeded as non-dormant so they can grow at the sub-map's polygon sizes, and dormant trees far from any visible tree are dropped.
+		// re-seeded as non-dormant so they can grow at the sub-map's polygon sizes, and dormant trees far from any visible tree are
+		// dropped.
 		// Work on a copy so the source edits are not mutated, and seed it so sub-map creation stays deterministic.
 		MapEdits replantedSource = originalEdits.deepCopy();
 		IconDrawer.rebuildAnchoredTrees(replantedSource, originalGraph, new Random(seed));
@@ -725,7 +731,8 @@ public class SubMapCreator
 						String artPack = treeFreeIcons.get(0).artPack;
 						String treeType = treeFreeIcons.get(0).groupId;
 						double avgDensity = treeFreeIcons.stream().mapToDouble(t -> t.density).average().getAsDouble();
-						// Keep the source trees' colors so the redistributed trees match instead of using the sub-map's per-type tree color.
+						// Keep the source trees' colors so the redistributed trees match instead of using the sub-map's per-type tree
+						// color.
 						CenterTrees newTrees = new CenterTrees(artPack, treeType, avgDensity, seed + newCenter.index, false, iconColorsOf(treeFreeIcons.get(0)));
 						CenterEdit current = newEdits.centerEdits.get(newCenter.index);
 						if (current != null)
@@ -739,8 +746,8 @@ public class SubMapCreator
 	}
 
 	/**
-	 * Captures the four color properties of a source {@link FreeIcon} so a redistributed {@link CenterIcon}/{@link CenterTrees} can be drawn
-	 * with the colors of the icon it came from rather than the sub-map's per-type icon colors.
+	 * Captures the four color properties of a source {@link FreeIcon} so a redistributed {@link CenterIcon}/{@link CenterTrees} can be
+	 * drawn with the colors of the icon it came from rather than the sub-map's per-type icon colors.
 	 */
 	private static IconColors iconColorsOf(FreeIcon icon)
 	{
@@ -796,7 +803,8 @@ public class SubMapCreator
 			// One adjustment: the sub-map is drawn on a freshly generated Voronoi grid, so its coast and lakeshore boundaries differ
 			// slightly from the source. A river mouth copied at its exact source position can therefore stop short of the redrawn water,
 			// which looks broken. For each river end that was a water mouth in the source, we snap it onto the nearest sub-map mouth corner
-			// and anchor it there (see anchorExactCopyMouths), so it lands on the redrawn coast and tracks it across any later line-style change.
+			// and anchor it there (see anchorExactCopyMouths), so it lands on the redrawn coast and tracks it across any later line-style
+			// change.
 			// Ends with no mouth corner nearby, and ends cut off at the selection boundary (map-edge exits, not mouths), are left alone.
 			for (River river : originalEdits.rivers)
 			{
@@ -882,8 +890,8 @@ public class SubMapCreator
 	/**
 	 * Snaps the river endpoint at {@code index} onto the nearest sub-map mouth corner and anchors it there, so an exact-copied mouth lands
 	 * on (and stays on) the redrawn coast/lakeshore. Does nothing — leaving the endpoint exactly as copied — when no mouth corner is within
-	 * {@link #mouthWaterSearchMaxCenterHops} centers, so a mouth genuinely far from the redrawn water is not dragged across the map. Returns true
-	 * if the node was changed.
+	 * {@link #mouthWaterSearchMaxCenterHops} centers, so a mouth genuinely far from the redrawn water is not dragged across the map.
+	 * Returns true if the node was changed.
 	 */
 	private static boolean anchorMouthEndpointToShore(List<RiverPathNode> nodes, int index, WorldGraph newGraph, double resolution)
 	{
@@ -989,8 +997,8 @@ public class SubMapCreator
 
 	/**
 	 * Maximum number of Voronoi centers a river mouth is searched outward (breadth-first over center neighbors) to find a sub-map shore
-	 * corner to attach to — used both when anchoring an exact-copied mouth to the redrawn coast and when snapping a redistributed mouth to a
-	 * water-adjacent corner. The bound keeps the search local so a mouth whose source water body (e.g. a small lake) did not survive the
+	 * corner to attach to — used both when anchoring an exact-copied mouth to the redrawn coast and when snapping a redistributed mouth to
+	 * a water-adjacent corner. The bound keeps the search local so a mouth whose source water body (e.g. a small lake) did not survive the
 	 * regrid is left ending inland rather than connected by a long invented river to a distant, unrelated body of water.
 	 */
 	private static final int mouthWaterSearchMaxCenterHops = 3;

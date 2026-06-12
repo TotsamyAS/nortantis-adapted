@@ -41,6 +41,12 @@ public class IconDrawer
 	private final double treeHeightScale;
 	private final double treeDensityScale;
 	private List<IconDrawTask> iconsToDraw;
+	/**
+	 * City icons that were removed from the most recent full icon pass because their bottom landed on water, in encounter order with
+	 * duplicates kept (so callers can report both how many cities were lost and which icons they used). Populated by
+	 * {@link #createDrawTasksForFreeIconsAndRemovedFailedIcons}; read via {@link #getCitiesRemovedForTouchingWater()}.
+	 */
+	private final List<CityIconRemovedForWater> citiesRemovedForTouchingWater = new ArrayList<>();
 	FreeIconCollection freeIcons;
 	WorldGraph graph;
 	Random rand;
@@ -69,9 +75,9 @@ public class IconDrawer
 	}
 
 	/**
-	 * Returns the colors to draw an icon with: {@code override} when it is non-null (a {@link CenterIcon}/{@link CenterTrees} that remembers
-	 * its own colors, e.g. a sub-map-redistributed or dormant icon), otherwise the map's per-type colors for {@code type} (the normal case
-	 * for generated and freshly edited icons).
+	 * Returns the colors to draw an icon with: {@code override} when it is non-null (a {@link CenterIcon}/{@link CenterTrees} that
+	 * remembers its own colors, e.g. a sub-map-redistributed or dormant icon), otherwise the map's per-type colors for {@code type} (the
+	 * normal case for generated and freshly edited icons).
 	 */
 	private IconColors resolveIconColors(IconColors override, IconType type)
 	{
@@ -463,8 +469,10 @@ public class IconDrawer
 			// replaceBounds, icons in the expanded region would be missing from the draw tasks and get erased
 			// when the snippet is pasted over the expanded replaceBounds in incrementalUpdateForCentersAndEdges.
 			//
-			// Only filter when this is an incremental draw (replaceBounds != null). On a full draw replaceBounds is null and every free icon
-			// must be drawn; without this guard, when there are CenterIcons to convert (e.g. a redistributed sub-map's mountains/hills/trees)
+			// Only filter when this is an incremental draw (replaceBounds != null). On a full draw replaceBounds is null and every free
+			// icon
+			// must be drawn; without this guard, when there are CenterIcons to convert (e.g. a redistributed sub-map's
+			// mountains/hills/trees)
 			// conversionBoundsOfIconsChanged is non-null, so filterBounds would become that bounding box and free icons outside it (such as
 			// cities away from the converted terrain) would be wrongly skipped.
 			Rectangle filterBounds = replaceBounds == null ? null : Rectangle.add(replaceBounds, conversionBoundsOfIconsChanged);
@@ -482,19 +490,19 @@ public class IconDrawer
 	/**
 	 * When trees are drawn at a low density, some places the user marked for trees produce no visible tree. To preserve the user's intended
 	 * planting (so trees don't become sparse when shrunk or overly dense when grown), those places are kept as dormant {@link CenterTrees}.
-	 * This rebuilds the anchored {@link CenterTrees} in {@code edits} from the current tree state so that, when redrawn, trees are replanted
-	 * at the intended density and locations:
+	 * This rebuilds the anchored {@link CenterTrees} in {@code edits} from the current tree state so that, when redrawn, trees are
+	 * replanted at the intended density and locations:
 	 * <ul>
 	 * <li>A {@code CenterTrees} whose center now has visible tree free icons is dropped (the visible trees take over).</li>
 	 * <li>A {@code CenterTrees} with no visible trees of its own (dormant or failed-to-draw) is re-seeded as non-dormant if there is a
-	 * visible tree within {@link #treeReplantVisibleTreeSearchDistance} centers (so it gets another chance to grow), or dropped otherwise (so
-	 * it does not pop up far from any trees).</li>
+	 * visible tree within {@link #treeReplantVisibleTreeSearchDistance} centers (so it gets another chance to grow), or dropped otherwise
+	 * (so it does not pop up far from any trees).</li>
 	 * <li>Each center with visible tree free icons gets a fresh non-dormant {@code CenterTrees} carrying the most common tree type, the
 	 * average density, and a representative color of those trees.</li>
 	 * </ul>
-	 * The {@code CenterTrees}' random seeds are drawn from {@code rand}, so pass a seeded {@link Random} when deterministic output is needed
-	 * (e.g. sub-map creation). Mutates {@code edits.centerEdits}; {@code edits.freeIcons} is only read. Used both when the tree height
-	 * changes in the theme panel and when a sub-map redistributes icons, so dormant trees are handled the same way in both.
+	 * The {@code CenterTrees}' random seeds are drawn from {@code rand}, so pass a seeded {@link Random} when deterministic output is
+	 * needed (e.g. sub-map creation). Mutates {@code edits.centerEdits}; {@code edits.freeIcons} is only read. Used both when the tree
+	 * height changes in the theme panel and when a sub-map redistributes icons, so dormant trees are handled the same way in both.
 	 */
 	public static void rebuildAnchoredTrees(MapEdits edits, WorldGraph graph, Random rand)
 	{
@@ -518,8 +526,7 @@ public class IconDrawer
 				{
 					// Carry the dormant trees' remembered colors forward so they reappear with their original color rather than the current
 					// per-type tree color.
-					edits.centerEdits.put(entry.getKey(),
-							entry.getValue().copyWithTrees(new CenterTrees(cTrees.artPack, cTrees.treeType, cTrees.density, rand.nextLong(), false, cTrees.colors)));
+					edits.centerEdits.put(entry.getKey(), entry.getValue().copyWithTrees(new CenterTrees(cTrees.artPack, cTrees.treeType, cTrees.density, rand.nextLong(), false, cTrees.colors)));
 				}
 				else
 				{
@@ -607,6 +614,7 @@ public class IconDrawer
 	private Rectangle createDrawTasksForFreeIconsAndRemovedFailedIcons(WarningLogger warningLogger, Rectangle replaceBounds)
 	{
 		iconsToDraw.clear();
+		citiesRemovedForTouchingWater.clear();
 
 		// In theory, it should be safe to just remove free icons as I iterate over the collection, but I'm leery of that because there are
 		// multiple underlying iterators involved in looping over the collection, so I'm doing it afterward.
@@ -662,6 +670,34 @@ public class IconDrawer
 		return removeBounds;
 	}
 
+	/**
+	 * Returns the city icons removed from the most recent full icon pass because they landed on water. The list is in encounter order and
+	 * keeps duplicates, so its size is the number of cities lost and its distinct values are the icons involved.
+	 */
+	public List<CityIconRemovedForWater> getCitiesRemovedForTouchingWater()
+	{
+		return new ArrayList<>(citiesRemovedForTouchingWater);
+	}
+
+	/**
+	 * A city icon that was dropped from a draw because its bottom landed on water. Carries the art pack, group, and clean file name
+	 * (extension and encoded width/height/alpha parameters stripped) actually used to draw it, so callers can tell the user which cities
+	 * disappeared. See {@link IconDrawer#getCitiesRemovedForTouchingWater()}.
+	 */
+	public static class CityIconRemovedForWater
+	{
+		public final String artPack;
+		public final String groupId;
+		public final String fileName;
+
+		public CityIconRemovedForWater(String artPack, String groupId, String fileName)
+		{
+			this.artPack = artPack;
+			this.groupId = groupId;
+			this.fileName = fileName;
+		}
+	}
+
 	private void checkAndAddIcon(FreeIcon icon, boolean checkContentBottomTouchingWater, WarningLogger warningLogger, List<FreeIcon> toRemove, Rectangle drawBounds)
 	{
 		FreeIcon updated = adjustForMissingAssetsIfNeeded(icon, warningLogger);
@@ -699,6 +735,14 @@ public class IconDrawer
 
 		if (checkContentBottomTouchingWater && isContentBottomTouchingWater(task))
 		{
+			if (icon.type == IconType.cities && task.unScaledImageAndMasks != null)
+			{
+				// Record the lost city so the sub-map dialog can warn the user which cities near the shore disappeared onto water, with the
+				// art pack, group, and clean file name actually used to draw it (taken from the image, so they reflect any asset replacement).
+				ImageAndMasks imageAndMasks = task.unScaledImageAndMasks;
+				citiesRemovedForTouchingWater
+						.add(new CityIconRemovedForWater(imageAndMasks.artPack, imageAndMasks.groupId, imageAndMasks.fileNameWithoutParametersOrExtension));
+			}
 			toRemove.add(icon);
 			return;
 		}
@@ -1920,7 +1964,8 @@ public class IconDrawer
 				else
 				{
 					// These trees failed to draw, so they go dormant and are persisted. Stamp the colors they were drawn with (the per-type
-					// colors, or their own remembered colors) so that when they reawaken (see ThemePanel.triggerRebuildAllAnchoredTrees) they
+					// colors, or their own remembered colors) so that when they reawaken (see ThemePanel.triggerRebuildAllAnchoredTrees)
+					// they
 					// reappear with their original color rather than whatever the per-type tree color happens to be then.
 					CenterTrees dormantTrees = edits.centerEdits.get(index).trees;
 					IconColors colorsUsed = resolveIconColors(dormantTrees.colors, IconType.trees);

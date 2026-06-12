@@ -835,8 +835,7 @@ public class RiverDrawer
 					{
 						updated = new ArrayList<>(nodes);
 					}
-					updated.set(i, new RiverPathNode(newStart, startNode.getWidthLevelToNext(), startNode.getSeedToNext(), startNode.getEdgeIndexToNext(),
-							startNode.getCornerIndexAnchor()));
+					updated.set(i, new RiverPathNode(newStart, startNode.getWidthLevelToNext(), startNode.getSeedToNext(), startNode.getEdgeIndexToNext(), startNode.getCornerIndexAnchor()));
 				}
 				if (!endNode.getLoc().equals(newEnd))
 				{
@@ -844,8 +843,7 @@ public class RiverDrawer
 					{
 						updated = new ArrayList<>(nodes);
 					}
-					updated.set(i + 1, new RiverPathNode(newEnd, endNode.getWidthLevelToNext(), endNode.getSeedToNext(), endNode.getEdgeIndexToNext(),
-							endNode.getCornerIndexAnchor()));
+					updated.set(i + 1, new RiverPathNode(newEnd, endNode.getWidthLevelToNext(), endNode.getSeedToNext(), endNode.getEdgeIndexToNext(), endNode.getCornerIndexAnchor()));
 				}
 			}
 
@@ -853,12 +851,12 @@ public class RiverDrawer
 			// anchored to that corner so it tracks the coast/lakeshore across smoothing (an unanchored mouth would be stranded on land
 			// when the coast shifts, e.g. on a line-style change). This pass is self-healing and runs every draw:
 			// - it CREATES an anchor on either river endpoint that sits exactly on a mouth corner (so an anchor that some node rebuild
-			//   dropped, e.g. a width change using the anchor-less constructor, is restored). Exact-match keeps near-coast freehand
-			//   endpoints that the user deliberately placed off a corner from being grabbed;
+			// dropped, e.g. a width change using the anchor-less constructor, is restored). Exact-match keeps near-coast freehand
+			// endpoints that the user deliberately placed off a corner from being grabbed;
 			// - it CLEARS an anchor that is no longer applicable (the node is no longer an endpoint, or its corner is no longer a mouth
-			//   corner because the user grew land over it), leaving the node where it is;
+			// corner because the user grew land over it), leaving the node where it is;
 			// - it SNAPS a still-anchored node onto its corner's current location. This runs after the edge pass so an explicit
-			//   anchor wins for the rare node that is both edge-snapped and anchored.
+			// anchor wins for the rare node that is both edge-snapped and anchored.
 			for (int i = 0; i < nodes.size(); i++)
 			{
 				RiverPathNode node = updated != null ? updated.get(i) : nodes.get(i);
@@ -913,8 +911,8 @@ public class RiverDrawer
 
 	/**
 	 * Returns true if {@code corner} is a mouth corner: it touches at least one water {@link Center} and at least one land Center. This
-	 * covers both ocean coastlines and lakeshores (water includes lakes), so a river ending exactly on such a corner is a mouth that
-	 * should be anchored to it (see {@link #resyncRiverNodeLocationsToGraph}).
+	 * covers both ocean coastlines and lakeshores (water includes lakes), so a river ending exactly on such a corner is a mouth that should
+	 * be anchored to it (see {@link #resyncRiverNodeLocationsToGraph}).
 	 */
 	static boolean isMouthCorner(Corner corner)
 	{
