@@ -244,6 +244,15 @@ public class SubMapDialog
 		{
 			if (selBoundsRI != null && validateStep1Spinners() == null)
 			{
+				// Quantize the selection to whole RI pixels before it is used to build the sub-map. The box is captured from the mouse (and
+				// adjusted by the aspect-ratio presets) in sub-pixel RI coordinates, but the spinners only display — and the user only reasons
+				// about — integer RI values. Building the sub-map from sub-pixel bounds makes two selections that look identical in the
+				// spinners produce slightly different sub-maps: every road and city is offset by ~1px (the sub-pixel shift magnified by the
+				// zoom), borderline coastline polygons flip between land and water, and icons appear or disappear as sample points cross
+				// center boundaries. Rounding the same way updateStep1SpinnersFromBox does makes the bounds used exactly equal the displayed
+				// values, so the same spinner values always reproduce the same sub-map. validateStep1Spinners has already confirmed the
+				// rounded values are in bounds.
+				selBoundsRI = roundToIntegerBounds(selBoundsRI);
 				disposeStep1();
 				showStep2();
 			}
@@ -413,6 +422,20 @@ public class SubMapDialog
 	{
 		return validateSpinnerValues(((Number) xSpinner.getValue()).intValue(), ((Number) ySpinner.getValue()).intValue(), ((Number) widthSpinner.getValue()).intValue(),
 				((Number) heightSpinner.getValue()).intValue());
+	}
+
+	/**
+	 * Returns {@code box} with each field rounded to the nearest whole RI pixel, matching exactly how
+	 * {@link #updateStep1SpinnersFromBox} rounds for display (so the snapped bounds equal the values shown in the spinners). Width and
+	 * height are floored at 1. Returns null if {@code box} is null.
+	 */
+	private static Rectangle roundToIntegerBounds(Rectangle box)
+	{
+		if (box == null)
+		{
+			return null;
+		}
+		return new Rectangle(Math.round(box.x), Math.round(box.y), Math.max(1, Math.round(box.width)), Math.max(1, Math.round(box.height)));
 	}
 
 	/**
