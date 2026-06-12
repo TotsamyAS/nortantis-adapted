@@ -57,6 +57,13 @@ public class MainWindow extends JFrame implements ILoggerTarget
 	private boolean forceSaveAs;
 	MapSettings lastSettingsLoadedOrSaved;
 	boolean hasDrawnCurrentMapAtLeastOnce;
+	/**
+	 * False until the first full draw after a map is loaded has completed. While false, a full draw that removes cities for landing on water
+	 * does not warn the user: opening a map (or creating a sub-map, which warns separately) can legitimately have cities sitting on water, and
+	 * that is not something the user just caused. Once true, a later full draw that removes cities for water (e.g. from changing the shore line
+	 * style or the display quality) warns. Reset to false in loadSettingsIntoGUI.
+	 */
+	private boolean hasEstablishedCityOnWaterBaseline;
 	static final String frameTitleBase = "Nortantis";
 	public MapEdits edits;
 
@@ -650,6 +657,28 @@ public class MainWindow extends JFrame implements ILoggerTarget
 
 					JOptionPane.showMessageDialog(MainWindow.this, scrollPane, Translation.get("mainWindow.mapDrewWithWarnings"), JOptionPane.WARNING_MESSAGE);
 
+				}
+
+				// Warn when a full draw removed coastal cities because they landed on water (IconDrawer drops such icons). This usually means a
+				// change reshaped the coastline (the shore line style) or changed the draw resolution (the display quality) just enough to put a
+				// city that was extremely close to the water over it. The cause is not pinned down on purpose, so any future change that can do
+				// this is covered. The count comes from the draw that removed them, and removed cities are gone from the edits, so this fires
+				// once per change rather than nagging on later redraws. A city sinking because the user painted ocean over it is an incremental
+				// draw, which does not update this count, so that expected case is not warned about. The first full draw after a load only
+				// establishes the baseline, so opening a map (or creating a sub-map, which warns separately) does not warn. The specific cities
+				// are not listed to keep the popup small; the user can undo to see what changed.
+				if (incrementalChangeArea == null)
+				{
+					int removedCityCount = getCitiesRemovedForTouchingWaterFromLastFullDraw().size();
+					if (hasEstablishedCityOnWaterBaseline && removedCityCount > 0)
+					{
+						String editMenuName = Translation.get("menu.edit");
+						String undoName = Translation.get("menu.edit.undo");
+						String message = removedCityCount == 1 ? Translation.get("mainWindow.cityRemovedForWater", editMenuName, undoName)
+								: Translation.get("mainWindow.citiesRemovedForWater", String.valueOf(removedCityCount), editMenuName, undoName);
+						JOptionPane.showMessageDialog(MainWindow.this, message, Translation.get("mainWindow.citiesRemovedForWater.title"), JOptionPane.WARNING_MESSAGE);
+					}
+					hasEstablishedCityOnWaterBaseline = true;
 				}
 
 				boolean isChange = settingsHaveUnsavedChanges();
@@ -2155,6 +2184,9 @@ public class MainWindow extends JFrame implements ILoggerTarget
 	void loadSettingsIntoGUI(MapSettings settings)
 	{
 		hasDrawnCurrentMapAtLeastOnce = false;
+		// The next full draw of this freshly loaded map only establishes a baseline, so loading a map (which can legitimately have cities on
+		// water, e.g. a sub-map) does not warn about cities removed for landing on water.
+		hasEstablishedCityOnWaterBaseline = false;
 		mapEditingPanel.clearAllSelectionsAndHighlights();
 
 		updateLastSettingsLoadedOrSaved(settings);

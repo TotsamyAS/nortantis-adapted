@@ -77,6 +77,8 @@ public class SubMapDialog
 	private JProgressBar previewProgressBar;
 	/** Inline, wrap-capable warning shown under the preview when cities near the shore disappear onto water in the sub-map. */
 	private JTextArea citiesOnWaterWarningArea;
+	/** Holds the warning icon and {@link #citiesOnWaterWarningArea}; its visibility is toggled to show or hide the whole warning. */
+	private JPanel citiesOnWaterWarningPanel;
 	/** The text last shown in {@link #citiesOnWaterWarningArea} ("" when hidden), used to detect when the warning changed and the preview must be redrawn. */
 	private String lastCitiesOnWaterWarningText = "";
 	/** True while the next preview draw is the one-shot redraw requested because the warning changed the preview height, so it does not request yet another. */
@@ -808,9 +810,11 @@ public class SubMapDialog
 		previewWrapper.add(previewContainer, BorderLayout.CENTER);
 
 		// Inline warning shown under the preview when shore-side cities disappear onto water in the sub-map. A JTextArea (styled to look like
-		// a label) is used so a long list of city file names wraps. It lives in the preview area's bottom slot and starts hidden. When it
-		// appears or disappears it takes height from (or returns it to) the preview, so onFinishedDrawingFull redraws the preview once at the
-		// new size; that does not loop because the redraw produces the same warning, leaving its size unchanged (see updateCitiesOnWaterWarning).
+		// a label) is used so a long list of city file names wraps, with the look-and-feel's standard warning icon to its left. The icon is an
+		// image (not a glyph), so it renders the same across languages, fonts, and operating systems. The whole row lives in the preview area's
+		// bottom slot and starts hidden. When it appears or disappears it takes height from (or returns it to) the preview, so
+		// onFinishedDrawingFull redraws the preview once at the new size; that does not loop because the redraw produces the same warning,
+		// leaving its size unchanged (see updateCitiesOnWaterWarning).
 		lastCitiesOnWaterWarningText = "";
 		isRedrawForWarning = false;
 		citiesOnWaterWarningArea = new JTextArea();
@@ -821,9 +825,21 @@ public class SubMapDialog
 		citiesOnWaterWarningArea.setOpaque(false);
 		citiesOnWaterWarningArea.setForeground(warningMessageColor);
 		citiesOnWaterWarningArea.setFont(UIManager.getFont("Label.font"));
-		citiesOnWaterWarningArea.setBorder(BorderFactory.createEmptyBorder(4, 0, 0, 0));
-		citiesOnWaterWarningArea.setVisible(false);
-		previewWrapper.add(citiesOnWaterWarningArea, BorderLayout.SOUTH);
+
+		citiesOnWaterWarningPanel = new JPanel(new BorderLayout());
+		citiesOnWaterWarningPanel.setBorder(BorderFactory.createEmptyBorder(4, 0, 0, 0));
+		Icon warningIcon = UIManager.getIcon("OptionPane.warningIcon");
+		if (warningIcon != null)
+		{
+			JLabel warningIconLabel = new JLabel(warningIcon);
+			// Align the icon with the first line of text and leave a gap before the text.
+			warningIconLabel.setVerticalAlignment(SwingConstants.TOP);
+			warningIconLabel.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 6));
+			citiesOnWaterWarningPanel.add(warningIconLabel, BorderLayout.WEST);
+		}
+		citiesOnWaterWarningPanel.add(citiesOnWaterWarningArea, BorderLayout.CENTER);
+		citiesOnWaterWarningPanel.setVisible(false);
+		previewWrapper.add(citiesOnWaterWarningPanel, BorderLayout.SOUTH);
 
 		mainPanel.add(previewWrapper, BorderLayout.CENTER);
 
@@ -1119,7 +1135,8 @@ public class SubMapDialog
 		}
 		lastCitiesOnWaterWarningText = newText;
 		citiesOnWaterWarningArea.setText(newText);
-		citiesOnWaterWarningArea.setVisible(!newText.isEmpty());
+		// Toggle the whole row (icon + text), not just the text, so the icon disappears with the message.
+		citiesOnWaterWarningPanel.setVisible(!newText.isEmpty());
 		if (!newText.isEmpty())
 		{
 			citiesOnWaterWarningArea.setCaretPosition(0);

@@ -122,7 +122,7 @@ Whenever possible, use the Read, Edit, and Write tools to read and modify files.
 
 ## Coding Conventions
 
-- **Formatting:** Eclipse formatter config in `eclipse-formatter-config.xml`, enforced by Spotless
+- **Formatting:** Match the formatting of the surrounding code by hand (the project uses the Eclipse formatter config in `eclipse-formatter-config.xml`). Do NOT run `gradlew spotlessApply` to format your changes — the committed code has drifted from the current Spotless config, so a project-wide apply rewraps comments in many unrelated files and pollutes the diff.
 - **Naming:** PascalCase for classes, camelCase for methods/variables
 - **Abbreviations:** Use full words in variable and method names. Single-letter names are fine when used consistently in the existing code (e.g. `p` for Point or Painter, `c` for Center, `e` for a map entry). Established acronyms are fine (e.g. `RI` for resolution-invariant). Do not use partial-word abbreviations that drop vowels or truncate words (e.g. write `samplePoints` not `samplePts`, `selectionBounds` not `selBounds`, `originalCenter` not `origCenter`). Do not use opaque prefixed names where the prefix is not self-evident (e.g. avoid `sIsWater`, `oe`, `sRegionId`).
 - **Custom Functional Interfaces:** `Function<T, R>`, `Function0<R>`, `Function2<T1, T2, R>`
