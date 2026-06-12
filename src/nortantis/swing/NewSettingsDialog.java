@@ -589,7 +589,8 @@ public class NewSettingsDialog extends JDialog
 			}
 
 			@Override
-			protected void onFinishedDrawingFull(Image map, boolean anotherDrawIsQueued, int borderWidthAsDrawn, List<String> warningMessages)
+			protected void onFinishedDrawingFull(Image map, boolean anotherDrawIsQueued, int borderWidthAsDrawn, List<String> warningMessages,
+					List<nortantis.IconDrawer.CityIconRemovedForWater> citiesRemovedForWater, boolean wasTriggeredByUndoRedo)
 			{
 				if (mapEditingPanel.mapFromMapCreator != null && mapEditingPanel.mapFromMapCreator != map)
 				{

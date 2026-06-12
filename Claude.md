@@ -153,6 +153,15 @@ Image (final rendered map)
 
 "Incremental" draws update only part of the map, going through one of the MapCreator.incrementalUpdate\* methods. Incremental draws or what allows the editor to quickly update the map in near real time while the user is drawing or changing text.
 
+### Editor draw pipeline is asynchronous and queued (`MapUpdater`)
+
+In the editor, every redraw goes through `nortantis.editor.MapUpdater`, which is **asynchronous and queued** — a frequent source of subtle bugs, so understand it before touching draw-completion logic:
+
+- Public `createAndShowMap*` methods (and `createAndShowMapFromChange` for undo/redo) don't draw immediately. They funnel through `createAndShowMap` → `createAndShowMapUsingIds` → `innerCreateAndShowMap`, which runs the actual draw on a **background thread** (`doInBackground`), then calls back on the EDT in `done()`.
+- **If a draw is already running** (`isMapBeingDrawn`), the new request is **queued** as a `MapUpdate` (in `nonIncrementalUpdatesToDraw` / `incrementalUpdatesToDraw` / `lowPriorityUpdatesToDraw`) instead of drawn now. When the current draw finishes, `done()` pulls the next via `combineAndGetNextUpdateToDraw()`, which **coalesces** queued updates (e.g. a queued Full supersedes everything; same-type updates merge via `MapUpdate.add()`). So the draw that completes may not correspond 1:1 to a single user action.
+- **Consequence:** a mutable field set right before calling a `createAndShowMap*` method is NOT a reliable way to tag "the resulting draw," because an earlier in-flight draw can finish first and consume it, or the request can be queued/coalesced. Likewise, **don't stash per-draw data in a `MapUpdater` field** to hand it to the completion callback — that is the same global-state shape and invites the same bugs. Instead, **carry per-draw state on the `MapUpdate`** (e.g. `isLowPriority`, `isUndoRedo`), thread it through `innerCreateAndShowMap` (whose params are captured by the background task and so are available, effectively final, in `done()` — like `updateType`), and **pass it as a parameter** of `onFinishedDrawingFull` / `onFinishedDrawingIncremental` (e.g. `citiesRemovedForWater`, `wasTriggeredByUndoRedo`). When adding such state, also merge it in `MapUpdate.add()` so coalesced draws keep it, and have each `createAndShow*` entry point pass the truthful value (don't hard-code a default that happens to be usually-right — e.g. `createAndShowLowPriorityChanges` is called both after forward edits and by the undoer).
+- `onFinishedDrawingFull` / `onFinishedDrawingIncremental` are the EDT completion callbacks (overridden by `MainWindow`, `SubMapDialog`, `NewSettingsDialog`); `anotherDrawIsQueued` tells you whether more draws are pending. `incrementalChangeArea == null` distinguishes a full draw from an incremental one.
+
 
 ## Key Algorithms
 

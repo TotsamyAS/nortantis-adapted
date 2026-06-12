@@ -967,7 +967,8 @@ public class SubMapDialog
 			}
 
 			@Override
-			protected void onFinishedDrawingFull(Image map, boolean anotherDrawIsQueued, int borderPaddingAsDrawn, List<String> warningMessages)
+			protected void onFinishedDrawingFull(Image map, boolean anotherDrawIsQueued, int borderPaddingAsDrawn, List<String> warningMessages,
+					List<IconDrawer.CityIconRemovedForWater> citiesRemovedForWater, boolean wasTriggeredByUndoRedo)
 			{
 				SwingUtilities.invokeLater(() ->
 				{
@@ -984,7 +985,7 @@ public class SubMapDialog
 					{
 						enableOrDisableProgressBar(false);
 						// Only update the warning once the latest draw has settled, so it reflects what is actually shown.
-						warningChanged = updateCitiesOnWaterWarning(getCitiesRemovedForTouchingWaterFromLastFullDraw());
+						warningChanged = updateCitiesOnWaterWarning(citiesRemovedForWater);
 					}
 
 					if (step2Dialog != null)

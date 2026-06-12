@@ -150,8 +150,10 @@ public class Undoer
 		{
 			changeToUndo.preRun.run();
 		}
-		mainWindow.updater.createAndShowMapFromChange(changeToUndo);
-		mainWindow.updater.doWhenMapIsNotDrawing(() -> mainWindow.updater.createAndShowLowPriorityChanges());
+		// Pass isUndoRedo=true so the "cities removed for water" warning is not shown for the draw this triggers: an undo is restoring cities,
+		// not making a forward change that removed them.
+		mainWindow.updater.createAndShowMapFromChange(changeToUndo, true);
+		mainWindow.updater.doWhenMapIsNotDrawing(() -> mainWindow.updater.createAndShowLowPriorityChanges(true));
 		updateUndoRedoEnabled();
 	}
 
@@ -198,8 +200,9 @@ public class Undoer
 		{
 			changeToRedo.preRun.run();
 		}
-		mainWindow.updater.createAndShowMapFromChange(changeWithPrevSettings);
-		mainWindow.updater.doWhenMapIsNotDrawing(() -> mainWindow.updater.createAndShowLowPriorityChanges());
+		// Pass isUndoRedo=true so the "cities removed for water" warning is not shown for the draw this triggers (an undo/redo is corrective).
+		mainWindow.updater.createAndShowMapFromChange(changeWithPrevSettings, true);
+		mainWindow.updater.doWhenMapIsNotDrawing(() -> mainWindow.updater.createAndShowLowPriorityChanges(true));
 		updateUndoRedoEnabled();
 	}
 

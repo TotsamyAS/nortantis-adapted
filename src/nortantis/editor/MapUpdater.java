@@ -27,12 +27,6 @@ import java.util.stream.Collectors;
 public abstract class MapUpdater
 {
 	private boolean isMapBeingDrawn;
-	/**
-	 * City icons dropped from the most recent full draw because they landed on water (see
-	 * {@link MapCreator#getCitiesRemovedForTouchingWater()}). Set just before {@link #onFinishedDrawingFull} so subclasses that care (the
-	 * sub-map preview) can read it there via {@link #getCitiesRemovedForTouchingWaterFromLastFullDraw()}; empty when no cities were lost.
-	 */
-	private List<IconDrawer.CityIconRemovedForWater> citiesRemovedForTouchingWaterFromLastFullDraw = new ArrayList<>();
 	private ReentrantLock drawLock;
 	private ReentrantLock interactionsLock;
 	public MapParts mapParts;
@@ -144,13 +138,18 @@ public abstract class MapUpdater
 		createAndShowMap(UpdateType.Incremental, null, null, null, iconsChanged, null, null);
 	}
 
-	public void createAndShowLowPriorityChanges()
+	/**
+	 * Redraws the centers that earlier draws deferred as low priority. {@code isUndoRedo} should be true when this deferred pass is part of
+	 * an undo or redo (the Undoer schedules it after the main undo/redo draw) and false when it follows a forward edit, so the resulting
+	 * draw is tagged truthfully.
+	 */
+	public void createAndShowLowPriorityChanges(boolean isUndoRedo)
 	{
 		if (!centersToRedrawLowPriority.isEmpty())
 		{
 			Set<Integer> centersToDrawIds = new HashSet<>(centersToRedrawLowPriority.keySet());
 			centersToRedrawLowPriority.clear();
-			innerCreateAndShowMap(UpdateType.Incremental, centersToDrawIds, null, null, null, null, null, true);
+			innerCreateAndShowMap(UpdateType.Incremental, centersToDrawIds, null, null, null, null, null, true, isUndoRedo);
 		}
 	}
 
@@ -210,11 +209,16 @@ public abstract class MapUpdater
 	 * @param change
 	 *            The 'before' state. Used to determine what needs to be redrawn.
 	 */
-	public void createAndShowMapFromChange(MapChange change)
+	/**
+	 * Redraws the map for an undo or redo. {@code isUndoRedo} is carried with the resulting draw (see {@link MapUpdate#isUndoRedo}) so its
+	 * completion can be recognized when the draw finishes — used to avoid warning about cities removed for water during a corrective
+	 * undo/redo draw rather than a forward change.
+	 */
+	public void createAndShowMapFromChange(MapChange change, boolean isUndoRedo)
 	{
 		if (change.updateType != UpdateType.Incremental)
 		{
-			createAndShowMap(change.updateType, null, null, null, null, change.preRun, null);
+			createAndShowMap(change.updateType, null, null, null, null, change.preRun, null, isUndoRedo);
 		}
 		else
 		{
@@ -225,7 +229,7 @@ public abstract class MapUpdater
 			// id's of centers under those roads. The downside to doing this is that it will do a little extra drawing.
 			centersChanged.addAll(getCentersIdsOfRoadsChanged(change.settings.edits, getSettingsFromGUI().resolution));
 			centersChanged.addAll(getCentersIdsOfRiversChanged(change.settings.edits, getSettingsFromGUI().resolution));
-			createAndShowMapUsingIds(UpdateType.Incremental, centersChanged, null, textChanged, iconsChanged, change.preRun, null);
+			createAndShowMapUsingIds(UpdateType.Incremental, centersChanged, null, textChanged, iconsChanged, change.preRun, null, isUndoRedo);
 		}
 	}
 
@@ -407,14 +411,20 @@ public abstract class MapUpdater
 
 	private void createAndShowMap(UpdateType updateType, Set<Center> centersChanged, Set<Edge> edgesChanged, List<MapText> textChanged, List<FreeIcon> iconsChanged, Runnable preRun, Runnable postRun)
 	{
+		createAndShowMap(updateType, centersChanged, edgesChanged, textChanged, iconsChanged, preRun, postRun, false);
+	}
+
+	private void createAndShowMap(UpdateType updateType, Set<Center> centersChanged, Set<Edge> edgesChanged, List<MapText> textChanged, List<FreeIcon> iconsChanged, Runnable preRun, Runnable postRun,
+			boolean isUndoRedo)
+	{
 		Set<Integer> centersChangedIds = centersChanged == null ? null : centersChanged.stream().map(c -> c.index).collect(Collectors.toSet());
 		Set<Integer> edgesChangedIds = edgesChanged == null ? null : edgesChanged.stream().map(e -> e.index).collect(Collectors.toSet());
 
-		createAndShowMapUsingIds(updateType, centersChangedIds, edgesChangedIds, textChanged, iconsChanged, preRun, postRun);
+		createAndShowMapUsingIds(updateType, centersChangedIds, edgesChangedIds, textChanged, iconsChanged, preRun, postRun, isUndoRedo);
 	}
 
 	private void createAndShowMapUsingIds(UpdateType updateType, Set<Integer> centersChangedIds, Set<Integer> edgesChangedIds, Collection<MapText> textChanged, List<FreeIcon> iconsChanged,
-			Runnable preRun, Runnable postRun)
+			Runnable preRun, Runnable postRun, boolean isUndoRedo)
 	{
 		List<Runnable> preRuns = new ArrayList<>();
 		if (preRun != null)
@@ -429,14 +439,14 @@ public abstract class MapUpdater
 		}
 
 		List<MapText> copiedText = textChanged == null ? null : textChanged.stream().map(text -> text.deepCopy()).collect(Collectors.toList());
-		innerCreateAndShowMap(updateType, centersChangedIds, edgesChangedIds, copiedText, iconsChanged, preRuns, postRuns, false);
+		innerCreateAndShowMap(updateType, centersChangedIds, edgesChangedIds, copiedText, iconsChanged, preRuns, postRuns, false, isUndoRedo);
 	}
 
 	/**
 	 * Redraws the map, then displays it
 	 */
 	private void innerCreateAndShowMap(UpdateType updateType, Set<Integer> centersChangedIds, Set<Integer> edgesChangedIds, List<MapText> textChanged, List<FreeIcon> iconsChanged,
-			List<Runnable> preRuns, List<Runnable> postRuns, boolean isLowPriorityChange)
+			List<Runnable> preRuns, List<Runnable> postRuns, boolean isLowPriorityChange, boolean isUndoRedo)
 	{
 		if (!enabled)
 		{
@@ -476,11 +486,11 @@ public abstract class MapUpdater
 				currentMapCreator.cancel();
 				if (updateType == UpdateType.Incremental)
 				{
-					incrementalUpdatesToDraw.add(new MapUpdate(updateType, centersChangedIds, edgesChangedIds, textChanged, iconsChanged, preRuns, postRuns, isLowPriorityChange));
+					incrementalUpdatesToDraw.add(new MapUpdate(updateType, centersChangedIds, edgesChangedIds, textChanged, iconsChanged, preRuns, postRuns, isLowPriorityChange, isUndoRedo));
 				}
 				else
 				{
-					nonIncrementalUpdatesToDraw.add(new MapUpdate(updateType, centersChangedIds, edgesChangedIds, textChanged, iconsChanged, preRuns, postRuns, isLowPriorityChange));
+					nonIncrementalUpdatesToDraw.add(new MapUpdate(updateType, centersChangedIds, edgesChangedIds, textChanged, iconsChanged, preRuns, postRuns, isLowPriorityChange, isUndoRedo));
 				}
 
 				lowPriorityUpdatesToDraw.add(currentUpdate);
@@ -490,17 +500,17 @@ public abstract class MapUpdater
 			{
 				if (isLowPriorityChange)
 				{
-					lowPriorityUpdatesToDraw.add(new MapUpdate(updateType, centersChangedIds, edgesChangedIds, textChanged, iconsChanged, preRuns, postRuns, isLowPriorityChange));
+					lowPriorityUpdatesToDraw.add(new MapUpdate(updateType, centersChangedIds, edgesChangedIds, textChanged, iconsChanged, preRuns, postRuns, isLowPriorityChange, isUndoRedo));
 				}
 				else
 				{
 					if (updateType == UpdateType.Incremental)
 					{
-						incrementalUpdatesToDraw.add(new MapUpdate(updateType, centersChangedIds, edgesChangedIds, textChanged, iconsChanged, preRuns, postRuns, isLowPriorityChange));
+						incrementalUpdatesToDraw.add(new MapUpdate(updateType, centersChangedIds, edgesChangedIds, textChanged, iconsChanged, preRuns, postRuns, isLowPriorityChange, isUndoRedo));
 					}
 					else
 					{
-						nonIncrementalUpdatesToDraw.add(new MapUpdate(updateType, centersChangedIds, edgesChangedIds, textChanged, iconsChanged, preRuns, postRuns, isLowPriorityChange));
+						nonIncrementalUpdatesToDraw.add(new MapUpdate(updateType, centersChangedIds, edgesChangedIds, textChanged, iconsChanged, preRuns, postRuns, isLowPriorityChange, isUndoRedo));
 					}
 				}
 				return;
@@ -549,7 +559,7 @@ public abstract class MapUpdater
 				{
 					try
 					{
-						currentUpdate = new MapUpdate(updateType, centersChangedIds, edgesChangedIds, textChanged, iconsChanged, preRuns, postRuns, isLowPriorityChange);
+						currentUpdate = new MapUpdate(updateType, centersChangedIds, edgesChangedIds, textChanged, iconsChanged, preRuns, postRuns, isLowPriorityChange, isUndoRedo);
 
 						clearMapPartsAsNeeded(updateType);
 
@@ -667,8 +677,7 @@ public abstract class MapUpdater
 							}
 							else
 							{
-								citiesRemovedForTouchingWaterFromLastFullDraw = result.citiesRemovedForTouchingWater;
-								onFinishedDrawingFull(map, anotherDrawIsQueued, scaledBorderWidth, warningMessages);
+								onFinishedDrawingFull(map, anotherDrawIsQueued, scaledBorderWidth, warningMessages, result.citiesRemovedForTouchingWater, isUndoRedo);
 							}
 						}
 
@@ -684,7 +693,7 @@ public abstract class MapUpdater
 
 						if (next != null)
 						{
-							innerCreateAndShowMap(next.updateType, next.centersChangedIds, next.edgesChangedIds, next.textChanged, next.iconsChanged, next.preRuns, next.postRuns, next.isLowPriority);
+							innerCreateAndShowMap(next.updateType, next.centersChangedIds, next.edgesChangedIds, next.textChanged, next.iconsChanged, next.preRuns, next.postRuns, next.isLowPriority, next.isUndoRedo);
 						}
 						else
 						{
@@ -715,7 +724,7 @@ public abstract class MapUpdater
 							if (next != null)
 							{
 								innerCreateAndShowMap(next.updateType, next.centersChangedIds, next.edgesChangedIds, next.textChanged, next.iconsChanged, next.preRuns, next.postRuns,
-										next.isLowPriority);
+										next.isLowPriority, next.isUndoRedo);
 							}
 							else
 							{
@@ -815,15 +824,13 @@ public abstract class MapUpdater
 	public abstract MapSettings getSettingsFromGUI();
 
 	/**
-	 * Returns the city icons dropped from the most recent full draw because they landed on water (duplicates kept, so the size is the number
-	 * of cities lost). Valid to call from within {@link #onFinishedDrawingFull}. Empty when no cities were lost.
+	 * Called when a full draw finishes (on the EDT). {@code citiesRemovedForWater} is the city icons that draw dropped because they landed on
+	 * water (duplicates kept, so the size is the number of cities lost; empty when none). {@code wasTriggeredByUndoRedo} is true when the draw
+	 * was caused by an undo or redo rather than a forward change. Both are per-draw values carried with this specific draw, so they are
+	 * correct even when draws are queued or coalesced.
 	 */
-	protected List<IconDrawer.CityIconRemovedForWater> getCitiesRemovedForTouchingWaterFromLastFullDraw()
-	{
-		return citiesRemovedForTouchingWaterFromLastFullDraw;
-	}
-
-	protected abstract void onFinishedDrawingFull(Image map, boolean anotherDrawIsQueued, int borderPaddingAsDrawn, List<String> warningMessages);
+	protected abstract void onFinishedDrawingFull(Image map, boolean anotherDrawIsQueued, int borderPaddingAsDrawn, List<String> warningMessages,
+			List<IconDrawer.CityIconRemovedForWater> citiesRemovedForWater, boolean wasTriggeredByUndoRedo);
 
 	protected abstract void onFinishedDrawingIncremental(boolean anotherDrawIsQueued, int borderPaddingAsDrawn, IntRectangle incrementalChangeArea, List<String> warningMessages);
 
@@ -928,10 +935,13 @@ public abstract class MapUpdater
 		List<Runnable> postRuns;
 		List<Runnable> preRuns;
 		boolean isLowPriority;
+		/** True if this draw was triggered by an undo or redo. Travels with the draw so its completion can be identified in done(). */
+		boolean isUndoRedo;
 
 		public MapUpdate(UpdateType updateType, Set<Integer> centersChangedIds, Set<Integer> edgesChangedIds, List<MapText> textChanged, List<FreeIcon> iconsChanged, List<Runnable> preRuns,
-				List<Runnable> postRuns, boolean isLowPriority)
+				List<Runnable> postRuns, boolean isLowPriority, boolean isUndoRedo)
 		{
+			this.isUndoRedo = isUndoRedo;
 			this.updateType = updateType;
 			if (centersChangedIds != null)
 			{
@@ -982,6 +992,9 @@ public abstract class MapUpdater
 			{
 				throw new IllegalArgumentException();
 			}
+
+			// If any combined update came from an undo/redo, the combined draw is treated as undo/redo too.
+			isUndoRedo = isUndoRedo || other.isUndoRedo;
 
 			preRuns.addAll(other.preRuns);
 			postRuns.addAll(other.postRuns);

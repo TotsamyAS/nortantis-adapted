@@ -866,7 +866,7 @@ public class LandWaterTool extends EditorTool
 		purgeOrphanedSelections();
 		undoer.setUndoPoint(UpdateType.Incremental, this);
 		updater.createAndShowMapIncrementalUsingCenters(centersToRedraw);
-		updater.doWhenMapIsNotDrawing(() -> updater.createAndShowLowPriorityChanges());
+		updater.doWhenMapIsNotDrawing(() -> updater.createAndShowLowPriorityChanges(false));
 		LineType activeType = riversButton.isSelected() ? LineType.RIVER : LineType.ROAD;
 		refreshSelectionVisuals(mapEditingPanel.getMousePosition(), activeType);
 	}
@@ -1136,7 +1136,7 @@ public class LandWaterTool extends EditorTool
 		}
 		undoer.setUndoPoint(UpdateType.Incremental, this);
 		updater.createAndShowMapIncrementalUsingCenters(getCentersTouchingPoints(centersTouched));
-		updater.doWhenMapIsNotDrawing(() -> updater.createAndShowLowPriorityChanges());
+		updater.doWhenMapIsNotDrawing(() -> updater.createAndShowLowPriorityChanges(false));
 		refreshSelectionVisuals(mouse, activeType);
 	}
 
@@ -1336,7 +1336,7 @@ public class LandWaterTool extends EditorTool
 		}
 
 		updater.createAndShowMapIncrementalUsingCenters(getCentersTouchingPoints(pathsForCenters));
-		updater.doWhenMapIsNotDrawing(() -> updater.createAndShowLowPriorityChanges());
+		updater.doWhenMapIsNotDrawing(() -> updater.createAndShowLowPriorityChanges(false));
 		undoer.setUndoPoint(UpdateType.Incremental, this);
 	}
 
@@ -2138,7 +2138,7 @@ public class LandWaterTool extends EditorTool
 					{
 						updater.createAndShowMapIncrementalUsingCenters(centersToRedraw);
 					}
-					updater.doWhenMapIsNotDrawing(() -> updater.createAndShowLowPriorityChanges());
+					updater.doWhenMapIsNotDrawing(() -> updater.createAndShowLowPriorityChanges(false));
 					undoer.setUndoPoint(UpdateType.Incremental, this);
 				}
 			}
@@ -2477,7 +2477,7 @@ public class LandWaterTool extends EditorTool
 		{
 			updater.createAndShowMapIncrementalUsingCenters(centersToRedraw);
 		}
-		updater.doWhenMapIsNotDrawing(() -> updater.createAndShowLowPriorityChanges());
+		updater.doWhenMapIsNotDrawing(() -> updater.createAndShowLowPriorityChanges(false));
 	}
 
 	/**
@@ -3529,7 +3529,7 @@ public class LandWaterTool extends EditorTool
 		}
 		undoer.setUndoPoint(UpdateType.Incremental, this);
 		updater.createAndShowMapIncrementalUsingCenters(getCentersTouchingPoints(centerPaths));
-		updater.doWhenMapIsNotDrawing(() -> updater.createAndShowLowPriorityChanges());
+		updater.doWhenMapIsNotDrawing(() -> updater.createAndShowLowPriorityChanges(false));
 		dragMovingCPs = null;
 		dragBeforeSnapshots = null;
 	}
@@ -4086,7 +4086,7 @@ public class LandWaterTool extends EditorTool
 			updater.addRoadsToRedrawLowPriority(changed, mainWindow.displayQualityScale);
 		}
 		updater.createAndShowMapIncrementalUsingCenters(centersToRedraw);
-		updater.doWhenMapIsNotDrawing(() -> updater.createAndShowLowPriorityChanges());
+		updater.doWhenMapIsNotDrawing(() -> updater.createAndShowLowPriorityChanges(false));
 		mapEditingPanel.clearHighlightedPolylines();
 		applySelectedSegmentsHighlight();
 		mapEditingPanel.repaint();
@@ -4287,7 +4287,7 @@ public class LandWaterTool extends EditorTool
 			polygonRoadSnapStart = null;
 		}
 
-		updater.doWhenMapIsNotDrawing(() -> updater.createAndShowLowPriorityChanges());
+		updater.doWhenMapIsNotDrawing(() -> updater.createAndShowLowPriorityChanges(false));
 
 		undoer.setUndoPoint(UpdateType.Incremental, this);
 	}

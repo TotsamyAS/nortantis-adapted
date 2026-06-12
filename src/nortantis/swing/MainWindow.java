@@ -583,7 +583,8 @@ public class MainWindow extends JFrame implements ILoggerTarget
 			}
 
 			@Override
-			protected void onFinishedDrawingFull(Image map, boolean anotherDrawIsQueued, int borderPaddingAsDrawn, List<String> warningMessages)
+			protected void onFinishedDrawingFull(Image map, boolean anotherDrawIsQueued, int borderPaddingAsDrawn, List<String> warningMessages,
+					List<nortantis.IconDrawer.CityIconRemovedForWater> citiesRemovedForWater, boolean wasTriggeredByUndoRedo)
 			{
 				if (mapEditingPanel.mapFromMapCreator != null && mapEditingPanel.mapFromMapCreator != map)
 				{
@@ -591,6 +592,7 @@ public class MainWindow extends JFrame implements ILoggerTarget
 				}
 				mapEditingPanel.mapFromMapCreator = map;
 				onFinishedDrawingCommon(anotherDrawIsQueued, borderPaddingAsDrawn, null, warningMessages);
+				warnIfCitiesWereRemovedForWater(citiesRemovedForWater, wasTriggeredByUndoRedo);
 			}
 
 			@Override
@@ -657,28 +659,6 @@ public class MainWindow extends JFrame implements ILoggerTarget
 
 					JOptionPane.showMessageDialog(MainWindow.this, scrollPane, Translation.get("mainWindow.mapDrewWithWarnings"), JOptionPane.WARNING_MESSAGE);
 
-				}
-
-				// Warn when a full draw removed coastal cities because they landed on water (IconDrawer drops such icons). This usually means a
-				// change reshaped the coastline (the shore line style) or changed the draw resolution (the display quality) just enough to put a
-				// city that was extremely close to the water over it. The cause is not pinned down on purpose, so any future change that can do
-				// this is covered. The count comes from the draw that removed them, and removed cities are gone from the edits, so this fires
-				// once per change rather than nagging on later redraws. A city sinking because the user painted ocean over it is an incremental
-				// draw, which does not update this count, so that expected case is not warned about. The first full draw after a load only
-				// establishes the baseline, so opening a map (or creating a sub-map, which warns separately) does not warn. The specific cities
-				// are not listed to keep the popup small; the user can undo to see what changed.
-				if (incrementalChangeArea == null)
-				{
-					int removedCityCount = getCitiesRemovedForTouchingWaterFromLastFullDraw().size();
-					if (hasEstablishedCityOnWaterBaseline && removedCityCount > 0)
-					{
-						String editMenuName = Translation.get("menu.edit");
-						String undoName = Translation.get("menu.edit.undo");
-						String message = removedCityCount == 1 ? Translation.get("mainWindow.cityRemovedForWater", editMenuName, undoName)
-								: Translation.get("mainWindow.citiesRemovedForWater", String.valueOf(removedCityCount), editMenuName, undoName);
-						JOptionPane.showMessageDialog(MainWindow.this, message, Translation.get("mainWindow.citiesRemovedForWater.title"), JOptionPane.WARNING_MESSAGE);
-					}
-					hasEstablishedCityOnWaterBaseline = true;
 				}
 
 				boolean isChange = settingsHaveUnsavedChanges();
@@ -2179,6 +2159,30 @@ public class MainWindow extends JFrame implements ILoggerTarget
 	public void clearOpenSettingsFilePath()
 	{
 		openSettingsFilePath = null;
+	}
+
+	/**
+	 * Warns the user when a full draw removed coastal cities because they landed on water (IconDrawer drops such icons). This usually means a
+	 * change reshaped the coastline (the shore line style) or changed the draw resolution (the display quality) just enough to put a city that
+	 * was very close to the water over it. The cause is not pinned down on purpose, so any future change that can do this is covered. The
+	 * removed cities come from the draw that dropped them, and removed cities are gone from the edits, so this fires once per change rather
+	 * than nagging on later redraws. A city sinking because the user painted ocean over it is an incremental draw, which does not report
+	 * removed cities here, so that expected case is not warned about. The first full draw after a load only establishes the baseline, so
+	 * opening a map (or creating a sub-map, which warns separately) does not warn. Undo/redo draws are skipped: an undo is trying to put
+	 * removed cities back, not make a forward change, so warning then would be backwards. The specific cities are not listed to keep the popup
+	 * small; the user can undo to see what changed.
+	 */
+	private void warnIfCitiesWereRemovedForWater(List<nortantis.IconDrawer.CityIconRemovedForWater> citiesRemovedForWater, boolean wasTriggeredByUndoRedo)
+	{
+		if (hasEstablishedCityOnWaterBaseline && !wasTriggeredByUndoRedo && citiesRemovedForWater.size() > 0)
+		{
+			String editMenuName = Translation.get("menu.edit");
+			String undoName = Translation.get("menu.edit.undo");
+			String message = citiesRemovedForWater.size() == 1 ? Translation.get("mainWindow.cityRemovedForWater", editMenuName, undoName)
+					: Translation.get("mainWindow.citiesRemovedForWater", String.valueOf(citiesRemovedForWater.size()), editMenuName, undoName);
+			JOptionPane.showMessageDialog(this, message, Translation.get("mainWindow.citiesRemovedForWater.title"), JOptionPane.WARNING_MESSAGE);
+		}
+		hasEstablishedCityOnWaterBaseline = true;
 	}
 
 	void loadSettingsIntoGUI(MapSettings settings)
