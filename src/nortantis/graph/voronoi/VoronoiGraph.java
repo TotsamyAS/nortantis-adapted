@@ -42,6 +42,17 @@ public abstract class VoronoiGraph
 	static final double verySmall = 0.0000001;
 	double pointPrecision;
 
+	// How close (in standard-size graph pixels) a corner must be to a map edge to count as lying on it. makeCorner uses
+	// this to set Corner.isBorder (via Rectangle.liesOnAxes) on the unscaled standard-size graph, and drawUsingTriangles
+	// uses the same value to decide which edge a border corner belongs to. The two must agree: a tighter value in
+	// drawUsingTriangles let a corner sitting slightly inside an edge read as "not on that edge", which made the
+	// border-fill logic draw a quad through the map corner and bleed a neighbor polygon's color into the corner polygon.
+	// drawUsingTriangles runs after scaleFlipAndRotate (draw resolution), where above 1.0 a border corner can sit farther
+	// than this many draw-pixels from its axis, so isCoordinateOnAxis scales the tolerance up by max(1, resolutionScale).
+	// It deliberately does not scale below 1.0: scaling down there reopens corner-fill gaps, and a resolution-independent
+	// nearest-edge test reopens gaps at the map corners.
+	static final double borderCornerEdgeTolerance = 8.0 / 3.0;
+
 	/**
 	 * @param r
 	 *            Random number generator
@@ -503,7 +514,8 @@ public abstract class VoronoiGraph
 					// than 5), but not a problem
 					// with a more useful number of sites.
 
-					if (closeEnough(edgeCorner1.loc.x, edgeCorner2.loc.x, 1) || closeEnough(edgeCorner1.loc.y, edgeCorner2.loc.y, 1))
+					if (closeEnough(edgeCorner1.loc.x, edgeCorner2.loc.x, 1) || closeEnough(edgeCorner1.loc.y, edgeCorner2.loc.y, 1)
+							|| areCornersOnSameMapEdge(edgeCorner1, edgeCorner2))
 					{
 						// Both corners are on a single border.
 
@@ -547,6 +559,38 @@ public abstract class VoronoiGraph
 			}
 		}
 
+	}
+
+	/**
+	 * Determines whether two border corners lie on the same straight edge of the map (both left, both right, both top, or
+	 * both bottom), as opposed to two edges that meet at a map corner.
+	 * <p>
+	 * {@link #drawUsingTriangles} uses this to decide whether to fill a triangle between the two corners (same edge) or a
+	 * 4-point polygon that detours through the map corner (different edges). A border corner can sit a little <i>inside</i>
+	 * an edge (e.g. a Voronoi triple point just shy of the boundary), so this checks each corner's distance to the map's
+	 * axes rather than comparing the two corners' coordinates to each other. The tolerance is {@link #borderCornerEdgeTolerance}
+	 * (the same value makeCorner uses to flag {@link Corner#isBorder}); a tighter one let such a corner read as "not on that
+	 * edge", which made the border-fill logic draw a quad through the map corner and bleed a neighbor polygon's color into
+	 * the corner polygon.
+	 * </p>
+	 */
+	private boolean areCornersOnSameMapEdge(Corner corner1, Corner corner2)
+	{
+		boolean bothOnLeft = isCoordinateOnAxis(corner1.loc.x, bounds.x) && isCoordinateOnAxis(corner2.loc.x, bounds.x);
+		boolean bothOnRight = isCoordinateOnAxis(corner1.loc.x, bounds.getRight()) && isCoordinateOnAxis(corner2.loc.x, bounds.getRight());
+		boolean bothOnTop = isCoordinateOnAxis(corner1.loc.y, bounds.y) && isCoordinateOnAxis(corner2.loc.y, bounds.y);
+		boolean bothOnBottom = isCoordinateOnAxis(corner1.loc.y, bounds.getBottom()) && isCoordinateOnAxis(corner2.loc.y, bounds.getBottom());
+		return bothOnLeft || bothOnRight || bothOnTop || bothOnBottom;
+	}
+
+	private boolean isCoordinateOnAxis(double coordinate, double axis)
+	{
+		// makeCorner flags isBorder on the unscaled standard-size graph; scaleFlipAndRotate then scales the graph to draw
+		// resolution, so above 1.0 a border corner can sit farther than borderCornerEdgeTolerance draw-pixels from its axis.
+		// Scale the tolerance up in that case (and only that case) so it still catches them. Below 1.0 the unscaled tolerance
+		// is already generous enough, and scaling it down there reopens corner-fill gaps, so max(1, resolutionScale) leaves
+		// the sub-1.0 behavior unchanged.
+		return Math.abs(coordinate - axis) <= borderCornerEdgeTolerance * Math.max(1.0, resolutionScale);
 	}
 
 	public Set<Center> getCentersFromEdges(Collection<Edge> edges)
@@ -1115,7 +1159,9 @@ public abstract class VoronoiGraph
 		{
 			c = new Corner();
 			c.loc = p;
-			c.isBorder = bounds.liesOnAxes(p, scaleForBackwardsCompatibility);
+			// borderCornerEdgeTolerance must equal scaleForBackwardsCompatibility here; drawUsingTriangles relies on the
+			// same tolerance to decide which map edge a border corner is on.
+			c.isBorder = bounds.liesOnAxes(p, borderCornerEdgeTolerance);
 			c.index = corners.size();
 			corners.add(c);
 			pointCornerMap.put(key, c);

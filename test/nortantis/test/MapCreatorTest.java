@@ -6,8 +6,10 @@ import nortantis.geom.IntPoint;
 import nortantis.geom.IntRectangle;
 import nortantis.geom.Rectangle;
 import nortantis.graph.voronoi.Center;
+import nortantis.platform.Color;
 import nortantis.platform.Image;
 import nortantis.platform.ImageHelper;
+import nortantis.platform.PixelReader;
 import nortantis.platform.PlatformFactory;
 import nortantis.platform.awt.AwtFactory;
 import nortantis.swing.MapEdits;
@@ -615,6 +617,47 @@ public class MapCreatorTest
 	public void iconsDrawOverCoastlines()
 	{
 		generateAndCompare("iconsDrawOverCoastlines.nort");
+	}
+
+	/**
+	 * Regression test for a neighbor polygon's color bleeding into the lower-right corner polygon on full draws. The bleed
+	 * came from {@code drawUsingTriangles} treating a border corner that sits about 1px inside the bottom edge as being on a
+	 * different edge than the true bottom-edge corner, which filled a polygon through the map corner with the neighbor's
+	 * color. See {@code VoronoiGraph.areCornersOnSameMapEdge}.
+	 * <p>
+	 * The map "bottom right corner land gap.nort" is built to make this visible: every polygon is land with a distinct
+	 * region color, the affected lower-right polygon is red, and the polygon whose color used to bleed in is white. With the
+	 * bug present, the lower-rightmost 58x2 pixels (measured at 0.75 resolution) contain white pixels; with it fixed they
+	 * are entirely the red corner-polygon color.
+	 * </p>
+	 */
+	@Test
+	public void bottomRightCornerPolygonHasNoNeighborColorBleed()
+	{
+		String settingsPath = Paths.get("unit test files", "map settings", "bottom right corner land gap.nort").toString();
+		MapSettings settings = new MapSettings(settingsPath);
+		settings.resolution = 0.75;
+
+		try (Image map = new MapCreator().createMap(settings, null, null))
+		{
+			int cropWidth = 58;
+			int cropHeight = 2;
+			int startX = map.getWidth() - cropWidth;
+			int startY = map.getHeight() - cropHeight;
+			try (PixelReader pixels = map.createPixelReader())
+			{
+				for (int y = startY; y < map.getHeight(); y++)
+				{
+					for (int x = startX; x < map.getWidth(); x++)
+					{
+						Color color = Color.create(pixels.getRGB(x, y));
+						boolean isRed = color.getRed() > 150 && color.getGreen() < 120 && color.getBlue() < 120;
+						assertTrue(isRed, "A neighbor polygon's color bled into the lower-right corner polygon at (" + x + ", " + y + "): " + color
+								+ ". The lower-rightmost 58x2 pixels should all be the red corner-polygon color.");
+					}
+				}
+			}
+		}
 	}
 
 	@Test

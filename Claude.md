@@ -93,6 +93,15 @@ Test data locations:
 	`unit test files/expected maps/` for MapCreatorTest
 	`unit test files/expected image helper tests` for ImageHelperTest
 
+### Do NOT regenerate the expected maps
+
+The expected maps (and other expected-output images) are gitignored and exist so **I** can hand-inspect what a change altered and verify fixes — including yours. Do not delete or overwrite them to make failing pixel comparisons pass, and do not use them as your own correctness oracle by regenerating and re-comparing.
+
+- Never bulk-delete or bulk-regenerate the expected-maps folder, and never copy `failed maps` over `expected maps` en masse.
+- If your change legitimately alters rendering, **leave the existing expected maps in place and report which tests now differ** (with the diff locations / a short description), so I can review and regenerate them myself.
+- The only exception: while iterating on a tests you are actively working on, you may delete/regenerate the expected maps for only those tests. Do not touch any others.
+- A failing MapCreatorTest pixel comparison is a signal to investigate and report, not to re-baseline.
+
 ## Performance Benchmarking
 
 Use the benchmark task to profile map creation performance:
