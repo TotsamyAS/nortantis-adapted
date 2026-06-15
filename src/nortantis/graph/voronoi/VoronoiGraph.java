@@ -42,16 +42,18 @@ public abstract class VoronoiGraph
 	static final double verySmall = 0.0000001;
 	double pointPrecision;
 
-	// How close (in standard-size graph pixels) a corner must be to a map edge to count as lying on it. makeCorner uses
-	// this to set Corner.isBorder (via Rectangle.liesOnAxes) on the unscaled standard-size graph, and drawUsingTriangles
-	// uses the same value to decide which edge a border corner belongs to. The two must agree: a tighter value in
-	// drawUsingTriangles let a corner sitting slightly inside an edge read as "not on that edge", which made the
-	// border-fill logic draw a quad through the map corner and bleed a neighbor polygon's color into the corner polygon.
-	// drawUsingTriangles runs after scaleFlipAndRotate (draw resolution), where above 1.0 a border corner can sit farther
-	// than this many draw-pixels from its axis, so isCoordinateOnAxis scales the tolerance up by max(1, resolutionScale).
-	// It deliberately does not scale below 1.0: scaling down there reopens corner-fill gaps, and a resolution-independent
-	// nearest-edge test reopens gaps at the map corners.
+	// How close (in standard-size graph pixels) a border corner must be to a map edge to count as lying on it. This is the
+	// same tolerance makeCorner uses to flag Corner.isBorder; drawUsingTriangles reuses it (via mapEdgesOfBorderCorner) to
+	// decide which map edge a border corner belongs to. drawUsingTriangles runs after scaleFlipAndRotate (draw resolution),
+	// where above 1.0 a border corner can sit farther than this many draw-pixels from its axis, so the tolerance is scaled
+	// up by max(1, resolutionScale). It deliberately does not scale below 1.0: scaling down there reopens corner-fill gaps.
 	static final double borderCornerEdgeTolerance = 8.0 / 3.0;
+
+	// How close (in standard-size graph pixels) a border corner's distances to a vertical and a horizontal map axis must be
+	// to each other for it to count as sitting on the map corner where those edges meet (and so belonging to both edges)
+	// rather than on just one edge that passes near the corner. Kept well below borderCornerEdgeTolerance so a corner that
+	// sits on one edge a pixel or two from the map corner is classified onto that single edge, not treated as the corner.
+	static final double mapCornerVertexTolerance = 1.0;
 
 	/**
 	 * @param r
@@ -514,10 +516,17 @@ public abstract class VoronoiGraph
 					// than 5), but not a problem
 					// with a more useful number of sites.
 
+					// If these two outer corners are on the same exterior edge of the graph, fill a triangle between them.
+					// Otherwise they wrap a map corner, so fall through to the 4-point polygon that detours through that map
+					// corner. The coordinate-comparison test handles the common case where the two corners share a coordinate;
+					// sharedMapEdge additionally catches a corner sitting a pixel or two inside its edge, which the comparison
+					// misses and which - left as a quad - detours through the map corner and bleeds a neighbor polygon's color
+					// into the corner polygon. sharedMapEdge classifies by nearest axis so it does not also mistake two corners
+					// on perpendicular edges near a map corner for one edge.
 					if (closeEnough(edgeCorner1.loc.x, edgeCorner2.loc.x, 1) || closeEnough(edgeCorner1.loc.y, edgeCorner2.loc.y, 1)
-							|| areCornersOnSameMapEdge(edgeCorner1, edgeCorner2))
+							|| sharedMapEdge(edgeCorner1, edgeCorner2) != null)
 					{
-						// Both corners are on a single border.
+						// Both corners are on a single border, so fill a triangle between them.
 
 						if (drawElevation)
 						{
@@ -562,35 +571,88 @@ public abstract class VoronoiGraph
 	}
 
 	/**
-	 * Determines whether two border corners lie on the same straight edge of the map (both left, both right, both top, or
-	 * both bottom), as opposed to two edges that meet at a map corner.
+	 * Returns a map edge that both border corners lie on (both left, both right, both top, or both bottom), or null if they
+	 * are on different edges and so wrap a map corner.
 	 * <p>
 	 * {@link #drawUsingTriangles} uses this to decide whether to fill a triangle between the two corners (same edge) or a
 	 * 4-point polygon that detours through the map corner (different edges). A border corner can sit a little <i>inside</i>
-	 * an edge (e.g. a Voronoi triple point just shy of the boundary), so this checks each corner's distance to the map's
-	 * axes rather than comparing the two corners' coordinates to each other. The tolerance is {@link #borderCornerEdgeTolerance}
-	 * (the same value makeCorner uses to flag {@link Corner#isBorder}); a tighter one let such a corner read as "not on that
-	 * edge", which made the border-fill logic draw a quad through the map corner and bleed a neighbor polygon's color into
-	 * the corner polygon.
+	 * an edge (e.g. a Voronoi triple point just shy of the boundary, or about a pixel inside the bottom edge), so each
+	 * corner is classified by the map edge whose axis it is <i>nearest</i> to (see {@link #mapEdgesOfBorderCorner}) rather
+	 * than by comparing the two corners' coordinates to each other. Classifying by nearest axis - instead of "within
+	 * tolerance of an axis" - is what keeps two corners on perpendicular edges near a map corner (each within
+	 * {@link #borderCornerEdgeTolerance} of a shared axis) from being mistaken for one edge, which would draw a triangle
+	 * that skips the map corner and leave a gap or color bleed there.
 	 * </p>
 	 */
-	private boolean areCornersOnSameMapEdge(Corner corner1, Corner corner2)
+	private MapEdge sharedMapEdge(Corner corner1, Corner corner2)
 	{
-		boolean bothOnLeft = isCoordinateOnAxis(corner1.loc.x, bounds.x) && isCoordinateOnAxis(corner2.loc.x, bounds.x);
-		boolean bothOnRight = isCoordinateOnAxis(corner1.loc.x, bounds.getRight()) && isCoordinateOnAxis(corner2.loc.x, bounds.getRight());
-		boolean bothOnTop = isCoordinateOnAxis(corner1.loc.y, bounds.y) && isCoordinateOnAxis(corner2.loc.y, bounds.y);
-		boolean bothOnBottom = isCoordinateOnAxis(corner1.loc.y, bounds.getBottom()) && isCoordinateOnAxis(corner2.loc.y, bounds.getBottom());
-		return bothOnLeft || bothOnRight || bothOnTop || bothOnBottom;
+		EnumSet<MapEdge> shared = mapEdgesOfBorderCorner(corner1);
+		shared.retainAll(mapEdgesOfBorderCorner(corner2));
+		return shared.isEmpty() ? null : shared.iterator().next();
 	}
 
-	private boolean isCoordinateOnAxis(double coordinate, double axis)
+	private enum MapEdge
+	{
+		Left, Right, Top, Bottom
+	}
+
+	/**
+	 * Returns the map edge(s) a border corner lies on. Normally one edge: the nearest axis, provided it is within
+	 * {@link #borderCornerEdgeTolerance}. A corner sitting on a map corner - nearly equidistant from a vertical and a
+	 * horizontal axis (within {@link #mapCornerVertexTolerance}) - lies on both of those edges, so it shares an edge with
+	 * whichever neighbor it is paired with.
+	 */
+	private EnumSet<MapEdge> mapEdgesOfBorderCorner(Corner corner)
 	{
 		// makeCorner flags isBorder on the unscaled standard-size graph; scaleFlipAndRotate then scales the graph to draw
 		// resolution, so above 1.0 a border corner can sit farther than borderCornerEdgeTolerance draw-pixels from its axis.
-		// Scale the tolerance up in that case (and only that case) so it still catches them. Below 1.0 the unscaled tolerance
-		// is already generous enough, and scaling it down there reopens corner-fill gaps, so max(1, resolutionScale) leaves
-		// the sub-1.0 behavior unchanged.
-		return Math.abs(coordinate - axis) <= borderCornerEdgeTolerance * Math.max(1.0, resolutionScale);
+		// Scale the tolerances up in that case (and only that case) so this still catches them. Below 1.0 the unscaled
+		// tolerance is already generous enough, and scaling it down reopens corner-fill gaps, so max(1, resolutionScale)
+		// leaves the sub-1.0 behavior unchanged.
+		double resolutionFactor = Math.max(1.0, resolutionScale);
+		double tolerance = borderCornerEdgeTolerance * resolutionFactor;
+
+		double leftDist = Math.abs(corner.loc.x - bounds.x);
+		double rightDist = Math.abs(corner.loc.x - bounds.getRight());
+		double topDist = Math.abs(corner.loc.y - bounds.y);
+		double bottomDist = Math.abs(corner.loc.y - bounds.getBottom());
+
+		double verticalDist = Math.min(leftDist, rightDist);
+		double horizontalDist = Math.min(topDist, bottomDist);
+		MapEdge verticalEdge = leftDist <= rightDist ? MapEdge.Left : MapEdge.Right;
+		MapEdge horizontalEdge = topDist <= bottomDist ? MapEdge.Top : MapEdge.Bottom;
+		boolean nearVertical = verticalDist <= tolerance;
+		boolean nearHorizontal = horizontalDist <= tolerance;
+
+		EnumSet<MapEdge> result = EnumSet.noneOf(MapEdge.class);
+		if (nearVertical && nearHorizontal)
+		{
+			// Within tolerance of both a vertical and a horizontal axis, so near a map corner. If the corner is nearly
+			// equidistant from both axes it sits on the map corner itself and belongs to both edges; otherwise it is an
+			// edge corner that merely passes near the map corner, and belongs only to the axis it actually sits on.
+			if (Math.abs(verticalDist - horizontalDist) <= mapCornerVertexTolerance * resolutionFactor)
+			{
+				result.add(verticalEdge);
+				result.add(horizontalEdge);
+			}
+			else if (verticalDist < horizontalDist)
+			{
+				result.add(verticalEdge);
+			}
+			else
+			{
+				result.add(horizontalEdge);
+			}
+		}
+		else if (nearVertical)
+		{
+			result.add(verticalEdge);
+		}
+		else if (nearHorizontal)
+		{
+			result.add(horizontalEdge);
+		}
+		return result;
 	}
 
 	public Set<Center> getCentersFromEdges(Collection<Edge> edges)
