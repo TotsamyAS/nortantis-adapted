@@ -1228,7 +1228,59 @@ public abstract class VoronoiGraph
 			corners.add(c);
 			pointCornerMap.put(key, c);
 		}
+		else
+		{
+			// Two corners that land in the same merge bucket are collapsed into the first one created. When one of them is a
+			// boundary corner sitting exactly on a map edge (the clip code places those exactly on bounds) and the other is a
+			// Voronoi vertex a pixel or two inside, keeping the interior one leaves border polygons short of the map edge: a
+			// visible gap, and because that corner reads as "not on that edge" the border-fill detours through the map corner
+			// and bleeds a neighbor's color into the corner polygon. If this later point lies exactly on a map edge that the
+			// kept corner does not, snap the kept corner onto that edge so the merged corner reaches the boundary.
+			Point snapped = snapMergedCornerToSharedBound(c.loc, p);
+			if (snapped != c.loc)
+			{
+				c.loc = snapped;
+				c.isBorder = bounds.liesOnAxes(c.loc, borderCornerEdgeTolerance);
+			}
+		}
 		return c;
+	}
+
+	/**
+	 * Returns the kept corner's location moved onto any map edge that the incoming merged point lies exactly on but the kept
+	 * location does not, or the same location instance if no snap is needed. Only the coordinate of the shared edge is moved
+	 * (x for left/right, y for top/bottom).
+	 */
+	private Point snapMergedCornerToSharedBound(Point kept, Point incoming)
+	{
+		double x = kept.x;
+		double y = kept.y;
+		if (isExactlyOnBound(incoming.x, bounds.x) && !isExactlyOnBound(kept.x, bounds.x))
+		{
+			x = bounds.x;
+		}
+		else if (isExactlyOnBound(incoming.x, bounds.getRight()) && !isExactlyOnBound(kept.x, bounds.getRight()))
+		{
+			x = bounds.getRight();
+		}
+		if (isExactlyOnBound(incoming.y, bounds.y) && !isExactlyOnBound(kept.y, bounds.y))
+		{
+			y = bounds.y;
+		}
+		else if (isExactlyOnBound(incoming.y, bounds.getBottom()) && !isExactlyOnBound(kept.y, bounds.getBottom()))
+		{
+			y = bounds.getBottom();
+		}
+		if (x == kept.x && y == kept.y)
+		{
+			return kept;
+		}
+		return new Point(x, y);
+	}
+
+	private boolean isExactlyOnBound(double coordinate, double bound)
+	{
+		return Math.abs(coordinate - bound) < verySmall;
 	}
 
 	protected abstract void assignCornerElevations();
