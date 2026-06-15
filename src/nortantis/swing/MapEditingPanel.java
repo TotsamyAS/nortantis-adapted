@@ -1425,15 +1425,11 @@ public class MapEditingPanel extends UnscaledImagePanel
 		if (handle == null || handle == BoxSelectHandle.NONE)
 		{
 			// Draw a new box from scratch.
-			nortantis.geom.Rectangle box;
 			if (selectionBoxLockedAspectRatio > 0)
 			{
-				box = applyAspectRatioConstraint(selectionBoxDragStartRI.x, selectionBoxDragStartRI.y, currentRI.x, currentRI.y);
+				return aspectRatioBoxClampedToConstraints(selectionBoxDragStartRI.x, selectionBoxDragStartRI.y, currentRI.x, currentRI.y);
 			}
-			else
-			{
-				box = nortantis.geom.Rectangle.fromCorners(selectionBoxDragStartRI.x, selectionBoxDragStartRI.y, currentRI.x, currentRI.y);
-			}
+			nortantis.geom.Rectangle box = nortantis.geom.Rectangle.fromCorners(selectionBoxDragStartRI.x, selectionBoxDragStartRI.y, currentRI.x, currentRI.y);
 			return clampResizeToConstraints(clampToMaxAspectRatio(box));
 		}
 
@@ -1453,7 +1449,6 @@ public class MapEditingPanel extends UnscaledImagePanel
 		double right = left + selectionBoxRIAtDragStart.width;
 		double bottom = top + selectionBoxRIAtDragStart.height;
 
-		nortantis.geom.Rectangle result;
 		if (selectionBoxLockedAspectRatio > 0)
 		{
 			// Aspect-ratio-constrained corner resize.
@@ -1484,22 +1479,48 @@ public class MapEditingPanel extends UnscaledImagePanel
 			{
 				return null;
 			}
-			result = applyAspectRatioConstraint(fixedX, fixedY, movingX, movingY);
-		}
-		else
-		{
-			if (handle == BoxSelectHandle.UPPER_LEFT || handle == BoxSelectHandle.LEFT || handle == BoxSelectHandle.LOWER_LEFT)
-				left = currentRI.x + selectionBoxDragOffset.x;
-			if (handle == BoxSelectHandle.UPPER_RIGHT || handle == BoxSelectHandle.RIGHT || handle == BoxSelectHandle.LOWER_RIGHT)
-				right = currentRI.x + selectionBoxDragOffset.x;
-			if (handle == BoxSelectHandle.UPPER_LEFT || handle == BoxSelectHandle.TOP || handle == BoxSelectHandle.UPPER_RIGHT)
-				top = currentRI.y + selectionBoxDragOffset.y;
-			if (handle == BoxSelectHandle.LOWER_LEFT || handle == BoxSelectHandle.BOTTOM || handle == BoxSelectHandle.LOWER_RIGHT)
-				bottom = currentRI.y + selectionBoxDragOffset.y;
-			result = nortantis.geom.Rectangle.fromCorners(left, top, right, bottom);
+			return aspectRatioBoxClampedToConstraints(fixedX, fixedY, movingX, movingY);
 		}
 
+		if (handle == BoxSelectHandle.UPPER_LEFT || handle == BoxSelectHandle.LEFT || handle == BoxSelectHandle.LOWER_LEFT)
+			left = currentRI.x + selectionBoxDragOffset.x;
+		if (handle == BoxSelectHandle.UPPER_RIGHT || handle == BoxSelectHandle.RIGHT || handle == BoxSelectHandle.LOWER_RIGHT)
+			right = currentRI.x + selectionBoxDragOffset.x;
+		if (handle == BoxSelectHandle.UPPER_LEFT || handle == BoxSelectHandle.TOP || handle == BoxSelectHandle.UPPER_RIGHT)
+			top = currentRI.y + selectionBoxDragOffset.y;
+		if (handle == BoxSelectHandle.LOWER_LEFT || handle == BoxSelectHandle.BOTTOM || handle == BoxSelectHandle.LOWER_RIGHT)
+			bottom = currentRI.y + selectionBoxDragOffset.y;
+		nortantis.geom.Rectangle result = nortantis.geom.Rectangle.fromCorners(left, top, right, bottom);
+
 		return clampResizeToConstraints(clampToMaxAspectRatio(result));
+	}
+
+	/**
+	 * Builds an aspect-ratio-locked box from a fixed corner toward a moving corner, then shrinks it (keeping the fixed corner anchored and
+	 * the locked ratio intact) so it fits within selectionBoxConstraintsRI. Unlike clipping the box to the constraints (which would distort
+	 * the ratio — e.g. dragging past the bottom edge would clamp the height and leave it too wide), this returns the largest correctly-
+	 * proportioned box that fits in the room available from the fixed corner, capped at the user's requested size. That way a fast drag past
+	 * a bound still expands the box all the way to that bound rather than rejecting the resize and leaving the box short.
+	 */
+	private nortantis.geom.Rectangle aspectRatioBoxClampedToConstraints(double fixedX, double fixedY, double movingX, double movingY)
+	{
+		nortantis.geom.Rectangle box = applyAspectRatioConstraint(fixedX, fixedY, movingX, movingY);
+		if (selectionBoxConstraintsRI == null)
+		{
+			return box;
+		}
+		double ratio = selectionBoxLockedAspectRatio;
+		double signX = movingX - fixedX >= 0 ? 1 : -1;
+		double signY = movingY - fixedY >= 0 ? 1 : -1;
+		nortantis.geom.Rectangle c = selectionBoxConstraintsRI;
+		// Room available from the fixed corner in the direction the box is growing. The fixed corner is part of the previous valid box, so
+		// it lies inside the constraints; max() guards against tiny negative values from floating-point error.
+		double maxWidth = Math.max(0, signX > 0 ? (c.x + c.width) - fixedX : fixedX - c.x);
+		double maxHeight = Math.max(0, signY > 0 ? (c.y + c.height) - fixedY : fixedY - c.y);
+		// Largest height that fits both axes (width = ratio * height), capped at the height the user dragged out.
+		double height = Math.min(box.height, Math.min(maxHeight, maxWidth / ratio));
+		double width = height * ratio;
+		return nortantis.geom.Rectangle.fromCorners(fixedX, fixedY, fixedX + signX * width, fixedY + signY * height);
 	}
 
 	/**

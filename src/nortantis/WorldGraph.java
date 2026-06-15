@@ -3145,7 +3145,7 @@ public class WorldGraph extends VoronoiGraph
 			return new Point(fromLine.x, fromLine.y - length);
 		}
 
-		if (fromLine.y == bounds.width)
+		if (fromLine.y == bounds.height)
 		{
 			return new Point(fromLine.x, fromLine.y + length);
 		}

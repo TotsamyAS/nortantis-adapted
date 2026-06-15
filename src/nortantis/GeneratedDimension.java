@@ -64,6 +64,36 @@ public enum GeneratedDimension
 	}
 
 	/**
+	 * Returns the preset whose aspect ratio matches the given width:height ratio (in either orientation) within a small relative tolerance,
+	 * or {@link #Custom} if none match. Used to label a selection box (or sub-map) by its aspect ratio. Because integer truncation/rounding
+	 * can make the actual dimensions deviate slightly from a preset, a small tolerance absorbs the difference; matching is orientation-
+	 * independent so a rotated (portrait) selection still maps to its named ratio.
+	 */
+	public static GeneratedDimension fromAspectRatio(double width, double height)
+	{
+		if (width <= 0 || height <= 0)
+		{
+			return Custom;
+		}
+		// Normalize to >= 1 so portrait and landscape boxes both match the same named preset (preset aspect ratios are all >= 1).
+		double ratio = Math.max(width, height) / Math.min(width, height);
+		final double relativeTolerance = 0.01;
+		GeneratedDimension best = Custom;
+		double bestDiff = Double.POSITIVE_INFINITY;
+		for (GeneratedDimension d : presets())
+		{
+			double presetRatio = d.aspectRatio();
+			double relativeDiff = Math.abs(ratio - presetRatio) / presetRatio;
+			if (relativeDiff <= relativeTolerance && relativeDiff < bestDiff)
+			{
+				bestDiff = relativeDiff;
+				best = d;
+			}
+		}
+		return best;
+	}
+
+	/**
 	 * Returns all preset dimensions — all values except {@link #Custom}.
 	 */
 	public static GeneratedDimension[] presets()

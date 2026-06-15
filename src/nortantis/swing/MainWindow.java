@@ -1481,9 +1481,20 @@ public class MainWindow extends JFrame implements ILoggerTarget
 			String intro = hasFileName ? Translation.get("subMapInfo.createdFrom", info.originalFileName) : Translation.get("subMapInfo.createdFromUnsaved");
 			String iconsRivers = info.redistributeIconsAndRivers ? Translation.get("subMapInfo.iconsRivers.redistributed") : Translation.get("subMapInfo.iconsRivers.matched");
 
+			// Label the selection box with the aspect ratio it actually has (computed on the fly from its dimensions), which may differ from
+			// the ratio requested in SubMapDialog due to integer truncation/rounding — in which case it shows as Custom.
+			GeneratedDimension selectionDimension = GeneratedDimension.fromAspectRatio(info.selectionWidth, info.selectionHeight);
+			String selectionAspectRatioName = selectionDimension.displayName();
+			// fromAspectRatio matches a named ratio in either orientation, so a portrait selection (e.g. a 16-by-9 preset with Rotate 90°)
+			// matches the same preset. Tag it as rotated so "16 by 9" reads correctly as 9 by 16. Square is orientation-agnostic.
+			if (selectionDimension != GeneratedDimension.Custom && selectionDimension != GeneratedDimension.Square && info.selectionHeight > info.selectionWidth)
+			{
+				selectionAspectRatioName = Translation.get("subMapInfo.aspectRatio.rotated", selectionAspectRatioName);
+			}
+
 			text.append(intro).append("\n\n");
-			text.append(Translation.get("subMapInfo.field.selection", Long.toString(Math.round(info.selectionX)), Long.toString(Math.round(info.selectionY)),
-					Long.toString(Math.round(info.selectionWidth)), Long.toString(Math.round(info.selectionHeight)))).append("\n");
+			text.append(Translation.get("subMapInfo.field.selection", selectionAspectRatioName, Long.toString(Math.round(info.selectionX)),
+					Long.toString(Math.round(info.selectionY)), Long.toString(Math.round(info.selectionWidth)), Long.toString(Math.round(info.selectionHeight)))).append("\n");
 			text.append(Translation.get("subMapInfo.field.detail", Integer.toString(info.worldSize))).append("\n");
 			text.append(Translation.get("subMapInfo.field.iconsRivers", iconsRivers)).append("\n");
 			text.append(Translation.get("subMapInfo.field.seed", Long.toString(info.randomSeed)));

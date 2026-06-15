@@ -966,9 +966,11 @@ public class RiverDrawer
 		Set<OrderlessPair<Point>> removedSegments = new HashSet<>();
 		for (List<Point> seg : segmentsToRemove)
 		{
-			if (seg.size() >= 2)
+			// Each list is a concatenation of consecutive overlapping segment pairs (e.g. [A,B,B,C,C,D]), so iterate by pairs
+			// (i += 2) to remove every segment in the run, not just the first.
+			for (int i = 0; i + 1 < seg.size(); i += 2)
 			{
-				removedSegments.add(new OrderlessPair<>(seg.get(0), seg.get(1)));
+				removedSegments.add(new OrderlessPair<>(seg.get(i), seg.get(i + 1)));
 			}
 		}
 
