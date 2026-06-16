@@ -750,14 +750,8 @@ public class NewSettingsDialog extends JDialog
 
 	private static Dimension normalizeCustomDimensions(int w, int h)
 	{
-		if (w >= h)
-		{
-			return new Dimension(4096, Math.max(1, (int) Math.round(4096.0 * h / w)));
-		}
-		else
-		{
-			return new Dimension(Math.max(1, (int) Math.round(4096.0 * w / h)), 4096);
-		}
+		nortantis.geom.IntDimension normalized = GeneratedDimension.normalizeToPresetScale(w, h);
+		return new Dimension(normalized.width, normalized.height);
 	}
 
 	private void updateCustomDimPreview()

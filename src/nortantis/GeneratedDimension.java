@@ -1,5 +1,6 @@
 package nortantis;
 
+import nortantis.geom.IntDimension;
 import nortantis.swing.translation.Translation;
 
 /**
@@ -11,6 +12,12 @@ public enum GeneratedDimension
 
 	public final int width;
 	public final int height;
+
+	/**
+	 * The longer side shared by every preset dimension. Arbitrary dimensions are normalized to this scale before being matched against the
+	 * presets (see {@link #normalizeToPresetScale}).
+	 */
+	public static final int PRESET_LONG_SIDE = 4096;
 
 	/**
 	 * Maximum allowed aspect ratio (width:height or height:width). Aspect ratios more extreme than this are rejected by map generation.
@@ -64,10 +71,25 @@ public enum GeneratedDimension
 	}
 
 	/**
-	 * Returns the preset whose aspect ratio matches the given width:height ratio (in either orientation) within a small relative tolerance,
-	 * or {@link #Custom} if none match. Used to label a selection box (or sub-map) by its aspect ratio. Because integer truncation/rounding
-	 * can make the actual dimensions deviate slightly from a preset, a small tolerance absorbs the difference; matching is orientation-
-	 * independent so a rotated (portrait) selection still maps to its named ratio.
+	 * Scales (width, height) so its longer side equals {@link #PRESET_LONG_SIDE} (rounding the shorter side), matching the scale at which
+	 * preset dimensions are defined. This is the single normalization used both to produce the generated dimensions for a custom aspect
+	 * ratio and to classify arbitrary dimensions by aspect ratio (see {@link #fromAspectRatio}).
+	 */
+	public static IntDimension normalizeToPresetScale(int width, int height)
+	{
+		if (width >= height)
+		{
+			return new IntDimension(PRESET_LONG_SIDE, Math.max(1, (int) Math.round((double) PRESET_LONG_SIDE * height / width)));
+		}
+		return new IntDimension(Math.max(1, (int) Math.round((double) PRESET_LONG_SIDE * width / height)), PRESET_LONG_SIDE);
+	}
+
+	/**
+	 * Returns the preset matching the given width:height aspect ratio (in either orientation), or {@link #Custom} if none match. Used to
+	 * label a selection box (or sub-map) by its aspect ratio. Matching is exact and as precise as {@link #fromDimensions} applied to a
+	 * generated map: the dimensions are normalized to the preset scale and looked up, so a ratio that is merely close to a preset normalizes
+	 * to a non-preset size and reads as Custom. Matching is orientation-independent (the longer side is always normalized to
+	 * {@link #PRESET_LONG_SIDE}), so a rotated (portrait) selection still maps to its named ratio.
 	 */
 	public static GeneratedDimension fromAspectRatio(double width, double height)
 	{
@@ -75,22 +97,8 @@ public enum GeneratedDimension
 		{
 			return Custom;
 		}
-		// Normalize to >= 1 so portrait and landscape boxes both match the same named preset (preset aspect ratios are all >= 1).
-		double ratio = Math.max(width, height) / Math.min(width, height);
-		final double relativeTolerance = 0.01;
-		GeneratedDimension best = Custom;
-		double bestDiff = Double.POSITIVE_INFINITY;
-		for (GeneratedDimension d : presets())
-		{
-			double presetRatio = d.aspectRatio();
-			double relativeDiff = Math.abs(ratio - presetRatio) / presetRatio;
-			if (relativeDiff <= relativeTolerance && relativeDiff < bestDiff)
-			{
-				bestDiff = relativeDiff;
-				best = d;
-			}
-		}
-		return best;
+		IntDimension normalized = normalizeToPresetScale((int) Math.round(Math.max(width, height)), (int) Math.round(Math.min(width, height)));
+		return fromDimensions(normalized.width, normalized.height);
 	}
 
 	/**

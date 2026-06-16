@@ -1489,7 +1489,7 @@ public class MainWindow extends JFrame implements ILoggerTarget
 			// matches the same preset. Tag it as rotated so "16 by 9" reads correctly as 9 by 16. Square is orientation-agnostic.
 			if (selectionDimension != GeneratedDimension.Custom && selectionDimension != GeneratedDimension.Square && info.selectionHeight > info.selectionWidth)
 			{
-				selectionAspectRatioName = Translation.get("subMapInfo.aspectRatio.rotated", selectionAspectRatioName);
+				selectionAspectRatioName = Translation.get("mapInfo.aspectRatio.rotated", selectionAspectRatioName);
 			}
 
 			text.append(intro).append("\n\n");
@@ -1506,6 +1506,12 @@ public class MainWindow extends JFrame implements ILoggerTarget
 			// the world size. Custom dimensions aren't a named preset, so spell out the actual size after the "Custom" label.
 			GeneratedDimension dimension = GeneratedDimension.fromDimensions(settings.generatedWidth, settings.generatedHeight);
 			String dimensionDisplay = dimension == GeneratedDimension.Custom ? dimension.displayName() + " (" + settings.generatedWidth + " × " + settings.generatedHeight + ")" : dimension.toString();
+			// A 90°/270° rotation swaps the map's orientation (the generated dimensions stay landscape; rotation is applied at draw time), so
+			// e.g. a 16-by-9 preset is shown rotated as 9 by 16. A 180° rotation preserves orientation, and a square looks the same rotated.
+			if (dimension != GeneratedDimension.Square && (settings.rightRotationCount == 1 || settings.rightRotationCount == 3))
+			{
+				dimensionDisplay = Translation.get("mapInfo.aspectRatio.rotated", dimensionDisplay);
+			}
 			text.append(Translation.get("mapInfo.aspectRatio", dimensionDisplay)).append("\n");
 			text.append(Translation.get("mapInfo.worldSize", Integer.toString(settings.worldSize)));
 			scrollPanePreferredSize = new Dimension(300, 50);
