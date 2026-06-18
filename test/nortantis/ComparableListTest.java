@@ -1,4 +1,4 @@
-package nortantis.test;
+package nortantis;
 
 import nortantis.util.ComparableList;
 import nortantis.util.Range;

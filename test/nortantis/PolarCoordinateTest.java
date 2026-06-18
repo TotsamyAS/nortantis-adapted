@@ -1,6 +1,5 @@
-package nortantis.test;
+package nortantis;
 
-import nortantis.PolarCoordinate;
 import nortantis.geom.Point;
 import org.junit.jupiter.api.Test;
 

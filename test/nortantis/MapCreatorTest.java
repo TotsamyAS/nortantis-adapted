@@ -1,6 +1,5 @@
-package nortantis.test;
+package nortantis;
 
-import nortantis.*;
 import nortantis.editor.*;
 import nortantis.geom.IntPoint;
 import nortantis.geom.IntRectangle;

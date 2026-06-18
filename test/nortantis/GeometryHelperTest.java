@@ -1,6 +1,8 @@
-package nortantis.util;
+package nortantis;
 
 import nortantis.geom.Point;
+import nortantis.util.GeometryHelper;
+
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;

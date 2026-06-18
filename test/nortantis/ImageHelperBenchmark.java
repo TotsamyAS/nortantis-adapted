@@ -1,4 +1,4 @@
-package nortantis.test;
+package nortantis;
 
 import nortantis.geom.IntRectangle;
 import nortantis.platform.Color;

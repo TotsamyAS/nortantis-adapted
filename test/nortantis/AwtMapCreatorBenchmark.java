@@ -1,4 +1,4 @@
-package nortantis.test;
+package nortantis;
 
 import nortantis.platform.PlatformFactory;
 import nortantis.platform.awt.AwtFactory;
@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
 /**
  * Benchmark for map creation performance using AWT (CPU rendering).
  *
- * Run with: ./gradlew test --tests "nortantis.test.AwtMapCreatorBenchmark"
+ * Run with: ./gradlew test --tests "nortantis.AwtMapCreatorBenchmark"
  */
 public class AwtMapCreatorBenchmark
 {

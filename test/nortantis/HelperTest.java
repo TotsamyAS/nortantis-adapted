@@ -1,4 +1,4 @@
-package nortantis.util;
+package nortantis;
 
 import org.junit.jupiter.api.Test;
 
@@ -7,6 +7,8 @@ import java.util.Collections;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
+
+import nortantis.util.Helper;
 
 public class HelperTest
 {

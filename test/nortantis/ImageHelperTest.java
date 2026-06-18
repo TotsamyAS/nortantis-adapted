@@ -1,6 +1,5 @@
-package nortantis.test;
+package nortantis;
 
-import nortantis.WorldGraph;
 import nortantis.geom.IntPoint;
 import nortantis.geom.IntRectangle;
 import nortantis.geom.Point;

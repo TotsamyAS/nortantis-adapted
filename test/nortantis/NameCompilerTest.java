@@ -1,6 +1,5 @@
-package nortantis.test;
+package nortantis;
 
-import nortantis.NameCompiler;
 import nortantis.util.Helper;
 import nortantis.util.Pair;
 import nortantis.util.Range;

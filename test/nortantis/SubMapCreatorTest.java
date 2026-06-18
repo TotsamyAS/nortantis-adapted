@@ -1,6 +1,5 @@
-package nortantis.test;
+package nortantis;
 
-import nortantis.*;
 import nortantis.editor.FreeIcon;
 import nortantis.editor.River;
 import nortantis.geom.Point;

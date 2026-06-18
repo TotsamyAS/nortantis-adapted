@@ -1,4 +1,4 @@
-package nortantis.test;
+package nortantis;
 
 import nortantis.geom.Point;
 import nortantis.graph.voronoi.Center;

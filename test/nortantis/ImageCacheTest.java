@@ -1,6 +1,5 @@
-package nortantis.test;
+package nortantis;
 
-import nortantis.ImageCache;
 import nortantis.ImageCache.ParsedFilename;
 import org.junit.jupiter.api.Test;
 

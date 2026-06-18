@@ -1,7 +1,5 @@
-package nortantis.test;
+package nortantis;
 
-import nortantis.*;
-import nortantis.editor.CenterEdit;
 import nortantis.editor.FreeIcon;
 import nortantis.editor.MapParts;
 import nortantis.platform.*;
@@ -14,9 +12,7 @@ import org.apache.commons.io.FilenameUtils;
 import java.io.File;
 import java.nio.file.Paths;
 import java.util.Arrays;
-import java.util.HashSet;
 import java.util.Random;
-import java.util.Set;
 import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
