@@ -318,6 +318,13 @@ public class MapCreatorTest
 		generateAndCompare("allTypesOfEdits.nort");
 	}
 
+
+	@Test
+	public void simpleSmallWorld()
+	{
+		generateAndCompare("simpleSmallWorld.nort");
+	}
+
 	@Test
 	public void riverTest()
 	{
