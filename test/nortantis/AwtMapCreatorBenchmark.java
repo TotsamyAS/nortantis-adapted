@@ -17,6 +17,7 @@ public class AwtMapCreatorBenchmark
 	public static void setup()
 	{
 		PlatformFactory.setInstance(new AwtFactory());
+		nortantis.swing.translation.Translation.initialize();
 		Assets.disableAddedArtPacksForUnitTests();
 	}
 
