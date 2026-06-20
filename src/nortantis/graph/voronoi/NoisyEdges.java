@@ -30,7 +30,10 @@ public class NoisyEdges
 	// but with curves
 	private Map<Integer, List<Point>> curves;
 
-	private double scaleMultiplier;
+	// Mean polygon width of the graph (in display pixels at the graph's resolution). Used to scale the subdivision stopping threshold so that
+	// jaggedness is consistent across world sizes. Larger world sizes have smaller polygons, so the threshold must be proportionally smaller
+	// to subdivide them to the same relative depth.
+	private double meanPolygonWidth;
 	private boolean isForFrayedBorder;
 	// A uniform factor applied to every corner/center coordinate read while generating noisy edges. Normally 1.0 (use the graph's own
 	// coordinates). The icon water-check builds a second NoisyEdges at a fixed canonical resolution from the same graph by setting this to
@@ -38,14 +41,14 @@ public class NoisyEdges
 	// therefore stable when the display resolution changes. See WorldGraph.findClosestCenter(Point, boolean, boolean) with useWaterCheckResolution=true.
 	private double coordinateScale;
 
-	public NoisyEdges(double scaleMultiplier, LineStyle style, boolean isForFrayedBorder)
+	public NoisyEdges(double meanPolygonWidth, LineStyle style, boolean isForFrayedBorder)
 	{
-		this(scaleMultiplier, style, isForFrayedBorder, 1.0);
+		this(meanPolygonWidth, style, isForFrayedBorder, 1.0);
 	}
 
-	public NoisyEdges(double scaleMultiplier, LineStyle style, boolean isForFrayedBorder, double coordinateScale)
+	public NoisyEdges(double meanPolygonWidth, LineStyle style, boolean isForFrayedBorder, double coordinateScale)
 	{
-		this.scaleMultiplier = scaleMultiplier;
+		this.meanPolygonWidth = meanPolygonWidth;
 		paths = new ConcurrentHashMap<>();
 		curves = new ConcurrentHashMap<>();
 		lineStyle = style;
@@ -102,7 +105,7 @@ public class NoisyEdges
 				Point r = Point.interpolate(v1, d0, f);
 				Point s = Point.interpolate(v1, d1, f);
 
-				int minLength = getNoisyEdgeMinLength(edge);
+				double minLength = getNoisyEdgeMinLength(edge);
 
 				List<Point> path0 = buildNoisyLineSegments(rand, v0, t, midpoint, q, minLength); // List
 																												// of
@@ -158,7 +161,7 @@ public class NoisyEdges
 
 	private void subdivide(Point A, Point B, Point C, Point D, double minLength, Random random, List<Point> points)
 	{
-		if (A.subtract(C).length() < minLength * scaleMultiplier || B.subtract(D).length() < minLength * scaleMultiplier)
+		if (A.subtract(C).length() < minLength * meanPolygonWidth * coordinateScale || B.subtract(D).length() < minLength * meanPolygonWidth * coordinateScale)
 		{
 			return;
 		}
@@ -331,29 +334,31 @@ public class NoisyEdges
 	}
 
 	/**
-	 * Determines how small lines should be segmented to when drawing noisy edges.
+	 * Returns the stopping threshold for noisy edge subdivision as a fraction of {@link #meanPolygonWidth}. Calibrated so that at the
+	 * reference world size (~7000 cells on a 4096×4096 map at resolution 0.75) the resulting pixel threshold matches the pre-world-size-fix
+	 * values, preserving the appearance of maps that already looked good at that size while giving consistent jaggedness at all world sizes.
 	 */
-	private int getNoisyEdgeMinLength(Edge edge)
+	private double getNoisyEdgeMinLength(Edge edge)
 	{
 		EdgeDrawType type = getEdgeDrawType(edge);
 		if (type.equals(EdgeDrawType.Region))
 		{
-			return 3;
+			return 0.15;
 		}
 		if (type.equals(EdgeDrawType.Coast))
 		{
-			return 3;
+			return 0.15;
 		}
 		if (type.equals(EdgeDrawType.River))
 		{
-			return 2;
+			return 0.10;
 		}
 		if (type.equals(EdgeDrawType.FrayedBorder))
 		{
-			return 3;
+			return 0.15;
 		}
 
-		return 1000; // A number big enough to not create noisy edges
+		return 1000.0; // A number big enough to not create noisy edges
 	}
 
 	public EdgeDrawType getEdgeDrawType(Edge edge)
