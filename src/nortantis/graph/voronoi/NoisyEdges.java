@@ -7,7 +7,6 @@ package nortantis.graph.voronoi;
 import nortantis.CurveCreator;
 import nortantis.MapSettings.LineStyle;
 import nortantis.geom.Point;
-import nortantis.util.Stopwatch;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -66,13 +65,10 @@ public class NoisyEdges
 	// must be drawn in reverse order.
 	public void buildNoisyEdges(VoronoiGraph map)
 	{
-		// TODO remove stopwatch when done with it.
-		Stopwatch sw = new Stopwatch("buildNoisyEdges");
 		for (Center c : map.centers)
 		{
 			buildNoisyEdgesForCenter(c, false);
 		}
-		sw.printElapsedTime();
 	}
 
 	public void buildNoisyEdgesForCenter(Center center, boolean forceRebuild)
