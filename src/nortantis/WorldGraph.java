@@ -324,9 +324,12 @@ public class WorldGraph extends VoronoiGraph
 	{
 		noisyEdges = new NoisyEdges(MapCreator.calcSizeMultiplierFromResolutionScale(resolutionScale), lineStyle, isForFrayedBorder);
 		noisyEdges.buildNoisyEdges(this);
-		// The canonical (water-check-resolution) slices mirror these (a full/line-style rebuild changes the whole coastline), so discard
-		// them to be rebuilt lazily against the new coastline.
-		resetCanonicalSlicePolygons();
+		// The canonical (water-check-resolution) slices mirror these (a full/line-style rebuild changes the whole coastline). If they have
+		// been built, rebuild them now against the new coastline rather than nulling them out, so readers never see a null window.
+		if (canonicalNoisyEdges != null)
+		{
+			buildCanonicalSlicePolygonsIfNeeded(true);
+		}
 	}
 
 	public void drawRegionIndexes(Painter p, Set<Center> centersToDraw, Rectangle drawBounds)
@@ -820,7 +823,7 @@ public class WorldGraph extends VoronoiGraph
 		buildCenterLookupGridIfNeeded();
 		if (useWaterCheckResolution)
 		{
-			buildCanonicalSlicePolygonsIfNeeded();
+			buildCanonicalSlicePolygonsIfNeeded(false);
 		}
 
 		if (returnNullIfNotOnMap && (point.x >= getWidth() || point.y >= getHeight() || point.x < 0 || point.y < 0))
@@ -1345,20 +1348,21 @@ public class WorldGraph extends VoronoiGraph
 	}
 
 	/**
-	 * Builds the canonical (water-check-resolution) slice polygons for the whole graph, lazily, the first time a resolution-invariant lookup
-	 * is requested. The canonical noisy edges are generated at {@link #waterCheckResolution} (so the coastline detail is fixed regardless of
-	 * the display resolution) but the resulting slice polygons are stored in this graph's display coordinate space, so the existing grid and
-	 * lookup code work against them unchanged. Thread-safe and publishes last, like {@link #buildCenterLookupGridIfNeeded}.
+	 * Builds the canonical (water-check-resolution) slice polygons for the whole graph. On first call (force=false) this is lazy - it is a
+	 * no-op if already built. Pass force=true to rebuild against a new coastline without creating a null window visible to concurrent readers.
+	 * The canonical noisy edges are generated at {@link #waterCheckResolution} (so the coastline detail is fixed regardless of the display
+	 * resolution) but the resulting slice polygons are stored in this graph's display coordinate space, so the existing grid and lookup code
+	 * work against them unchanged. Thread-safe and publishes last, like {@link #buildCenterLookupGridIfNeeded}.
 	 */
-	private void buildCanonicalSlicePolygonsIfNeeded()
+	private void buildCanonicalSlicePolygonsIfNeeded(boolean force)
 	{
-		if (canonicalSlicePolygonsByCenter != null)
+		if (!force && canonicalSlicePolygonsByCenter != null)
 		{
 			return;
 		}
 		synchronized (canonicalSliceLock)
 		{
-			if (canonicalSlicePolygonsByCenter != null)
+			if (!force && canonicalSlicePolygonsByCenter != null)
 			{
 				return;
 			}
@@ -1386,19 +1390,6 @@ public class WorldGraph extends VoronoiGraph
 			// always sees a non-null canonicalNoisyEdges to rebuild from.
 			canonicalNoisyEdges = canonical;
 			canonicalSlicePolygonsByCenter = slices;
-		}
-	}
-
-	/**
-	 * Discards the canonical (water-check-resolution) slice polygons and the noisy edges they derive from, so they are rebuilt on next use.
-	 * Called when the display coastline changes wholesale (line style change / full rebuild).
-	 */
-	private void resetCanonicalSlicePolygons()
-	{
-		synchronized (canonicalSliceLock)
-		{
-			canonicalSlicePolygonsByCenter = null;
-			canonicalNoisyEdges = null;
 		}
 	}
 

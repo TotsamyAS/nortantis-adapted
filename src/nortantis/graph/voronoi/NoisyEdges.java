@@ -35,7 +35,7 @@ public class NoisyEdges
 	// A uniform factor applied to every corner/center coordinate read while generating noisy edges. Normally 1.0 (use the graph's own
 	// coordinates). The icon water-check builds a second NoisyEdges at a fixed canonical resolution from the same graph by setting this to
 	// (canonicalResolution / graphResolution), so the generated noisy coastline shape depends only on the canonical resolution and is
-	// therefore stable when the display resolution changes. See WorldGraph.isWaterAtWaterCheckResolution.
+	// therefore stable when the display resolution changes. See WorldGraph.findClosestCenter(Point, boolean, boolean) with useWaterCheckResolution=true.
 	private double coordinateScale;
 
 	public NoisyEdges(double scaleMultiplier, LineStyle style, boolean isForFrayedBorder)
