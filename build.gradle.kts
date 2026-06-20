@@ -90,9 +90,16 @@ tasks.register<Test>("benchmark") {
     useJUnitPlatform()
     forkEvery = 1
 
-    // Only run the map-creation benchmark (this task is wired up for JFR profiling of map creation).
+    // Run benchmark classes (any class named *Benchmark) under JFR profiling. With no --tests this runs all of them; pass
+    // --tests "nortantis.SomeBenchmark" to profile just one (e.g. from IntelliJ). The include must be this broad because Gradle's --tests
+    // can only narrow a task's includes, not override them - a narrower include here (e.g. only AwtMapCreatorBenchmark) would make
+    // `:benchmark --tests "nortantis.FindClosestCenterBenchmark"` match nothing.
     filter {
-        includeTestsMatching("nortantis.AwtMapCreatorBenchmark")
+        includeTestsMatching("*Benchmark")
+        // Don't fail the build when this task is asked (e.g. by IntelliJ as a candidate test task) to run a non-benchmark test it doesn't
+        // include. Without this, IntelliJ runs of regular tests fail with "No matching tests found ... in task :benchmark" before the
+        // :test task gets a chance to run them.
+        isFailOnNoMatchingTests = false
     }
 
     // Enable the benchmark gate (@EnabledIfSystemProperty(named = "runBenchmarks", matches = "true")).
