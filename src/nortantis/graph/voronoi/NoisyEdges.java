@@ -340,22 +340,25 @@ public class NoisyEdges
 	 */
 	private double getNoisyEdgeMinLength(Edge edge)
 	{
+		// Smaller = more jagged, larger = less. 1.0 = calibrated baseline.
+		final double jaggedEdgeThresholdScale = 1.35;
+
 		EdgeDrawType type = getEdgeDrawType(edge);
 		if (type.equals(EdgeDrawType.Region))
 		{
-			return 0.15;
+			return 0.15 * jaggedEdgeThresholdScale;
 		}
 		if (type.equals(EdgeDrawType.Coast))
 		{
-			return 0.15;
+			return 0.15 * jaggedEdgeThresholdScale;
 		}
 		if (type.equals(EdgeDrawType.River))
 		{
-			return 0.10;
+			return 0.10 * jaggedEdgeThresholdScale;
 		}
 		if (type.equals(EdgeDrawType.FrayedBorder))
 		{
-			return 0.15;
+			return 0.15 * jaggedEdgeThresholdScale;
 		}
 
 		return 1000.0; // A number big enough to not create noisy edges
