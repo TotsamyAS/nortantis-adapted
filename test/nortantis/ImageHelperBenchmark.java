@@ -9,6 +9,7 @@ import nortantis.platform.awt.AwtFactory;
 import nortantis.platform.ImageHelper;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -16,7 +17,11 @@ import java.util.Random;
 
 /**
  * Benchmark for ImageHelper operations.
+ *
+ * Benchmarks are skipped during normal test runs. Run with:
+ * ./gradlew test --tests "nortantis.ImageHelperBenchmark" -DrunBenchmarks=true
  */
+@EnabledIfSystemProperty(named = "runBenchmarks", matches = "true")
 public class ImageHelperBenchmark
 {
 	@BeforeAll

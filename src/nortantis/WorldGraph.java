@@ -1195,7 +1195,7 @@ public class WorldGraph extends VoronoiGraph
 	// Grid-based center lookup
 	private CenterLookupGrid centerLookupGrid;
 
-	private void buildCenterLookupGridIfNeeded()
+	public void buildCenterLookupGridIfNeeded()
 	{
 		if (centerLookupGrid == null)
 		{
@@ -1205,6 +1205,15 @@ public class WorldGraph extends VoronoiGraph
 			// Precompute all slice polygons for faster lookups
 			precomputeSlicePolygons();
 		}
+	}
+
+	/**
+	 * Clears the grid-based center lookup so it will be rebuilt on next use. Symmetric with {@link #resetCenterLookupTable()}; primarily
+	 * useful for benchmarking the build cost of the grid.
+	 */
+	public void resetCenterLookupGrid()
+	{
+		centerLookupGrid = null;
 	}
 
 	/**

@@ -71,10 +71,9 @@ tasks.test {
         "--add-opens", "java.base/java.nio=ALL-UNNAMED",
     )
     useJUnitPlatform()
-    filter {
-        excludeTestsMatching("nortantis.test.AwtMapCreatorBenchmark")
-        excludeTestsMatching("nortantis.test.ImageHelperBenchmark")
-    }
+    // Benchmarks are gated by @EnabledIfSystemProperty(named = "runBenchmarks", matches = "true"), so they are skipped during normal
+    // test runs. Forward the flag from the Gradle invocation so `./gradlew test -DrunBenchmarks=true` can opt in. Default off.
+    systemProperty("runBenchmarks", System.getProperty("runBenchmarks", "false"))
 }
 
 // Benchmark task with JFR profiling
@@ -91,10 +90,13 @@ tasks.register<Test>("benchmark") {
     useJUnitPlatform()
     forkEvery = 1
 
-    // Only run benchmark tests
+    // Only run the map-creation benchmark (this task is wired up for JFR profiling of map creation).
     filter {
-        includeTestsMatching("nortantis.test.AwtMapCreatorBenchmark")
+        includeTestsMatching("nortantis.AwtMapCreatorBenchmark")
     }
+
+    // Enable the benchmark gate (@EnabledIfSystemProperty(named = "runBenchmarks", matches = "true")).
+    systemProperty("runBenchmarks", "true")
 
     jvmArgs = listOf(
         "-ea",

@@ -5,12 +5,16 @@ import nortantis.platform.awt.AwtFactory;
 import nortantis.util.Assets;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 
 /**
  * Benchmark for map creation performance using AWT (CPU rendering).
  *
- * Run with: ./gradlew test --tests "nortantis.AwtMapCreatorBenchmark"
+ * Benchmarks are skipped during normal test runs. Run with:
+ * ./gradlew test --tests "nortantis.AwtMapCreatorBenchmark" -DrunBenchmarks=true
+ * (or via the dedicated JFR-profiling task: ./gradlew benchmark)
  */
+@EnabledIfSystemProperty(named = "runBenchmarks", matches = "true")
 public class AwtMapCreatorBenchmark
 {
 	@BeforeAll
