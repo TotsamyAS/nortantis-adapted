@@ -1171,7 +1171,8 @@ public class IconDrawer
 	 *             shading mask dimensions don't match the icon dimensions.
 	 */
 	private void drawIconWithBackgroundAndMasks(Image mapOrSnippet, ImageAndMasks imageAndMasks, Image landBackground, Image landTexture, Image oceanTexture, IconType type, int xCenter, int yCenter,
-			int graphXCenter, int graphYCenter, PixelReader hoistedLandTexturePixels, PixelReader hoistedOceanTexturePixels, PixelReader hoistedLandBackgroundPixels)
+			int graphXCenter, int graphYCenter, PixelReader hoistedLandTexturePixels, PixelReader hoistedOceanTexturePixels, PixelReader hoistedLandBackgroundPixels,
+			PixelReaderWriter hoistedMapPixels)
 	{
 		Image icon = imageAndMasks.image;
 		Image contentMask = imageAndMasks.getOrCreateContentMask();
@@ -1208,6 +1209,13 @@ public class IconDrawer
 		{
 			drawIconWithBackgroundAndMasksDirect(mapOrSnippet, imageAndMasks, landBackground, landTexture, oceanTexture, type, xLeft, yTop, graphXLeft, graphYTop, mapOrSnippetSize, icon, contentMask,
 					shadingMask, hoistedLandTexturePixels, hoistedOceanTexturePixels, hoistedLandBackgroundPixels);
+		}
+		else if (hoistedMapPixels != null)
+		{
+			// High-memory non-AWT path: write straight through a map-wide PixelReaderWriter opened once for the whole drawIcons call, instead
+			// of copying a snippet out and pasting it back per icon (which is a GPU readback + upload each time).
+			drawIconWithBackgroundAndMasksHoisted(mapOrSnippet, landBackground, landTexture, oceanTexture, type, xLeft, yTop, graphXLeft, graphYTop, mapOrSnippetSize, icon, contentMask,
+					shadingMask, hoistedLandTexturePixels, hoistedOceanTexturePixels, hoistedLandBackgroundPixels, hoistedMapPixels);
 		}
 		else
 		{
@@ -1425,6 +1433,131 @@ public class IconDrawer
 		}
 	}
 
+	/**
+	 * High-memory, non-AWT variant of the icon blend. Writes directly through a map-wide {@link PixelReaderWriter} ({@code hoistedMapPixels})
+	 * that {@link #drawIcons} opened ONCE for the whole call, rather than copying a snippet out of the map, blending, and pasting it back per
+	 * icon. On a GPU backend that turns the per-icon glReadPixels/glTexSubImage2D round-trips into one readback + one upload for the entire
+	 * call (all per-icon writes accumulate in the reader/writer's CPU buffer until it closes).
+	 *
+	 * <p>The background blend is identical to the snippet/direct paths. The icon image itself is composited manually with
+	 * {@link #compositeSourceOver} instead of via a {@link Painter}: a Painter would draw straight to the backing image (e.g. the GPU texture),
+	 * which the hoisted reader/writer's buffered flush would then clobber. {@link #compositeSourceOver} mirrors the platform painter's
+	 * non-premultiplied source-over exactly, so this path is byte-identical to the snippet path (verified by the high-vs-low-memory test).
+	 */
+	private void drawIconWithBackgroundAndMasksHoisted(Image mapOrSnippet, Image landBackground, Image landTexture, Image oceanTexture, IconType type, int xLeft, int yTop,
+			int graphXLeft, int graphYTop, IntDimension mapOrSnippetSize, Image icon, Image contentMask, Image shadingMask, PixelReader hoistedLandTexturePixels, PixelReader hoistedOceanTexturePixels,
+			PixelReader hoistedLandBackgroundPixels, PixelReaderWriter hoistedMapPixels)
+	{
+		boolean targetOpaque = !mapOrSnippet.hasAlpha();
+		try (PixelReader contentMaskPixels = contentMask.createPixelReader();
+				PixelReader shadingMaskPixels = shadingMask.createPixelReader())
+		{
+			// Phase 1: blend the land/ocean background through the content + shading masks into the map, reading the current map color.
+			for (int y : new Range(icon.getHeight()))
+			{
+				for (int x = 0; x < icon.getWidth(); x++)
+				{
+					int xLoc = xLeft + x;
+					int yLoc = yTop + y;
+					if (xLoc < 0 || xLoc >= mapOrSnippetSize.width || yLoc < 0 || yLoc >= mapOrSnippetSize.height)
+					{
+						continue;
+					}
+
+					Center closest = graph.findClosestCenter(new Point(graphXLeft + x, graphYTop + y), true);
+					if (closest == null)
+					{
+						// The pixel isn't on the map.
+						continue;
+					}
+
+					float contentMaskLevel = contentMaskPixels.getNormalizedPixelLevel(x, y);
+					float shadingMaskLevel = shadingMaskPixels.getNormalizedPixelLevel(x, y);
+					Color bgColorNoIcons;
+					Color landTextureColor;
+					if (type == IconType.decorations)
+					{
+						bgColorNoIcons = closest.isWater ? Color.create(hoistedOceanTexturePixels.getRGB(xLoc, yLoc), oceanTexture.hasAlpha())
+								: Color.create(hoistedLandBackgroundPixels.getRGB(xLoc, yLoc), landBackground.hasAlpha());
+						landTextureColor = closest.isWater ? Color.create(hoistedOceanTexturePixels.getRGB(xLoc, yLoc), oceanTexture.hasAlpha())
+								: Color.create(hoistedLandBackgroundPixels.getRGB(xLoc, yLoc), landBackground.hasAlpha());
+					}
+					else
+					{
+						bgColorNoIcons = Color.create(hoistedLandBackgroundPixels.getRGB(xLoc, yLoc), landBackground.hasAlpha());
+						landTextureColor = Color.create(hoistedLandTexturePixels.getRGB(xLoc, yLoc), landTexture.hasAlpha());
+					}
+
+					Color mapColor = Color.create(hoistedMapPixels.getRGB(xLoc, yLoc), mapOrSnippet.hasAlpha());
+
+					int red = (int) (Helper.linearCombo(contentMaskLevel, Helper.linearCombo(shadingMaskLevel, bgColorNoIcons.getRed(), landTextureColor.getRed()), mapColor.getRed()));
+					int green = (int) (Helper.linearCombo(contentMaskLevel, Helper.linearCombo(shadingMaskLevel, bgColorNoIcons.getGreen(), landTextureColor.getGreen()), mapColor.getGreen()));
+					int blue = (int) (Helper.linearCombo(contentMaskLevel, Helper.linearCombo(shadingMaskLevel, bgColorNoIcons.getBlue(), landTextureColor.getBlue()), mapColor.getBlue()));
+					int alpha = (int) (Helper.linearCombo(contentMaskLevel, (Helper.linearCombo(shadingMaskLevel, bgColorNoIcons.getAlpha(), landTextureColor.getAlpha())), mapColor.getAlpha()));
+					hoistedMapPixels.setRGB(xLoc, yLoc, red, green, blue, alpha);
+				}
+			}
+
+			// Phase 2: composite the icon image on top (source-over), matching Painter.drawImage so output matches the snippet path.
+			try (PixelReader iconPixels = icon.createPixelReader())
+			{
+				boolean iconHasAlpha = icon.hasAlpha();
+				for (int y = 0; y < icon.getHeight(); y++)
+				{
+					for (int x = 0; x < icon.getWidth(); x++)
+					{
+						int xLoc = xLeft + x;
+						int yLoc = yTop + y;
+						if (xLoc < 0 || xLoc >= mapOrSnippetSize.width || yLoc < 0 || yLoc >= mapOrSnippetSize.height)
+						{
+							continue;
+						}
+						Color src = Color.create(iconPixels.getRGB(x, y), iconHasAlpha);
+						compositeSourceOver(hoistedMapPixels, xLoc, yLoc, src, mapOrSnippet.hasAlpha(), targetOpaque);
+					}
+				}
+			}
+		}
+	}
+
+	/**
+	 * Non-premultiplied source-over of {@code src} over the current destination pixel, written through {@code dst}. This deliberately mirrors
+	 * gdx2d's integer blend (the formula {@code pixmap.drawPixmap} uses for a SourceOver blit), NOT the painter's float {@code storeColorAt}:
+	 * the snippet path draws the icon via {@code pixmap.drawPixmap} (the icon and map share the RGBA8888 backing, so the painter's fast blit
+	 * path is taken), so matching gdx2d's exact integer rounding is what keeps the hoisted high-memory output byte-identical to the snippet
+	 * (low-memory) path. gdx2d: if src alpha is 0 keep dst; if 255 (or dst fully transparent) copy src; else
+	 * {@code da' = da*(255-sa)/255; a = sa + da'; c = (sc*sa + dc*da')/a} (all integer division).
+	 */
+	private static void compositeSourceOver(PixelReaderWriter dst, int x, int y, Color src, boolean dstHasAlpha, boolean targetOpaque)
+	{
+		int sa = src.getAlpha();
+		if (sa == 0)
+		{
+			return;
+		}
+		int sr = src.getRed();
+		int sg = src.getGreen();
+		int sb = src.getBlue();
+		if (sa == 255)
+		{
+			dst.setRGB(x, y, sr, sg, sb, 255);
+			return;
+		}
+		Color d = Color.create(dst.getRGB(x, y), dstHasAlpha);
+		int da = d.getAlpha();
+		if (da == 0)
+		{
+			dst.setRGB(x, y, sr, sg, sb, targetOpaque ? 255 : sa);
+			return;
+		}
+		int daAdj = (da * (255 - sa)) / 255;
+		int a = sa + daAdj;
+		int red = (sr * sa + d.getRed() * daAdj) / a;
+		int green = (sg * sa + d.getGreen() * daAdj) / a;
+		int blue = (sb * sa + d.getBlue() * daAdj) / a;
+		dst.setRGB(x, y, red, green, blue, targetOpaque ? 255 : a);
+	}
+
 	public List<IconDrawTask> getTasksInDrawBoundsSortedAndScaled(Rectangle drawBounds)
 	{
 		List<IconDrawTask> tasks = new ArrayList<IconDrawTask>(iconsToDraw.size());
@@ -1490,14 +1623,19 @@ public class IconDrawer
 		// to avoid repeated GPU thread round-trips (one per icon per image).
 		if (!isLowMemoryMode)
 		{
+			// For the non-AWT backends, also open ONE map-wide PixelReaderWriter for the whole call so each icon writes directly into its CPU
+			// buffer (one readback + one upload total) instead of copying a snippet out and pasting it back per icon. The AWT path keeps its
+			// own per-icon direct blending (which relies on a Painter for the icon image), so it gets no hoisted map writer (null).
+			boolean useAwtDirect = PlatformFactory.getInstance() instanceof AwtFactory;
 			try (PixelReader landTexturePixels = landTexture.createPixelReader();
 					PixelReader oceanTexturePixels = oceanWithWavesAndShading.createPixelReader();
-					PixelReader landBackgroundPixels = landBackground.createPixelReader())
+					PixelReader landBackgroundPixels = landBackground.createPixelReader();
+					PixelReaderWriter mapPixels = useAwtDirect ? null : mapOrSnippet.createPixelReaderWriter())
 			{
 				for (final IconDrawTask task : tasksToDrawSorted)
 				{
 					drawIconWithBackgroundAndMasks(mapOrSnippet, task.scaledImageAndMasks, landBackground, landTexture, oceanWithWavesAndShading, task.type, ((int) task.centerLoc.x) - xToSubtract,
-							((int) task.centerLoc.y) - yToSubtract, (int) task.centerLoc.x, (int) task.centerLoc.y, landTexturePixels, oceanTexturePixels, landBackgroundPixels);
+							((int) task.centerLoc.y) - yToSubtract, (int) task.centerLoc.x, (int) task.centerLoc.y, landTexturePixels, oceanTexturePixels, landBackgroundPixels, mapPixels);
 				}
 			}
 		}
@@ -1506,7 +1644,7 @@ public class IconDrawer
 			for (final IconDrawTask task : tasksToDrawSorted)
 			{
 				drawIconWithBackgroundAndMasks(mapOrSnippet, task.scaledImageAndMasks, landBackground, landTexture, oceanWithWavesAndShading, task.type, ((int) task.centerLoc.x) - xToSubtract,
-						((int) task.centerLoc.y) - yToSubtract, (int) task.centerLoc.x, (int) task.centerLoc.y, null, null, null);
+						((int) task.centerLoc.y) - yToSubtract, (int) task.centerLoc.x, (int) task.centerLoc.y, null, null, null, null);
 			}
 		}
 	}
