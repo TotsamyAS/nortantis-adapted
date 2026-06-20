@@ -2385,8 +2385,13 @@ public class IconDrawer
 		if (iconTask.unScaledImageAndMasks.getOrCreateContentMask().getType() != ImageType.Binary)
 			throw new IllegalArgumentException("Mask type must be TYPE_BYTE_BINARY for checking whether icons touch water.");
 
-		final int imageUpperLeftX = (int) iconTask.centerLoc.x - iconTask.scaledSize.width / 2;
-		final int imageUpperLeftY = (int) iconTask.centerLoc.y - iconTask.scaledSize.height / 2;
+		// Keep the icon's center as a float (centerLoc is locationResolutionInvariant * resolutionScale) instead of truncating it to an
+		// integer here. Truncating before the check discards the sub-pixel part of the center, and since the discarded fraction changes with
+		// resolutionScale, the sample grid below would shift by up to ~1 rendered pixel when the display quality changes - enough to flip the
+		// water test near a coast and make an icon (e.g. a city) appear or disappear. Using the float position makes the samples vary
+		// smoothly with resolution instead of stepping.
+		final double imageUpperLeftX = iconTask.centerLoc.x - iconTask.scaledSize.width / 2.0;
+		final double imageUpperLeftY = iconTask.centerLoc.y - iconTask.scaledSize.height / 2.0;
 
 		Rectangle scaledContentBounds;
 		double contentMidpointYInMaskSpace;
@@ -2429,7 +2434,7 @@ public class IconDrawer
 			{
 				continue;
 			}
-			int y = (int) (yInMask * (1.0 / yScaleToMaskSpace));
+			double y = yInMask * (1.0 / yScaleToMaskSpace);
 
 			Center center = graph.findClosestCenter(new Point(imageUpperLeftX + x, imageUpperLeftY + y), true);
 			if (center != null && center.isWater)
