@@ -1,6 +1,7 @@
 package nortantis.editor;
 
 import nortantis.*;
+import nortantis.geom.Dimension;
 import nortantis.geom.IntDimension;
 import nortantis.geom.Point;
 import nortantis.platform.Color;
@@ -220,7 +221,10 @@ public class FreeIcon
 			}
 			ImageAndMasks imageAndMasks = iconsWithWidths.get(iconName);
 			IntDimension drawSize = IconDrawer.getDimensionsWhenScaledByWidth(imageAndMasks.image.size(), Math.round(typeLevelScale * scale * baseWidth)).roundToIntDimension();
-			return new IconDrawTask(imageAndMasks, type, getScaledLocation(resolutionScale), drawSize, iconName, fillColor, filterColor, maximizeOpacity, fillWithColor, resolutionScale);
+			// Un-rounded size for the resolution-invariant water-touch check (drawSize above stays rounded so the actual draw is unchanged).
+			Dimension unroundedDrawSize = IconDrawer.getDimensionsWhenScaledByWidth(imageAndMasks.image.size(), typeLevelScale * scale * baseWidth);
+			return new IconDrawTask(imageAndMasks, type, getScaledLocation(resolutionScale), drawSize, unroundedDrawSize, iconName, fillColor, filterColor, maximizeOpacity, fillWithColor,
+					resolutionScale);
 		}
 		else
 		{
@@ -230,8 +234,10 @@ public class FreeIcon
 				return null;
 			}
 			ImageAndMasks imageAndMasks = groupImages.get(iconIndex % groupImages.size());
-			IntDimension drawSize = IconDrawer.getDimensionsWhenScaledByWidth(imageAndMasks.image.size(), typeLevelScale * scale * baseWidth).roundToIntDimension();
-			return new IconDrawTask(imageAndMasks, type, getScaledLocation(resolutionScale), drawSize, fillColor, filterColor, maximizeOpacity, fillWithColor, resolutionScale);
+			// Un-rounded size for the resolution-invariant water-touch check; drawSize is the rounded version actually used to draw.
+			Dimension unroundedDrawSize = IconDrawer.getDimensionsWhenScaledByWidth(imageAndMasks.image.size(), typeLevelScale * scale * baseWidth);
+			IntDimension drawSize = unroundedDrawSize.roundToIntDimension();
+			return new IconDrawTask(imageAndMasks, type, getScaledLocation(resolutionScale), drawSize, unroundedDrawSize, fillColor, filterColor, maximizeOpacity, fillWithColor, resolutionScale);
 		}
 	}
 

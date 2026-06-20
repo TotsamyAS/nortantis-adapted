@@ -325,6 +325,69 @@ public class MapCreatorTest
 		generateAndCompare("simpleSmallWorld.nort");
 	}
 
+	/**
+	 * Verifies that the city water-touch check (which removes city icons whose base would draw over water) is resolution-invariant: changing
+	 * the draw resolution must not change the set of cities that get removed. Before the fix, changing the display quality (e.g. from Low =
+	 * 75% to Very Low = 50%) could shift a coast-hugging city's base across the rasterized coastline and silently delete it.
+	 * manyCitiesForSubMapWaterWarning.nort has many cities near shores - exactly the case that used to trigger the "cities removed" warning
+	 * when the display quality changed.
+	 */
+	@Test
+	public void cityWaterDetectionIsResolutionInvariant()
+	{
+		String path = Paths.get("unit test files", "map settings", "manyCitiesForSubMapWaterWarning.nort").toString();
+
+		// Capture the city icons from a pristine load. They are identified by their resolution-invariant location so the same city can be
+		// matched across resolutions. createMap mutates its own settings copy (it removes cities that land on water), so we keep this list
+		// separate from the settings passed to createMap below.
+		List<FreeIcon> cityIcons = new ArrayList<>();
+		MapSettings baseSettings = new MapSettings(path);
+		for (FreeIcon icon : baseSettings.edits.freeIcons)
+		{
+			if (icon.type == IconType.cities)
+			{
+				cityIcons.add(icon);
+			}
+		}
+		assertTrue(cityIcons.size() > 0, "Expected manyCitiesForSubMapWaterWarning.nort to contain city icons.");
+
+		Set<nortantis.geom.Point> removedAtLow = citiesTouchingWaterAtResolution(path, 0.75, cityIcons);
+		Set<nortantis.geom.Point> removedAtVeryLow = citiesTouchingWaterAtResolution(path, 0.5, cityIcons);
+		Set<nortantis.geom.Point> onlyLow = new HashSet<>(removedAtLow);
+		onlyLow.removeAll(removedAtVeryLow);
+		Set<nortantis.geom.Point> onlyVeryLow = new HashSet<>(removedAtVeryLow);
+		onlyVeryLow.removeAll(removedAtLow);
+
+		assertEquals(removedAtLow, removedAtVeryLow,
+				"The set of cities whose base touches water changed between 75% (Low) and 50% (Very Low) resolution, so changing the display "
+						+ "quality would add or remove cities. City water-detection must be resolution-invariant. " + "touchingWater@75%=" + removedAtLow.size()
+						+ ", touchingWater@50%=" + removedAtVeryLow.size() + ", flagged only at 75%=" + onlyLow.size() + ", flagged only at 50%=" + onlyVeryLow.size());
+	}
+
+	/**
+	 * Renders manyCitiesForSubMapWaterWarning.nort at the given resolution and returns the resolution-invariant locations of the given city
+	 * icons whose base draws over water (i.e. the cities that would be removed).
+	 */
+	private Set<nortantis.geom.Point> citiesTouchingWaterAtResolution(String settingsPath, double resolution, List<FreeIcon> cityIcons)
+	{
+		MapSettings settings = new MapSettings(settingsPath);
+		settings.resolution = resolution;
+		MapParts mapParts = new MapParts();
+		Image map = new MapCreator().createMap(settings, null, mapParts);
+		map.close();
+
+		IconDrawer iconDrawer = mapParts.iconDrawer;
+		Set<nortantis.geom.Point> removed = new HashSet<>();
+		for (FreeIcon city : cityIcons)
+		{
+			if (iconDrawer.isContentBottomTouchingWater(city))
+			{
+				removed.add(city.locationResolutionInvariant);
+			}
+		}
+		return removed;
+	}
+
 	@Test
 	public void riverTest()
 	{

@@ -33,6 +33,12 @@ public class WorldGraph extends VoronoiGraph
 {
 	/**
 	 * Controls which algorithm is used for center lookup.
+	 *
+	 * TODO Remove the pixel-based lookup modes (PIXEL_UNCACHED, PIXEL_CACHED) and all of their supporting code - centerLookupTable,
+	 * cachedCenterLookupReader, centerLookupLock, buildCenterLookupTableIfNeeded, resetCenterLookupTable, the pixel-table branch in
+	 * updateCenterLookupTable, and the resetCenterLookupTable calls in MapCreator/SubMapCreator. GRID_BASED is now the only mode used; it is
+	 * resolution-invariant and avoids allocating the memory-heavy full-map pixel table. The pixel modes are kept for now only so the
+	 * lookup-mode comparison benchmark (FindClosestCenterBenchmark / MapTestUtil.runFindClosestCenterBenchmark) can still A/B the two.
 	 */
 	public enum CenterLookupMode
 	{
@@ -40,14 +46,20 @@ public class WorldGraph extends VoronoiGraph
 		PIXEL_UNCACHED,
 		/** Use a cached PixelReader for lookups (fast, but has caching/update issues with Skia) */
 		PIXEL_CACHED,
-		/** Use spatial grid with geometric tests (fast, no pixel reading, but uses straight edges) */
+		/**
+		 * Use a spatial grid with geometric point-in-polygon tests against the noisy-edge slice polygons. Resolution-invariant and uses far
+		 * less memory than the full-map pixel table (important for mobile/web), at a modestly higher per-lookup cost. The angular-sector
+		 * pre-test uses straight lines only as a hint; the containment result respects the same noisy edges that are drawn.
+		 */
 		GRID_BASED
 	}
 
 	/**
-	 * Controls which algorithm is used for findClosestCenter.
+	 * Controls which algorithm is used for findClosestCenter. Defaults to the resolution-invariant grid so that results don't change with
+	 * the draw resolution (e.g. so icons don't appear/disappear when the display quality changes) and so the memory-heavy pixel table is
+	 * never allocated.
 	 */
-	public static CenterLookupMode centerLookupMode = CenterLookupMode.PIXEL_CACHED;
+	public static CenterLookupMode centerLookupMode = CenterLookupMode.GRID_BASED;
 
 	// Modify seeFloorLevel to change the number of islands in the ocean.
 	public static final float oceanPlateLevel = 0.2f;
@@ -1192,18 +1204,32 @@ public class WorldGraph extends VoronoiGraph
 	private final Object centerLookupLock = new Object();
 	private PixelReader cachedCenterLookupReader;
 
-	// Grid-based center lookup
-	private CenterLookupGrid centerLookupGrid;
+	// Grid-based center lookup. Volatile so that a thread taking the fast (already-built) path sees a fully-constructed grid and its
+	// precomputed slice polygons (published via the volatile write below).
+	private volatile CenterLookupGrid centerLookupGrid;
+	private final Object centerLookupGridLock = new Object();
 
 	public void buildCenterLookupGridIfNeeded()
 	{
-		if (centerLookupGrid == null)
+		if (centerLookupGrid != null)
 		{
-			centerLookupGrid = new CenterLookupGrid();
-			centerLookupGrid.build(centers, getWidth(), getHeight());
+			return;
+		}
+		synchronized (centerLookupGridLock)
+		{
+			if (centerLookupGrid == null)
+			{
+				CenterLookupGrid grid = new CenterLookupGrid();
+				grid.build(centers, getWidth(), getHeight());
 
-			// Precompute all slice polygons for faster lookups
-			precomputeSlicePolygons();
+				// Precompute all slice polygons for faster lookups. This writes slicePolygonsByCenter, which must be visible to readers
+				// before the grid is published, so it happens before the volatile assignment to centerLookupGrid below.
+				precomputeSlicePolygons();
+
+				// Publish last: a reader that sees a non-null centerLookupGrid is guaranteed (via the volatile happens-before) to also see
+				// the fully-built grid and slice polygons.
+				centerLookupGrid = grid;
+			}
 		}
 	}
 

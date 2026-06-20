@@ -17,6 +17,13 @@ public class IconDrawTask implements Comparable<IconDrawTask>
 	public ImageAndMasks scaledImageAndMasks;
 	Point centerLoc;
 	IntDimension scaledSize;
+	/**
+	 * The icon's scaled draw size before it was rounded to whole pixels (scaledSize is the rounded version actually used to draw). Because
+	 * the rounding amount changes with resolution, the water-touch check uses this un-rounded size so its sample positions vary smoothly
+	 * with resolution instead of wobbling by up to half a pixel - which could otherwise flip the check near a coast and make an icon (e.g. a
+	 * city) appear or disappear when the display quality changes.
+	 */
+	Dimension unroundedScaledSize;
 
 	final IconType type;
 	final String fileName;
@@ -26,25 +33,26 @@ public class IconDrawTask implements Comparable<IconDrawTask>
 	final boolean fillWithColor;
 	final double resolutionScale;
 
-	public IconDrawTask(ImageAndMasks unScaledImageAndMasks, IconType type, Point centerLoc, IntDimension scaledSize, Color fillColor, HSBColor filterColor, boolean maximizeOpacity,
-			boolean fillWithColor, double resolutionScale)
+	public IconDrawTask(ImageAndMasks unScaledImageAndMasks, IconType type, Point centerLoc, IntDimension scaledSize, Dimension unroundedScaledSize, Color fillColor, HSBColor filterColor,
+			boolean maximizeOpacity, boolean fillWithColor, double resolutionScale)
 	{
-		this(unScaledImageAndMasks, null, type, centerLoc, scaledSize, null, fillColor, filterColor, maximizeOpacity, fillWithColor, resolutionScale);
+		this(unScaledImageAndMasks, null, type, centerLoc, scaledSize, unroundedScaledSize, null, fillColor, filterColor, maximizeOpacity, fillWithColor, resolutionScale);
 	}
 
-	public IconDrawTask(ImageAndMasks unScaledImageAndMasks, IconType type, Point centerLoc, IntDimension scaledSize, String fileName, Color fillColor, HSBColor filterColor, boolean maximizeOpacity,
-			boolean fillWithColor, double resolutionScale)
-	{
-		this(unScaledImageAndMasks, null, type, centerLoc, scaledSize, fileName, fillColor, filterColor, maximizeOpacity, fillWithColor, resolutionScale);
-	}
-
-	private IconDrawTask(ImageAndMasks unScaledImageAndMasks, ImageAndMasks scaledImageAndMasks, IconType type, Point centerLoc, IntDimension scaledSize, String fileName, Color fillColor,
+	public IconDrawTask(ImageAndMasks unScaledImageAndMasks, IconType type, Point centerLoc, IntDimension scaledSize, Dimension unroundedScaledSize, String fileName, Color fillColor,
 			HSBColor filterColor, boolean maximizeOpacity, boolean fillWithColor, double resolutionScale)
+	{
+		this(unScaledImageAndMasks, null, type, centerLoc, scaledSize, unroundedScaledSize, fileName, fillColor, filterColor, maximizeOpacity, fillWithColor, resolutionScale);
+	}
+
+	private IconDrawTask(ImageAndMasks unScaledImageAndMasks, ImageAndMasks scaledImageAndMasks, IconType type, Point centerLoc, IntDimension scaledSize, Dimension unroundedScaledSize, String fileName,
+			Color fillColor, HSBColor filterColor, boolean maximizeOpacity, boolean fillWithColor, double resolutionScale)
 	{
 		this.unScaledImageAndMasks = unScaledImageAndMasks;
 		this.scaledImageAndMasks = scaledImageAndMasks;
 		this.centerLoc = centerLoc;
 		this.scaledSize = scaledSize;
+		this.unroundedScaledSize = unroundedScaledSize;
 		this.type = type;
 
 		this.fileName = fileName;

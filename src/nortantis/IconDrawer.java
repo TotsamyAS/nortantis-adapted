@@ -2390,8 +2390,14 @@ public class IconDrawer
 		// resolutionScale, the sample grid below would shift by up to ~1 rendered pixel when the display quality changes - enough to flip the
 		// water test near a coast and make an icon (e.g. a city) appear or disappear. Using the float position makes the samples vary
 		// smoothly with resolution instead of stepping.
-		final double imageUpperLeftX = iconTask.centerLoc.x - iconTask.scaledSize.width / 2.0;
-		final double imageUpperLeftY = iconTask.centerLoc.y - iconTask.scaledSize.height / 2.0;
+		//
+		// Use the un-rounded scaled size (not scaledSize, which is rounded to whole pixels) for the same reason: scaledSize's rounding
+		// amount changes with resolution, so deriving the sampling origin and scale factors from it would reintroduce a sub-pixel,
+		// resolution-dependent wobble. The drawn icon is within half a pixel of this ideal size.
+		final double scaledWidth = iconTask.unroundedScaledSize.width;
+		final double scaledHeight = iconTask.unroundedScaledSize.height;
+		final double imageUpperLeftX = iconTask.centerLoc.x - scaledWidth / 2.0;
+		final double imageUpperLeftY = iconTask.centerLoc.y - scaledHeight / 2.0;
 
 		Rectangle scaledContentBounds;
 		double contentMidpointYInMaskSpace;
@@ -2405,8 +2411,8 @@ public class IconDrawer
 
 			contentMidpointYInMaskSpace = contentBounds.y + contentBounds.height / 2.0;
 
-			final double xScaleToScaledIconSpace = iconTask.scaledSize.width / (double) iconTask.unScaledImageAndMasks.getOrCreateContentMask().getWidth();
-			final double yScaleToScaledIconSpace = iconTask.scaledSize.height / (double) iconTask.unScaledImageAndMasks.getOrCreateContentMask().getHeight();
+			final double xScaleToScaledIconSpace = scaledWidth / (double) iconTask.unScaledImageAndMasks.getOrCreateContentMask().getWidth();
+			final double yScaleToScaledIconSpace = scaledHeight / (double) iconTask.unScaledImageAndMasks.getOrCreateContentMask().getHeight();
 
 			scaledContentBounds = new Rectangle(contentBounds.x * xScaleToScaledIconSpace, contentBounds.y * yScaleToScaledIconSpace, contentBounds.width * xScaleToScaledIconSpace,
 					contentBounds.height * yScaleToScaledIconSpace);
@@ -2417,8 +2423,8 @@ public class IconDrawer
 		// disappear when you draw the map at a different resolution.
 		final double stepSize = 2.0 * resolutionScale;
 
-		final double xScaleToMaskSpace = ((double) iconTask.unScaledImageAndMasks.getOrCreateContentMask().getWidth()) / iconTask.scaledSize.width;
-		final double yScaleToMaskSpace = ((double) iconTask.unScaledImageAndMasks.getOrCreateContentMask().getHeight()) / iconTask.scaledSize.height;
+		final double xScaleToMaskSpace = ((double) iconTask.unScaledImageAndMasks.getOrCreateContentMask().getWidth()) / scaledWidth;
+		final double yScaleToMaskSpace = ((double) iconTask.unScaledImageAndMasks.getOrCreateContentMask().getHeight()) / scaledHeight;
 
 		for (double x = scaledContentBounds.x; x < scaledContentBounds.x + scaledContentBounds.width; x += stepSize)
 		{

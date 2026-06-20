@@ -220,7 +220,14 @@ public class MapCreator implements WarningLogger
 		// The bounds to replace in the original map.
 		Rectangle replaceBounds = centersChangedBounds.pad(effectsPadding, effectsPadding);
 
-		mapParts.graph.updateCenterLookupTable(centersChanged);
+		// Refresh the center lookup (grid slice polygons and, in pixel mode, the lookup table) for every center whose noisy edges were
+		// rebuilt - not just the directly-edited centers. Coastline/region-boundary smoothing can move corners on centers beyond the edited
+		// set, so their noisy edges (and therefore their slice polygons) changed too; if we only refreshed the edited centers + their
+		// immediate neighbors, those farther centers would keep stale geometry and findClosestCenter would return the wrong center near the
+		// edited coastline.
+		Set<Center> centersToRefreshLookup = new HashSet<>(centersChanged);
+		centersToRefreshLookup.addAll(centersChangedThatAffectedLandOrRegionBoundaries);
+		mapParts.graph.updateCenterLookupTable(centersToRefreshLookup);
 
 		TextDrawer textDrawer = new TextDrawer(settings);
 		textDrawer.setMapTexts(settings.edits.text);
