@@ -1792,9 +1792,6 @@ public class MapCreator implements WarningLogger
 			applyEdgeEdits(graph, settings.edits, null);
 		}
 		applyCenterEdits(graph, settings.edits, null, settings.areRegionBoundariesVisible(), resolutionScale);
-		// applyRiverEdits may trigger a premature center lookup table build (before isWater is restored by applyCenterEdits).
-		// Reset it so it rebuilds with correct state on first use.
-		graph.resetCenterLookupTable();
 
 		return graph;
 	}

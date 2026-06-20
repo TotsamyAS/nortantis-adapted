@@ -169,8 +169,6 @@ public class SubMapCreator
 		{
 			newGraph.rebuildNoisyEdgesForCenter(center, centersChangedBySmoothing);
 		}
-		newGraph.resetCenterLookupTable();
-
 		// Build remaining MapEdits.
 
 		transferRegionEdits(originalGraph, originalSettings.edits, originalRegionToNewCenters, newEdits);

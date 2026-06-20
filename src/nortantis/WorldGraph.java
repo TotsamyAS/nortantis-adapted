@@ -1,7 +1,6 @@
 package nortantis;
 
 import nortantis.MapSettings.LineStyle;
-import nortantis.geom.IntRectangle;
 import nortantis.geom.Point;
 import nortantis.geom.Rectangle;
 import nortantis.graph.voronoi.*;
@@ -24,36 +23,6 @@ import java.util.function.Predicate;
  */
 public class WorldGraph extends VoronoiGraph
 {
-	/**
-	 * Controls which algorithm is used for center lookup.
-	 *
-	 * TODO Remove the pixel-based lookup modes (PIXEL_UNCACHED, PIXEL_CACHED) and all of their supporting code - centerLookupTable,
-	 * cachedCenterLookupReader, centerLookupLock, buildCenterLookupTableIfNeeded, resetCenterLookupTable, the pixel-table branch in
-	 * updateCenterLookupTable, and the resetCenterLookupTable calls in MapCreator/SubMapCreator. GRID_BASED is now the only mode used; it is
-	 * resolution-invariant and avoids allocating the memory-heavy full-map pixel table. The pixel modes are kept for now only so the
-	 * lookup-mode comparison benchmark (FindClosestCenterBenchmark / MapTestUtil.runFindClosestCenterBenchmark) can still A/B the two.
-	 */
-	public enum CenterLookupMode
-	{
-		/** Create a new PixelReader for each lookup (slowest, but no caching issues) */
-		PIXEL_UNCACHED,
-		/** Use a cached PixelReader for lookups (fast, but has caching/update issues with Skia) */
-		PIXEL_CACHED,
-		/**
-		 * Use a spatial grid with geometric point-in-polygon tests against the noisy-edge slice polygons. Resolution-invariant and uses far
-		 * less memory than the full-map pixel table (important for mobile/web), at a modestly higher per-lookup cost. The angular-sector
-		 * pre-test uses straight lines only as a hint; the containment result respects the same noisy edges that are drawn.
-		 */
-		GRID_BASED
-	}
-
-	/**
-	 * Controls which algorithm is used for findClosestCenter. Defaults to the resolution-invariant grid so that results don't change with
-	 * the draw resolution (e.g. so icons don't appear/disappear when the display quality changes) and so the memory-heavy pixel table is
-	 * never allocated.
-	 */
-	public static CenterLookupMode centerLookupMode = CenterLookupMode.GRID_BASED;
-
 	// Modify seeFloorLevel to change the number of islands in the ocean.
 	public static final float oceanPlateLevel = 0.2f;
 	final double continentalPlateLevel = 0.45;
@@ -754,68 +723,7 @@ public class WorldGraph extends VoronoiGraph
 		{
 			return findClosestCenterUsingGrid(point, returnNullIfNotOnMap, true);
 		}
-		return switch (centerLookupMode)
-		{
-			case PIXEL_UNCACHED -> findClosestCenterUsingPixelsUncached(point, returnNullIfNotOnMap);
-			case PIXEL_CACHED -> findClosestCenterUsingPixelsCached(point, returnNullIfNotOnMap);
-			case GRID_BASED -> findClosestCenterUsingGrid(point, returnNullIfNotOnMap, false);
-		};
-	}
-
-	private Center findClosestCenterUsingPixelsUncached(Point point, boolean returnNullIfNotOnMap)
-	{
-		if (point.x < getWidth() && point.y < getHeight() && point.x >= 0 && point.y >= 0)
-		{
-			buildCenterLookupTableIfNeeded();
-			int x = (int) point.x;
-			int y = (int) point.y;
-			Color color;
-
-			// Create a new PixelReader for each lookup (no caching)
-			try (PixelReader reader = centerLookupTable.createPixelReader(new IntRectangle(x, y, 1, 1)))
-			{
-				color = Color.create(reader.getRGB(x, y));
-			}
-
-			int index = color.getRed() | (color.getGreen() << 8) | (color.getBlue() << 16);
-			return centers.get(index);
-		}
-		else if (!returnNullIfNotOnMap)
-		{
-			Optional<Center> opt = centers.stream().filter(c -> c.isBorder).min((c1, c2) -> Double.compare(c1.loc.distanceTo(point), c2.loc.distanceTo(point)));
-			return opt.get();
-		}
-		return null;
-	}
-
-	private Center findClosestCenterUsingPixelsCached(Point point, boolean returnNullIfNotOnMap)
-	{
-		if (returnNullIfNotOnMap && (point.x >= getWidth() || point.y >= getHeight() || point.x < 0 || point.y < 0))
-		{
-			return null;
-		}
-
-		if (point.x < getWidth() && point.y < getHeight() && point.x >= 0 && point.y >= 0)
-		{
-			buildCenterLookupTableIfNeeded();
-			int x = (int) point.x;
-			int y = (int) point.y;
-			Color color;
-
-			synchronized (centerLookupLock)
-			{
-				color = Color.create(cachedCenterLookupReader.getRGB(x, y));
-			}
-
-			int index = color.getRed() | (color.getGreen() << 8) | (color.getBlue() << 16);
-			return centers.get(index);
-		}
-		else if (!returnNullIfNotOnMap)
-		{
-			Optional<Center> opt = centers.stream().filter(c -> c.isBorder).min((c1, c2) -> Double.compare(c1.loc.distanceTo(point), c2.loc.distanceTo(point)));
-			return opt.get();
-		}
-		return null;
+		return findClosestCenterUsingGrid(point, returnNullIfNotOnMap, false);
 	}
 
 	private Center findClosestCenterUsingGrid(Point point, boolean returnNullIfNotOnMap, boolean useWaterCheckResolution)
@@ -1206,12 +1114,6 @@ public class WorldGraph extends VoronoiGraph
 		return inside;
 	}
 
-	private Image centerLookupTable;
-
-	// Cached pixel reader for findClosestCenter optimization - covers the entire map
-	private final Object centerLookupLock = new Object();
-	private PixelReader cachedCenterLookupReader;
-
 	// Grid-based center lookup. Volatile so that a thread taking the fast (already-built) path sees a fully-constructed grid and its
 	// precomputed slice polygons (published via the volatile write below).
 	private volatile CenterLookupGrid centerLookupGrid;
@@ -1260,8 +1162,7 @@ public class WorldGraph extends VoronoiGraph
 	}
 
 	/**
-	 * Clears the grid-based center lookup so it will be rebuilt on next use. Symmetric with {@link #resetCenterLookupTable()}; primarily
-	 * useful for benchmarking the build cost of the grid.
+	 * Clears the grid-based center lookup so it will be rebuilt on next use.
 	 */
 	public void resetCenterLookupGrid()
 	{
@@ -1486,52 +1387,6 @@ public class WorldGraph extends VoronoiGraph
 		}
 	}
 
-	public void buildCenterLookupTableIfNeeded()
-	{
-		synchronized (centerLookupLock)
-		{
-			if (centerLookupTable == null)
-			{
-				// Force CPU mode to avoid expensive GPU-to-CPU sync during incremental updates, although that only really matters in
-				// RenderingMode.HYBRID mode.
-				centerLookupTable = Image.create((int) bounds.width, (int) bounds.height, ImageType.RGB, true);
-				try (Painter p = centerLookupTable.createPainter())
-				{
-					drawPolygons(p, new Function<Center, Color>()
-					{
-						public Color apply(Center c)
-						{
-							return convertCenterIdToColor(c);
-						}
-					});
-				}
-				// Create cached reader for the entire map
-				cachedCenterLookupReader = centerLookupTable.createPixelReader();
-			}
-		}
-	}
-
-	/**
-	 * Clears the center lookup table so it will be rebuilt on next use. Must be called after isWater or noisy edge state changes that
-	 * occurred before the table was built.
-	 */
-	public void resetCenterLookupTable()
-	{
-		synchronized (centerLookupLock)
-		{
-			if (cachedCenterLookupReader != null)
-			{
-				cachedCenterLookupReader.close();
-				cachedCenterLookupReader = null;
-			}
-			if (centerLookupTable != null)
-			{
-				centerLookupTable.close();
-				centerLookupTable = null;
-			}
-		}
-	}
-
 	/**
 	 * Updates the center lookup table, which is used to lookup which center draws at a given point. This needs to be done when a center
 	 * potentially changed its noisy edges, such as when it switched from inland to coast.
@@ -1544,57 +1399,6 @@ public class WorldGraph extends VoronoiGraph
 		// Clear and rebuild slice polygon cache for affected centers (used by grid-based lookup)
 		clearSlicePolygonCache(centersToUpdate);
 		precomputeSlicePolygonsForCenters(centersToUpdate);
-
-		if (centerLookupMode == CenterLookupMode.PIXEL_CACHED || centerLookupMode == CenterLookupMode.PIXEL_UNCACHED)
-		{
-			synchronized (centerLookupLock)
-			{
-				if (centerLookupTable == null)
-				{
-					buildCenterLookupTableIfNeeded();
-				}
-				else
-				{
-					// Include neighbors of each center because if a center changed,
-					// that will affect its neighbors as well.
-					Set<Center> centersWithNeighbors = new HashSet<>();
-					for (Center c : centersToUpdate)
-					{
-						centersWithNeighbors.add(c);
-						for (Center neighbor : c.neighbors)
-						{
-							centersWithNeighbors.add(neighbor);
-						}
-					}
-
-					try (Painter p = centerLookupTable.createPainter())
-					{
-						drawPolygons(p, centersWithNeighbors, new Function<Center, Color>()
-						{
-							public Color apply(Center c)
-							{
-								return convertCenterIdToColor(c);
-							}
-						});
-					}
-
-					if (centerLookupMode == CenterLookupMode.PIXEL_CACHED)
-					{
-						// Refresh the cached reader with the changed region
-						Rectangle changedBounds = getBoundingBox(centersWithNeighbors);
-						if (changedBounds != null)
-						{
-							cachedCenterLookupReader.refreshRegion(changedBounds.toEnclosingIntRectangle());
-						}
-					}
-				}
-			}
-		}
-	}
-
-	private Color convertCenterIdToColor(Center c)
-	{
-		return Color.create(c.index & 0xff, (c.index & 0xff00) >> 8, (c.index & 0xff0000) >> 16);
 	}
 
 	/**
