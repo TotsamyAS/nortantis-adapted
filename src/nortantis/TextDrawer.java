@@ -1388,7 +1388,8 @@ public class TextDrawer
 			return false;
 		}
 
-		Center middleCenter = graph.findClosestCenter(textBounds.getCenter(), true);
+		// Use the water-check (canonical) resolution so text line-splitting doesn't change when the display quality changes.
+		Center middleCenter = graph.findClosestCenter(textBounds.getCenter(), true, true);
 
 		if (middleCenter == null)
 		{
@@ -1412,7 +1413,7 @@ public class TextDrawer
 				}
 
 				Point point = rotate(new Point(textBounds.x + x, textBounds.y + y), pivot, angle);
-				Center c = graph.findClosestCenter(point, true);
+				Center c = graph.findClosestCenter(point, true, true);
 
 				if (c != null)
 				{

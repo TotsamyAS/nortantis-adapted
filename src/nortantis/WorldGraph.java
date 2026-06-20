@@ -20,14 +20,7 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 
 /**
- * TestGraphImpl.java
- *
- * Supplies information for Voronoi graphing logic:
- *
- * 1) biome mapping information based on a Site's elevation and moisture
- *
- * 2) color mapping information based on biome, and for bodies of water
- *
+ * An implementation of VoronoiGraph for creating a world with continents.
  */
 public class WorldGraph extends VoronoiGraph
 {
@@ -149,7 +142,7 @@ public class WorldGraph extends VoronoiGraph
 			addNeighbors(centersToUpdate);
 		}
 
-		Set<Center> changed = new HashSet<Center>();
+		Set<Center> changed = new HashSet<>();
 		if (lineStyle == LineStyle.SplinesWithSmoothedCoastlines)
 		{
 			changed = smoothCoastlinesAndOptionallyRegionBoundaries(centersToUpdate, areRegionBoundariesVisible);
@@ -183,7 +176,7 @@ public class WorldGraph extends VoronoiGraph
 	private Set<Center> smoothCoastlinesAndOptionallyRegionBoundaries(Collection<Center> centersToUpdate, boolean smoothRegionBoundaries)
 	{
 		Set<Corner> cornersToUpdate = getCornersFromCenters(centersToUpdate);
-		Set<Center> centersChanged = new HashSet<Center>();
+		Set<Center> centersChanged = new HashSet<>();
 
 		for (Corner corner : cornersToUpdate)
 		{
@@ -321,45 +314,19 @@ public class WorldGraph extends VoronoiGraph
 				}
 			}
 		}
+
+		// The canonical (water-check-resolution) slices for the affected centers are kept in sync incrementally by
+		// updateCenterLookupTable -> precomputeSlicePolygonsForCenters, which is called after this during an incremental update, so there is
+		// nothing to do here.
 	}
 
 	public void buildNoisyEdges(LineStyle lineStyle, boolean isForFrayedBorder)
 	{
 		noisyEdges = new NoisyEdges(MapCreator.calcSizeMultiplierFromResolutionScale(resolutionScale), lineStyle, isForFrayedBorder);
 		noisyEdges.buildNoisyEdges(this);
-	}
-
-	@SuppressWarnings("unused")
-	private void testPoliticalRegions()
-	{
-		for (Region region : regions.values())
-		{
-			for (Center c : region.getCenters())
-			{
-				assert !c.isWater;
-				assert c.region == region;
-			}
-
-			assert centers.stream().filter(c -> c.region == region).count() == region.size();
-		}
-		assert new HashSet<>(regions.keySet()).size() == regions.size();
-		for (Center c : centers)
-		{
-			if (!c.isWater)
-			{
-				assert c.region != null;
-			}
-			else
-			{
-				assert c.region == null;
-			}
-
-			if (c.region != null)
-			{
-				assert regions.values().stream().filter(reg -> reg.contains(c)).count() == 1;
-			}
-		}
-		assert regions.values().stream().mapToInt(reg -> reg.size()).sum() + centers.stream().filter(c -> c.region == null).count() == centers.size();
+		// The canonical (water-check-resolution) slices mirror these (a full/line-style rebuild changes the whole coastline), so discard
+		// them to be rebuilt lazily against the new coastline.
+		resetCanonicalSlicePolygons();
 	}
 
 	public void drawRegionIndexes(Painter p, Set<Center> centersToDraw, Rectangle drawBounds)
@@ -763,17 +730,33 @@ public class WorldGraph extends VoronoiGraph
 
 	public Center findClosestCenter(Point point, boolean returnNullIfNotOnMap)
 	{
-		switch (centerLookupMode)
+		return findClosestCenter(point, returnNullIfNotOnMap, false);
+	}
+
+	/**
+	 * Finds the center containing the point.
+	 *
+	 * @param useWaterCheckResolution
+	 *            When true, classify against the coastline at the fixed {@link #waterCheckResolution} instead of the current display
+	 *            resolution. This makes the result resolution-invariant - the noisy coastline is regenerated with slightly different detail
+	 *            at each resolution, which would otherwise let, for example, a coast-hugging icon's base flip between land and water (and the
+	 *            icon be deleted) when the display quality changes. Use it for decisions that must not change with display quality (icon
+	 *            water-detection, text layout), NOT for things that must match the drawn coast at the current resolution (rendering /
+	 *            pixel-assignment, mouse hit-testing, sub-map coast detection). Always uses the grid algorithm (the only one with a
+	 *            water-check-resolution variant).
+	 */
+	public Center findClosestCenter(Point point, boolean returnNullIfNotOnMap, boolean useWaterCheckResolution)
+	{
+		if (useWaterCheckResolution)
 		{
-			case PIXEL_UNCACHED:
-				return findClosestCenterUsingPixelsUncached(point, returnNullIfNotOnMap);
-			case PIXEL_CACHED:
-				return findClosestCenterUsingPixelsCached(point, returnNullIfNotOnMap);
-			case GRID_BASED:
-				return findClosestCenterUsingGrid(point, returnNullIfNotOnMap);
-			default:
-				return findClosestCenterUsingGrid(point, returnNullIfNotOnMap);
+			return findClosestCenterUsingGrid(point, returnNullIfNotOnMap, true);
 		}
+		return switch (centerLookupMode)
+		{
+			case PIXEL_UNCACHED -> findClosestCenterUsingPixelsUncached(point, returnNullIfNotOnMap);
+			case PIXEL_CACHED -> findClosestCenterUsingPixelsCached(point, returnNullIfNotOnMap);
+			case GRID_BASED -> findClosestCenterUsingGrid(point, returnNullIfNotOnMap, false);
+		};
 	}
 
 	private Center findClosestCenterUsingPixelsUncached(Point point, boolean returnNullIfNotOnMap)
@@ -832,9 +815,13 @@ public class WorldGraph extends VoronoiGraph
 		return null;
 	}
 
-	private Center findClosestCenterUsingGrid(Point point, boolean returnNullIfNotOnMap)
+	private Center findClosestCenterUsingGrid(Point point, boolean returnNullIfNotOnMap, boolean useWaterCheckResolution)
 	{
 		buildCenterLookupGridIfNeeded();
+		if (useWaterCheckResolution)
+		{
+			buildCanonicalSlicePolygonsIfNeeded();
+		}
 
 		if (returnNullIfNotOnMap && (point.x >= getWidth() || point.y >= getHeight() || point.x < 0 || point.y < 0))
 		{
@@ -851,7 +838,7 @@ public class WorldGraph extends VoronoiGraph
 		}
 
 		// Fast path: find which edge sector contains the point and check that edge
-		Center result = findCenterFromEdgeSector(point, candidate);
+		Center result = findCenterFromEdgeSector(point, candidate, useWaterCheckResolution);
 		if (result != null)
 		{
 			return result;
@@ -863,7 +850,7 @@ public class WorldGraph extends VoronoiGraph
 		// Try exhaustive search on the walk result
 		if (walkResult != candidate)
 		{
-			result = findCenterFromEdgeSector(point, walkResult);
+			result = findCenterFromEdgeSector(point, walkResult, useWaterCheckResolution);
 			if (result != null)
 			{
 				return result;
@@ -878,14 +865,14 @@ public class WorldGraph extends VoronoiGraph
 	 * Find which center contains the point by checking pie slices. Uses angular sector as a hint to try the likely edge first, then falls
 	 * back to exhaustive search.
 	 */
-	private Center findCenterFromEdgeSector(Point point, Center candidate)
+	private Center findCenterFromEdgeSector(Point point, Center candidate, boolean useWaterCheckResolution)
 	{
 		// Fast path: use angular sector to find the likely edge and test it first
 		int hintEdgePos = findAngularSectorEdgePosition(point, candidate);
 		if (hintEdgePos >= 0)
 		{
 			Edge hintEdge = candidate.borders.get(hintEdgePos);
-			if (isPointInPieSlice(point, candidate, hintEdgePos))
+			if (isPointInPieSlice(point, candidate, hintEdgePos, useWaterCheckResolution))
 			{
 				return candidate;
 			}
@@ -894,7 +881,7 @@ public class WorldGraph extends VoronoiGraph
 			if (neighbor != null)
 			{
 				int neighborEdgePos = findEdgePosition(neighbor, hintEdge);
-				if (neighborEdgePos >= 0 && isPointInPieSlice(point, neighbor, neighborEdgePos))
+				if (neighborEdgePos >= 0 && isPointInPieSlice(point, neighbor, neighborEdgePos, useWaterCheckResolution))
 				{
 					return neighbor;
 				}
@@ -913,7 +900,7 @@ public class WorldGraph extends VoronoiGraph
 			{
 				continue;
 			}
-			if (isPointInPieSlice(point, candidate, i))
+			if (isPointInPieSlice(point, candidate, i, useWaterCheckResolution))
 			{
 				return candidate;
 			}
@@ -934,7 +921,7 @@ public class WorldGraph extends VoronoiGraph
 				{
 					continue;
 				}
-				if (isPointInPieSlice(point, neighbor, i))
+				if (isPointInPieSlice(point, neighbor, i, useWaterCheckResolution))
 				{
 					return neighbor;
 				}
@@ -1030,10 +1017,10 @@ public class WorldGraph extends VoronoiGraph
 		}
 	}
 
-	private boolean isPointInPieSlice(Point query, Center center, int edgePosition)
+	private boolean isPointInPieSlice(Point query, Center center, int edgePosition, boolean useWaterCheckResolution)
 	{
 		// Get the cached slice polygon using array lookup (faster than HashMap)
-		CachedSlicePolygon cached = getSlicePolygon(center, edgePosition);
+		CachedSlicePolygon cached = getSlicePolygon(center, edgePosition, useWaterCheckResolution);
 		if (cached == null)
 		{
 			return false;
@@ -1088,19 +1075,37 @@ public class WorldGraph extends VoronoiGraph
 	// This is faster than HashMap because it avoids hash computation and lookup
 	private CachedSlicePolygon[][] slicePolygonsByCenter;
 
-	private CachedSlicePolygon getSlicePolygon(Center center, int edgePosition)
+	private CachedSlicePolygon getSlicePolygon(Center center, int edgePosition, boolean useWaterCheckResolution)
 	{
-		if (slicePolygonsByCenter == null || slicePolygonsByCenter[center.index] == null)
+		CachedSlicePolygon[][] slices = useWaterCheckResolution ? canonicalSlicePolygonsByCenter : slicePolygonsByCenter;
+		if (slices == null || slices[center.index] == null)
 		{
 			return null;
 		}
-		return slicePolygonsByCenter[center.index][edgePosition];
+		return slices[center.index][edgePosition];
 	}
 
 	private CachedSlicePolygon buildSlicePolygon(Center center, Edge edge)
 	{
+		return buildSlicePolygon(center, edge, noisyEdges, 1.0);
+	}
+
+	/**
+	 * Builds the pie-slice polygon for one of a center's border edges: the center location joined to the edge's noisy path.
+	 *
+	 * @param noisyEdgesToUse
+	 *            Which NoisyEdges to read the edge path from - the display ones, or the canonical (water-check-resolution) ones.
+	 * @param pathToActualScale
+	 *            Factor that converts a path point from the noisy edges' coordinate space into this graph's display coordinate space. It is
+	 *            1.0 for the display noisy edges; for the canonical noisy edges (which are generated at waterCheckResolution) it scales their
+	 *            points up to the display map size, so the canonical-detail coastline shape lives in the same coordinate space as everything
+	 *            else (the grid, the center locations, and the query point). The center location is already in display space, so it is not
+	 *            scaled.
+	 */
+	private CachedSlicePolygon buildSlicePolygon(Center center, Edge edge, NoisyEdges noisyEdgesToUse, double pathToActualScale)
+	{
 		// Build the slice polygon: center.loc + noisy edge path
-		List<Point> noisyPath = noisyEdges != null ? noisyEdges.getNoisyEdge(edge.index) : null;
+		List<Point> noisyPath = noisyEdgesToUse != null ? noisyEdgesToUse.getNoisyEdge(edge.index) : null;
 
 		int size;
 		double[] xCoords;
@@ -1116,8 +1121,8 @@ public class WorldGraph extends VoronoiGraph
 			for (int i = 0; i < noisyPath.size(); i++)
 			{
 				Point p = noisyPath.get(i);
-				xCoords[i + 1] = p.x;
-				yCoords[i + 1] = p.y;
+				xCoords[i + 1] = p.x * pathToActualScale;
+				yCoords[i + 1] = p.y * pathToActualScale;
 			}
 		}
 		else
@@ -1209,6 +1214,24 @@ public class WorldGraph extends VoronoiGraph
 	private volatile CenterLookupGrid centerLookupGrid;
 	private final Object centerLookupGridLock = new Object();
 
+	/**
+	 * The fixed canonical resolution used for resolution-invariant center lookups (see
+	 * {@link #findClosestCenter(Point, boolean, boolean)} with useWaterCheckResolution=true). Classifying against the coastline at a single
+	 * resolution - rather than the current display resolution - keeps decisions like icon water-detection and text placement stable when the
+	 * user changes display quality (so, e.g., coast-hugging cities don't appear or disappear). 0.75 is the default drawing resolution, so at
+	 * the default the canonical lookup matches the drawn coast exactly.
+	 */
+	public static final double waterCheckResolution = 0.75;
+
+	// A second NoisyEdges built from this same graph but at waterCheckResolution (via NoisyEdges' coordinate scale), and the slice polygons
+	// derived from it. The slice polygons hold the canonical-resolution coastline SHAPE expressed in this graph's display coordinate space,
+	// so the existing grid / walk / angular-sector code and the display-resolution query point all work unchanged - only which slice-polygon
+	// array is read differs (see getSlicePolygon). Built lazily on first canonical lookup and maintained alongside the display slices.
+	// Volatile for safe publication to concurrent draw-thread readers.
+	private volatile NoisyEdges canonicalNoisyEdges;
+	private volatile CachedSlicePolygon[][] canonicalSlicePolygonsByCenter;
+	private final Object canonicalSliceLock = new Object();
+
 	public void buildCenterLookupGridIfNeeded()
 	{
 		if (centerLookupGrid != null)
@@ -1286,6 +1309,11 @@ public class WorldGraph extends VoronoiGraph
 			}
 		}
 
+		// Mirror the rebuild for the canonical (water-check-resolution) slices, but only if they have been built. The canonical noisy edges
+		// must be rebuilt for the affected centers first, since the canonical slices are derived from them.
+		boolean updateCanonical = canonicalSlicePolygonsByCenter != null && canonicalNoisyEdges != null;
+		double canonicalPathToActualScale = resolutionScale / waterCheckResolution;
+
 		for (Center center : centersWithNeighbors)
 		{
 			// Rebuild the slice polygons array for this center
@@ -1293,14 +1321,84 @@ public class WorldGraph extends VoronoiGraph
 			{
 				slicePolygonsByCenter[center.index] = new CachedSlicePolygon[center.borders.size()];
 			}
+			if (updateCanonical)
+			{
+				canonicalNoisyEdges.buildNoisyEdgesForCenter(center, true);
+				if (canonicalSlicePolygonsByCenter[center.index] == null)
+				{
+					canonicalSlicePolygonsByCenter[center.index] = new CachedSlicePolygon[center.borders.size()];
+				}
+			}
 			for (int i = 0; i < center.borders.size(); i++)
 			{
 				Edge edge = center.borders.get(i);
 				if (edge.v0 != null && edge.v1 != null)
 				{
 					slicePolygonsByCenter[center.index][i] = buildSlicePolygon(center, edge);
+					if (updateCanonical)
+					{
+						canonicalSlicePolygonsByCenter[center.index][i] = buildSlicePolygon(center, edge, canonicalNoisyEdges, canonicalPathToActualScale);
+					}
 				}
 			}
+		}
+	}
+
+	/**
+	 * Builds the canonical (water-check-resolution) slice polygons for the whole graph, lazily, the first time a resolution-invariant lookup
+	 * is requested. The canonical noisy edges are generated at {@link #waterCheckResolution} (so the coastline detail is fixed regardless of
+	 * the display resolution) but the resulting slice polygons are stored in this graph's display coordinate space, so the existing grid and
+	 * lookup code work against them unchanged. Thread-safe and publishes last, like {@link #buildCenterLookupGridIfNeeded}.
+	 */
+	private void buildCanonicalSlicePolygonsIfNeeded()
+	{
+		if (canonicalSlicePolygonsByCenter != null)
+		{
+			return;
+		}
+		synchronized (canonicalSliceLock)
+		{
+			if (canonicalSlicePolygonsByCenter != null)
+			{
+				return;
+			}
+
+			NoisyEdges canonical = new NoisyEdges(MapCreator.calcSizeMultiplierFromResolutionScale(waterCheckResolution), noisyEdges.getLineStyle(), false,
+					waterCheckResolution / resolutionScale);
+			canonical.buildNoisyEdges(this);
+
+			double pathToActualScale = resolutionScale / waterCheckResolution;
+			CachedSlicePolygon[][] slices = new CachedSlicePolygon[centers.size()][];
+			for (Center center : centers)
+			{
+				slices[center.index] = new CachedSlicePolygon[center.borders.size()];
+				for (int i = 0; i < center.borders.size(); i++)
+				{
+					Edge edge = center.borders.get(i);
+					if (edge.v0 != null && edge.v1 != null)
+					{
+						slices[center.index][i] = buildSlicePolygon(center, edge, canonical, pathToActualScale);
+					}
+				}
+			}
+
+			// Publish the noisy edges before the slices so incremental maintenance (which checks canonicalSlicePolygonsByCenter != null)
+			// always sees a non-null canonicalNoisyEdges to rebuild from.
+			canonicalNoisyEdges = canonical;
+			canonicalSlicePolygonsByCenter = slices;
+		}
+	}
+
+	/**
+	 * Discards the canonical (water-check-resolution) slice polygons and the noisy edges they derive from, so they are rebuilt on next use.
+	 * Called when the display coastline changes wholesale (line style change / full rebuild).
+	 */
+	private void resetCanonicalSlicePolygons()
+	{
+		synchronized (canonicalSliceLock)
+		{
+			canonicalSlicePolygonsByCenter = null;
+			canonicalNoisyEdges = null;
 		}
 	}
 

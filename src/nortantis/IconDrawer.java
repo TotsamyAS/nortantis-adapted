@@ -2442,7 +2442,10 @@ public class IconDrawer
 			}
 			double y = yInMask * (1.0 / yScaleToMaskSpace);
 
-			Center center = graph.findClosestCenter(new Point(imageUpperLeftX + x, imageUpperLeftY + y), true);
+			// Classify against the coastline at a fixed canonical resolution (not the current display resolution) so this decision doesn't
+			// change when the user changes display quality - otherwise the noisy coastline shifts slightly and a coast-hugging icon (e.g. a
+			// city) can flip between land and water and be deleted. (The third arg = useWaterCheckResolution.)
+			Center center = graph.findClosestCenter(new Point(imageUpperLeftX + x, imageUpperLeftY + y), true, true);
 			if (center != null && center.isWater)
 			{
 				return true;

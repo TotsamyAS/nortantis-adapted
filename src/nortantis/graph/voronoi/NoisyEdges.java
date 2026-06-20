@@ -7,6 +7,7 @@ package nortantis.graph.voronoi;
 import nortantis.CurveCreator;
 import nortantis.MapSettings.LineStyle;
 import nortantis.geom.Point;
+import nortantis.util.Stopwatch;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -32,14 +33,30 @@ public class NoisyEdges
 
 	private double scaleMultiplier;
 	private boolean isForFrayedBorder;
+	// A uniform factor applied to every corner/center coordinate read while generating noisy edges. Normally 1.0 (use the graph's own
+	// coordinates). The icon water-check builds a second NoisyEdges at a fixed canonical resolution from the same graph by setting this to
+	// (canonicalResolution / graphResolution), so the generated noisy coastline shape depends only on the canonical resolution and is
+	// therefore stable when the display resolution changes. See WorldGraph.isWaterAtWaterCheckResolution.
+	private double coordinateScale;
 
 	public NoisyEdges(double scaleMultiplier, LineStyle style, boolean isForFrayedBorder)
+	{
+		this(scaleMultiplier, style, isForFrayedBorder, 1.0);
+	}
+
+	public NoisyEdges(double scaleMultiplier, LineStyle style, boolean isForFrayedBorder, double coordinateScale)
 	{
 		this.scaleMultiplier = scaleMultiplier;
 		paths = new ConcurrentHashMap<>();
 		curves = new ConcurrentHashMap<>();
 		lineStyle = style;
 		this.isForFrayedBorder = isForFrayedBorder;
+		this.coordinateScale = coordinateScale;
+	}
+
+	private Point scaled(Point p)
+	{
+		return coordinateScale == 1.0 ? p : p.mult(coordinateScale);
 	}
 
 	// Build noisy line paths for each of the Voronoi edges. There are
@@ -49,10 +66,13 @@ public class NoisyEdges
 	// must be drawn in reverse order.
 	public void buildNoisyEdges(VoronoiGraph map)
 	{
+		// TODO remove stopwatch when done with it.
+		Stopwatch sw = new Stopwatch("buildNoisyEdges");
 		for (Center c : map.centers)
 		{
 			buildNoisyEdgesForCenter(c, false);
 		}
+		sw.printElapsedTime();
 	}
 
 	public void buildNoisyEdgesForCenter(Center center, boolean forceRebuild)
@@ -76,14 +96,19 @@ public class NoisyEdges
 				Random rand = new Random(edge.noisyEdgesSeed);
 
 				double f = NOISY_LINE_TRADEOFF;
-				Point t = Point.interpolate(edge.v0.loc, edge.d0.loc, f);
-				Point q = Point.interpolate(edge.v0.loc, edge.d1.loc, f);
-				Point r = Point.interpolate(edge.v1.loc, edge.d0.loc, f);
-				Point s = Point.interpolate(edge.v1.loc, edge.d1.loc, f);
+				Point v0 = scaled(edge.v0.loc);
+				Point v1 = scaled(edge.v1.loc);
+				Point d0 = scaled(edge.d0.loc);
+				Point d1 = scaled(edge.d1.loc);
+				Point midpoint = scaled(edge.midpoint);
+				Point t = Point.interpolate(v0, d0, f);
+				Point q = Point.interpolate(v0, d1, f);
+				Point r = Point.interpolate(v1, d0, f);
+				Point s = Point.interpolate(v1, d1, f);
 
 				int minLength = getNoisyEdgeMinLength(edge);
 
-				List<Point> path0 = buildNoisyLineSegments(rand, edge.v0.loc, t, edge.midpoint, q, minLength); // List
+				List<Point> path0 = buildNoisyLineSegments(rand, v0, t, midpoint, q, minLength); // List
 																												// of
 																												// points
 																												// in
@@ -98,8 +123,8 @@ public class NoisyEdges
 																												// of
 																												// the
 																												// edge
-				path0.add(edge.midpoint);
-				List<Point> path1 = buildNoisyLineSegments(rand, edge.v1.loc, s, edge.midpoint, r, minLength); // List
+				path0.add(midpoint);
+				List<Point> path1 = buildNoisyLineSegments(rand, v1, s, midpoint, r, minLength); // List
 																												// of
 																												// points
 																												// in
@@ -178,24 +203,24 @@ public class NoisyEdges
 			{
 				if (!shouldDrawEdge(edge))
 				{
-					curves.put(edge.index, Arrays.asList(edge.v0.loc, edge.v1.loc));
+					curves.put(edge.index, Arrays.asList(scaled(edge.v0.loc), scaled(edge.v1.loc)));
 					continue;
 				}
 
-				Point p0 = findPrevOrNextPointOnCurve(edge, edge.v0);
-				Point p1 = edge.v0.loc;
-				Point p2 = edge.v1.loc;
-				Point p3 = findPrevOrNextPointOnCurve(edge, edge.v1);
+				Point p0 = scaled(findPrevOrNextPointOnCurve(edge, edge.v0));
+				Point p1 = scaled(edge.v0.loc);
+				Point p2 = scaled(edge.v1.loc);
+				Point p3 = scaled(findPrevOrNextPointOnCurve(edge, edge.v1));
 
 				List<Point> curve = new LinkedList<>();
 				curve.addAll(CurveCreator.createCurve(p0, p1, p2, p3, CurveCreator.defaultDistanceBetweenPoints));
-				if (curve.isEmpty() || !curve.get(0).equals(edge.v0.loc))
+				if (curve.isEmpty() || !curve.get(0).equals(p1))
 				{
-					curve.add(0, edge.v0.loc);
+					curve.add(0, p1);
 				}
-				if (!curve.get(curve.size() - 1).equals(edge.v1.loc))
+				if (!curve.get(curve.size() - 1).equals(p2))
 				{
-					curve.add(edge.v1.loc);
+					curve.add(p2);
 				}
 
 				curves.put(edge.index, curve);
@@ -311,9 +336,6 @@ public class NoisyEdges
 
 	/**
 	 * Determines how small lines should be segmented to when drawing noisy edges.
-	 * 
-	 * @param edge
-	 * @return
 	 */
 	private int getNoisyEdgeMinLength(Edge edge)
 	{
