@@ -34,6 +34,7 @@ public class NoisyEdges
 	// jaggedness is consistent across world sizes. Larger world sizes have smaller polygons, so the threshold must be proportionally smaller
 	// to subdivide them to the same relative depth.
 	private double meanPolygonWidth;
+	private int worldSize;
 	private boolean isForFrayedBorder;
 	// A uniform factor applied to every corner/center coordinate read while generating noisy edges. Normally 1.0 (use the graph's own
 	// coordinates). The icon water-check builds a second NoisyEdges at a fixed canonical resolution from the same graph by setting this to
@@ -41,14 +42,15 @@ public class NoisyEdges
 	// therefore stable when the display resolution changes. See WorldGraph.findClosestCenter(Point, boolean, boolean) with useWaterCheckResolution=true.
 	private double coordinateScale;
 
-	public NoisyEdges(double meanPolygonWidth, LineStyle style, boolean isForFrayedBorder)
+	public NoisyEdges(double meanPolygonWidth, int worldSize, LineStyle style, boolean isForFrayedBorder)
 	{
-		this(meanPolygonWidth, style, isForFrayedBorder, 1.0);
+		this(meanPolygonWidth, worldSize, style, isForFrayedBorder, 1.0);
 	}
 
-	public NoisyEdges(double meanPolygonWidth, LineStyle style, boolean isForFrayedBorder, double coordinateScale)
+	public NoisyEdges(double meanPolygonWidth, int worldSize, LineStyle style, boolean isForFrayedBorder, double coordinateScale)
 	{
 		this.meanPolygonWidth = meanPolygonWidth;
+		this.worldSize = worldSize;
 		paths = new ConcurrentHashMap<>();
 		curves = new ConcurrentHashMap<>();
 		lineStyle = style;
@@ -340,8 +342,8 @@ public class NoisyEdges
 	 */
 	private double getNoisyEdgeMinLength(Edge edge)
 	{
-		// Smaller = more jagged, larger = less. 1.0 = calibrated baseline.
-		final double jaggedEdgeThresholdScale = 1.35;
+		// 1.0 at 2000 polygons (min world size), 1.5 at 32000 (max). Larger = less jagged.
+		double jaggedEdgeThresholdScale = 1.0 + 0.6 * Math.min(1.0, Math.max(0.0, (worldSize - 2000.0) / 30000.0));
 
 		EdgeDrawType type = getEdgeDrawType(edge);
 		if (type.equals(EdgeDrawType.Region))

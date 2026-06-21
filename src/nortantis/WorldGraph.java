@@ -291,7 +291,7 @@ public class WorldGraph extends VoronoiGraph
 
 	public void buildNoisyEdges(LineStyle lineStyle, boolean isForFrayedBorder)
 	{
-		noisyEdges = new NoisyEdges(getMeanCenterWidth(), lineStyle, isForFrayedBorder);
+		noisyEdges = new NoisyEdges(getMeanCenterWidth(), centers.size(), lineStyle, isForFrayedBorder);
 		noisyEdges.buildNoisyEdges(this);
 		// The canonical (water-check-resolution) slices mirror these (a full/line-style rebuild changes the whole coastline). If they have
 		// been built, rebuild them now against the new coastline rather than nulling them out, so readers never see a null window.
@@ -1260,7 +1260,7 @@ public class WorldGraph extends VoronoiGraph
 				return;
 			}
 
-			NoisyEdges canonical = new NoisyEdges(getMeanCenterWidth(), noisyEdges.getLineStyle(), false,
+			NoisyEdges canonical = new NoisyEdges(getMeanCenterWidth(), centers.size(), noisyEdges.getLineStyle(), false,
 					waterCheckResolution / resolutionScale);
 			canonical.buildNoisyEdges(this);
 
