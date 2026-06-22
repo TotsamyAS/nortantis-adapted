@@ -1619,29 +1619,41 @@ public class IconDrawer
 		int xToSubtract = drawBounds == null ? 0 : (int) drawBounds.x;
 		int yToSubtract = drawBounds == null ? 0 : (int) drawBounds.y;
 
-		// In high memory mode, create full-image pixel readers once for the shared read-only images
-		// to avoid repeated GPU thread round-trips (one per icon per image).
+		// GPU fast path: handle non-decoration icons via shader (no CPU pixel loops, no GPU readbacks).
+		// Returns the remaining icons (decorations) that still need the CPU path, or null if unsupported.
+		List<IconDrawTask> tasksForCpu = PlatformFactory.getInstance().drawNonDecorationIconsGpu(tasksToDrawSorted, mapOrSnippet, landBackground, landTexture, drawBounds);
+		if (tasksForCpu == null)
+		{
+			tasksForCpu = tasksToDrawSorted;
+		}
+
+		if (tasksForCpu.isEmpty())
+		{
+			return;
+		}
+
+		// CPU path: hoist background-texture readers once across all icons to avoid repeated GPU readbacks.
+		// For non-AWT backends use the snippet path (mapPixels=null): each icon reads a small map snippet and
+		// composites the icon via GPU Painter, which is faster than the full-map readback+CPU-compositing the
+		// hoisted writer would force.
 		if (!isLowMemoryMode)
 		{
-			// For the non-AWT backends, also open ONE map-wide PixelReaderWriter for the whole call so each icon writes directly into its CPU
-			// buffer (one readback + one upload total) instead of copying a snippet out and pasting it back per icon. The AWT path keeps its
-			// own per-icon direct blending (which relies on a Painter for the icon image), so it gets no hoisted map writer (null).
 			boolean useAwtDirect = PlatformFactory.getInstance() instanceof AwtFactory;
 			try (PixelReader landTexturePixels = landTexture.createPixelReader();
 					PixelReader oceanTexturePixels = oceanWithWavesAndShading.createPixelReader();
-					PixelReader landBackgroundPixels = landBackground.createPixelReader();
-					PixelReaderWriter mapPixels = useAwtDirect ? null : mapOrSnippet.createPixelReaderWriter())
+					PixelReader landBackgroundPixels = landBackground.createPixelReader())
 			{
-				for (final IconDrawTask task : tasksToDrawSorted)
+				for (final IconDrawTask task : tasksForCpu)
 				{
 					drawIconWithBackgroundAndMasks(mapOrSnippet, task.scaledImageAndMasks, landBackground, landTexture, oceanWithWavesAndShading, task.type, ((int) task.centerLoc.x) - xToSubtract,
-							((int) task.centerLoc.y) - yToSubtract, (int) task.centerLoc.x, (int) task.centerLoc.y, landTexturePixels, oceanTexturePixels, landBackgroundPixels, mapPixels);
+							((int) task.centerLoc.y) - yToSubtract, (int) task.centerLoc.x, (int) task.centerLoc.y, landTexturePixels, oceanTexturePixels, landBackgroundPixels,
+							useAwtDirect ? null : null);
 				}
 			}
 		}
 		else
 		{
-			for (final IconDrawTask task : tasksToDrawSorted)
+			for (final IconDrawTask task : tasksForCpu)
 			{
 				drawIconWithBackgroundAndMasks(mapOrSnippet, task.scaledImageAndMasks, landBackground, landTexture, oceanWithWavesAndShading, task.type, ((int) task.centerLoc.x) - xToSubtract,
 						((int) task.centerLoc.y) - yToSubtract, (int) task.centerLoc.x, (int) task.centerLoc.y, null, null, null, null);

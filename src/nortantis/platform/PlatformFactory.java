@@ -1,6 +1,10 @@
 package nortantis.platform;
 
 import java.io.InputStream;
+import java.util.List;
+
+import nortantis.IconDrawTask;
+import nortantis.geom.Rectangle;
 
 /**
  * Abstracts the library used for drawing.
@@ -107,4 +111,17 @@ public abstract class PlatformFactory
 	public abstract <T> void doInBackgroundThread(BackgroundTask<T> task);
 
 	public abstract void doInMainUIThreadAsynchronous(Runnable toRun);
+
+	/**
+	 * GPU-accelerated drawing of non-decoration icons using shader-based blending. Called from {@link nortantis.IconDrawer#drawIcons} before
+	 * the CPU pixel-loop path. Override in GPU backends to avoid expensive CPU↔GPU round-trips.
+	 *
+	 * @return The subset of {@code tasks} that were NOT handled (typically decoration icons, which need per-pixel water detection). Returns
+	 *         {@code null} if the GPU path is not supported (causes the caller to use the CPU path for all tasks).
+	 */
+	public List<IconDrawTask> drawNonDecorationIconsGpu(List<IconDrawTask> tasks, Image mapImage, Image landBackground, Image landTexture,
+			Rectangle drawBounds)
+	{
+		return null; // not supported; caller uses CPU path for all icons
+	}
 }

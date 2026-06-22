@@ -95,6 +95,21 @@ public class IconDrawTask implements Comparable<IconDrawTask>
 		}
 	}
 
+	public IconType getType()
+	{
+		return type;
+	}
+
+	public double getCenterLocX()
+	{
+		return centerLoc.x;
+	}
+
+	public double getCenterLocY()
+	{
+		return centerLoc.y;
+	}
+
 	public RotatedRectangle createArea()
 	{
 		return new RotatedRectangle(new Rectangle(centerLoc.x - scaledSize.width / 2.0, centerLoc.y - scaledSize.height / 2.0, scaledSize.width, scaledSize.height));
