@@ -1119,7 +1119,6 @@ public class MapCreator implements WarningLogger
 
 	private Tuple4<Image, Image, List<Set<Center>>, List<IconDrawTask>> drawTerrainAndIcons(MapSettings settings, MapParts mapParts, WorldGraph graph, Background background, boolean isLowMemoryMode)
 	{
-		final long dtiStart = System.currentTimeMillis();
 		checkForCancel();
 
 		IconDrawer iconDrawer;
@@ -1158,11 +1157,8 @@ public class MapCreator implements WarningLogger
 
 		checkForCancel();
 
-		Logger.println("[DTI] icons-added: " + (System.currentTimeMillis() - dtiStart) + "ms");
 		List<IconDrawTask> iconsToDraw = iconDrawer.getTasksInDrawBoundsSortedAndScaled(null);
-		Logger.println("[DTI] icons-tasks-scaled: " + (System.currentTimeMillis() - dtiStart) + "ms");
 		background.doSetupThatNeedsGraphAndIcons(graph, iconsToDraw, null, null, null);
-		Logger.println("[DTI] bg-setup: " + (System.currentTimeMillis() - dtiStart) + "ms");
 		if (mapParts == null)
 		{
 			if (background.landBeforeRegionColoring != null && background.landBeforeRegionColoring != background.land)
@@ -1174,7 +1170,6 @@ public class MapCreator implements WarningLogger
 
 		checkForCancel();
 
-		Logger.println("[DTI] bg-setup-end: " + (System.currentTimeMillis() - dtiStart) + "ms");
 		// Draw mask for land vs ocean.
 		Logger.println("Adding land.");
 		Image landMask = Image.create(graph.getWidth(), graph.getHeight(), ImageType.Binary);
@@ -1185,7 +1180,6 @@ public class MapCreator implements WarningLogger
 			}
 		}
 
-		Logger.println("[DTI] landmask-drawn: " + (System.currentTimeMillis() - dtiStart) + "ms");
 		Image coastShading;
 		Image landBackground = null;
 		Image map;
@@ -1219,7 +1213,6 @@ public class MapCreator implements WarningLogger
 
 		checkForCancel();
 
-		Logger.println("[DTI] darken-coast+mask: " + (System.currentTimeMillis() - dtiStart) + "ms");
 		// Add rivers.
 		Logger.println("Adding rivers.");
 		if (!settings.edits.hasInitializedRivers)
@@ -1230,7 +1223,6 @@ public class MapCreator implements WarningLogger
 
 		checkForCancel();
 
-		Logger.println("[DTI] rivers: " + (System.currentTimeMillis() - dtiStart) + "ms");
 		Logger.println("Drawing ocean.");
 		{
 			if (background.ocean.getWidth() != graph.getWidth() || background.ocean.getHeight() != graph.getHeight())
@@ -1243,7 +1235,6 @@ public class MapCreator implements WarningLogger
 
 		checkForCancel();
 
-		Logger.println("[DTI] ocean-masked: " + (System.currentTimeMillis() - dtiStart) + "ms");
 		Tuple2<Image, Image> oceanTuple = createOceanWavesAndShading(settings, graph, settings.resolution, landMask, null, null);
 		Image oceanWaves = oceanTuple.getFirst();
 		Image oceanShading = oceanTuple.getSecond();
@@ -1264,7 +1255,6 @@ public class MapCreator implements WarningLogger
 
 		checkForCancel();
 
-		Logger.println("[DTI] ocean-waves-shading: " + (System.currentTimeMillis() - dtiStart) + "ms");
 		// Draw coastlines.
 		{
 			try (Painter p = map.createPainter(DrawQuality.High))
@@ -1306,11 +1296,9 @@ public class MapCreator implements WarningLogger
 
 		checkForCancel();
 
-		Logger.println("[DTI] pre-icon-draw: " + (System.currentTimeMillis() - dtiStart) + "ms");
 		Logger.println("Drawing all icons.");
 		iconDrawer.drawIcons(iconsToDraw, map, landBackground, background.land, oceanWithWavesAndShading, null);
 		landBackground = null;
-		Logger.println("[DTI] post-icon-draw: " + (System.currentTimeMillis() - dtiStart) + "ms");
 
 		checkForCancel();
 
@@ -1343,7 +1331,6 @@ public class MapCreator implements WarningLogger
 			background.land = null;
 		}
 
-		Logger.println("[DTI] post-land-mask-update: " + (System.currentTimeMillis() - dtiStart) + "ms");
 		checkForCancel();
 
 		return new Tuple4<>(map, textBackground, mountainGroups, cities);
