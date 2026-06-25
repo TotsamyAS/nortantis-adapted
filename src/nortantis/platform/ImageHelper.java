@@ -1,6 +1,8 @@
 package nortantis.platform;
 
 import nortantis.ComplexArray;
+import nortantis.HSBColor;
+import nortantis.ImageAndMasks;
 import nortantis.MapSettings;
 import nortantis.TextDrawer;
 import nortantis.WorldGraph;
@@ -209,6 +211,112 @@ public abstract class ImageHelper
 		}
 
 		return result;
+	}
+
+	/**
+	 * Produces a recolored version of {@code imageAndMasks.image}: an HSB filter shift ({@code filterColor}) applied per pixel, optionally
+	 * blended toward a flat {@code fillColor}, with alpha optionally maximized. This is the per-pixel CPU implementation extracted from
+	 * {@link nortantis.ImageCache#getColoredIcon} so the GPU backend can override it with a fragment shader. When neither a fill nor a
+	 * non-default filter (nor maximizeOpacity) applies, the original image is returned unchanged (the cheap common case).
+	 */
+	public Image coloredIcon(ImageAndMasks imageAndMasks, Color fillColor, HSBColor filterColor, boolean maximizeOpacity, boolean fillWithColor)
+	{
+		float alphaScale = 0;
+		{
+			if (maximizeOpacity)
+			{
+				try (PixelReader imagePixels = imageAndMasks.image.createPixelReader())
+				{
+					int highestAlpha = 0;
+					for (int y = 0; y < imageAndMasks.image.getHeight(); y++)
+					{
+						for (int x = 0; x < imageAndMasks.image.getWidth(); x++)
+						{
+							Color imageColor = imagePixels.getPixelColor(x, y);
+
+							if (imageColor.getAlpha() > highestAlpha)
+							{
+								highestAlpha = imageColor.getAlpha();
+							}
+						}
+					}
+					alphaScale = 255f / highestAlpha;
+				}
+			}
+		}
+
+		float[] filterHSB = filterColor.toArray();
+		float filterAlphaScale = filterColor.getAlpha() / 255f;
+
+		if ((fillWithColor && !fillColor.equals(Color.transparentBlack)) || !filterColor.equals(MapSettings.defaultIconFilterColor) || maximizeOpacity)
+		{
+			Image result = Image.create(imageAndMasks.image.getWidth(), imageAndMasks.image.getHeight(), ImageType.ARGB);
+
+			Image colorMask = imageAndMasks.getOrCreateColorMask();
+			try (PixelReader imagePixels = imageAndMasks.image.createPixelReader();
+					PixelReader colorMaskPixels = colorMask.createPixelReader();
+					PixelWriter resultPixels = result.createPixelWriter())
+			{
+				for (int y = 0; y < result.getHeight(); y++)
+				{
+					for (int x = 0; x < result.getWidth(); x++)
+					{
+
+						Color originalColor = imagePixels.getPixelColor(x, y);
+
+						int alpha;
+						if (maximizeOpacity)
+						{
+							// I'm clamping the value to 255 in case of truncation errors, although I doubt that's possible.
+							alpha = Math.min(255, (int) (originalColor.getAlpha() * alphaScale));
+						}
+						else
+						{
+							alpha = originalColor.getAlpha();
+						}
+
+						double fillColorAlpha = (fillWithColor ? fillColor.getAlpha() : 0) / 255.0;
+						double fillColorScale;
+						if (fillColorAlpha == 1.0)
+						{
+							// Save some time since this is a simple and common case.
+							fillColorScale = 1.0;
+						}
+						else
+						{
+							// Use a curve that is 0 when fillColorAlpha is 0, 1 when fillColorAlpha is 1, and is mostly equal
+							// to 1
+							// but dies off
+							// quickly as fillColorAlpha reaches 0. That way when the fill color is transparent, it doesn't mix
+							// with
+							// icon pixels
+							// that are partially transparent.
+							fillColorScale = 1.0 - Math.pow(1.0 - fillColorAlpha, 50);
+						}
+
+						Color filteredImageColor;
+						int filteredAlpha;
+						// Use filter color
+						float[] hsb = originalColor.getHSB();
+						filteredImageColor = Color.createFromHSB(hsb[0] + filterHSB[0] - (float) Math.floor(hsb[0] + filterHSB[0]), Helper.clamp(hsb[1] + filterHSB[1], 0f, 1f),
+								Helper.clamp(hsb[2] + filterHSB[2], 0f, 1f));
+						filteredAlpha = Math.min(255, (int) (alpha * filterAlphaScale));
+
+						int r = Helper.linearComboBase255(filteredAlpha, filteredImageColor.getRed(), (int) (fillColor.getRed() * fillColorScale));
+						int g = Helper.linearComboBase255(filteredAlpha, filteredImageColor.getGreen(), (int) (fillColor.getGreen() * fillColorScale));
+						int b = Helper.linearComboBase255(filteredAlpha, filteredImageColor.getBlue(), (int) (fillColor.getBlue() * fillColorScale));
+						int a = Math.max(filteredAlpha, Math.min(fillWithColor ? fillColor.getAlpha() : 0, colorMaskPixels.getGrayLevel(x, y)));
+
+						resultPixels.setRGB(x, y, r, g, b, a);
+					}
+				}
+			}
+			return result;
+		}
+		else
+		{
+			return imageAndMasks.image;
+		}
 	}
 
 	public Image setAlphaFromMask(Image image, Image alphaMask, boolean invertMask)
