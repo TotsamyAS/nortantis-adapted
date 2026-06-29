@@ -29,6 +29,21 @@ public class ThreadHelper
 	}
 
 	/**
+	 * Returns the shared cached thread pool, recreating it if it has somehow been shut down. This class never intentionally shuts down the
+	 * cached pool, so a shut-down pool only ever indicates a torn-down state - e.g. on Android, where the host process can be reused across
+	 * activity instances and a stale, finalized executor can leave the pool shut down. Recreating it here keeps map generation from failing
+	 * with RejectedExecutionException after the app has been backgrounded and resumed.
+	 */
+	private synchronized ExecutorService getCachedThreadPool()
+	{
+		if (cachedThreadPool == null || cachedThreadPool.isShutdown())
+		{
+			cachedThreadPool = Executors.newCachedThreadPool();
+		}
+		return cachedThreadPool;
+	}
+
+	/**
 	 * Processes a list of jobs in parallel using a shared thread pool.
 	 * 
 	 * @param jobs
@@ -46,7 +61,7 @@ public class ThreadHelper
 		}
 		else
 		{
-			threadPool = cachedThreadPool;
+			threadPool = getCachedThreadPool();
 		}
 
 		try
@@ -129,13 +144,13 @@ public class ThreadHelper
 
 	public <T> Future<T> submit(Callable<T> job)
 	{
-		return cachedThreadPool.submit(job);
+		return getCachedThreadPool().submit(job);
 	}
 
 	@SuppressWarnings("unused")
 	public Future<?> submit(Runnable job)
 	{
-		return cachedThreadPool.submit(job);
+		return getCachedThreadPool().submit(job);
 	}
 
 	public <T> T getResult(Future<T> task)

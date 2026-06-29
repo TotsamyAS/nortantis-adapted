@@ -60,6 +60,9 @@ public class SettingsGenerator
 		}
 
 		MapSettings settings = new MapSettings(defaultSettingsFile);
+		// This is a brand-new map created in the current version. The default settings come from an old properties file (which loads as
+		// version "0.0"), so set the current version explicitly; otherwise the new map would be treated as one upgraded from an older version.
+		settings.version = MapSettings.currentVersion;
 		settings.pointPrecision = MapSettings.defaultPointPrecision;
 		settings.lloydRelaxationsScale = MapSettings.defaultLloydRelaxationsScale;
 
@@ -340,6 +343,9 @@ public class SettingsGenerator
 		settings.edits = new MapEdits();
 		settings.imageExportPath = null;
 		settings.heightmapExportPath = null;
+		// A brand new full-size map is created in the current version, even if its theme came from a map saved in an older version, so set the
+		// current version rather than inheriting the source map's (possibly older) version from the deep copy.
+		settings.version = MapSettings.currentVersion;
 		// A brand new full-size map is not a sub-map, even if the theme came from one.
 		settings.subMapInfo = null;
 		// Randomize only land seed

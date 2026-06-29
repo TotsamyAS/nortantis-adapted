@@ -61,9 +61,21 @@ public class MainWindow extends JFrame implements ILoggerTarget
 	 * False until the first full draw after a map is loaded has completed. While false, a full draw that removes cities for landing on water
 	 * does not warn the user: opening a map (or creating a sub-map, which warns separately) can legitimately have cities sitting on water, and
 	 * that is not something the user just caused. Once true, a later full draw that removes cities for water (e.g. from changing the shore line
-	 * style or the display quality) warns. Reset to false in loadSettingsIntoGUI.
+	 * style or the display quality) warns. Set in loadSettingsIntoGUI: normally false, but true when the loaded map is from an older version of
+	 * Nortantis, so that the first draw warns about cities that sank because of rendering differences between that version and the current one.
 	 */
 	private boolean hasEstablishedCityOnWaterBaseline;
+	/**
+	 * True when the currently loaded map was saved in an older version of Nortantis than the current one. Used to show a warning message that
+	 * explains cities sinking into the water may be caused by version differences in how shores are drawn or water collision is detected. Set
+	 * in loadSettingsIntoGUI.
+	 */
+	private boolean loadedMapIsFromOlderVersion;
+	/**
+	 * The version the currently loaded map was saved in, used in the warning message shown when cities sink because the map is from an older
+	 * version. Set in loadSettingsIntoGUI. Only meaningful when {@link #loadedMapIsFromOlderVersion} is true.
+	 */
+	private String loadedMapVersion;
 	static final String frameTitleBase = "Nortantis";
 	public MapEdits edits;
 
@@ -2184,19 +2196,32 @@ public class MainWindow extends JFrame implements ILoggerTarget
 	 * was very close to the water over it. The cause is not pinned down on purpose, so any future change that can do this is covered. The
 	 * removed cities come from the draw that dropped them, and removed cities are gone from the edits, so this fires once per change rather
 	 * than nagging on later redraws. A city sinking because the user painted ocean over it is an incremental draw, which does not report
-	 * removed cities here, so that expected case is not warned about. The first full draw after a load only establishes the baseline, so
-	 * opening a map (or creating a sub-map, which warns separately) does not warn. Undo/redo draws are skipped: an undo is trying to put
-	 * removed cities back, not make a forward change, so warning then would be backwards. The specific cities are not listed to keep the popup
-	 * small; the user can undo to see what changed.
+	 * removed cities here, so that expected case is not warned about. The first full draw after loading a current-version map only establishes
+	 * the baseline, so opening such a map (or creating a sub-map, which warns separately) does not warn; but when the loaded map is from an
+	 * older version of Nortantis, the first draw does warn (with a message explaining the version-difference cause), because the cities sank
+	 * from rendering changes between versions. Undo/redo draws are skipped: an undo is trying to put removed cities back, not make a forward
+	 * change, so warning then would be backwards. The specific cities are not listed to keep the popup small; the user can undo to see what
+	 * changed.
 	 */
 	private void warnIfCitiesWereRemovedForWater(List<nortantis.IconDrawer.CityIconRemovedForWater> citiesRemovedForWater, boolean wasTriggeredByUndoRedo)
 	{
 		if (hasEstablishedCityOnWaterBaseline && !wasTriggeredByUndoRedo && citiesRemovedForWater.size() > 0)
 		{
-			String editMenuName = Translation.get("menu.edit");
-			String undoName = Translation.get("menu.edit.undo");
-			String message = citiesRemovedForWater.size() == 1 ? Translation.get("mainWindow.cityRemovedForWater", editMenuName, undoName)
-					: Translation.get("mainWindow.citiesRemovedForWater", String.valueOf(citiesRemovedForWater.size()), editMenuName, undoName);
+			// For a map loaded from an older version, the cities most likely sank because of rendering differences between that version and the
+			// current one, so use a message that explains that cause (and names the older version) instead of the usual line-style explanation.
+			String message;
+			if (loadedMapIsFromOlderVersion)
+			{
+				message = citiesRemovedForWater.size() == 1 ? Translation.get("mainWindow.cityRemovedForWater.olderVersion", loadedMapVersion)
+						: Translation.get("mainWindow.citiesRemovedForWater.olderVersion", String.valueOf(citiesRemovedForWater.size()), loadedMapVersion);
+			}
+			else
+			{
+				String editMenuName = Translation.get("menu.edit");
+				String undoName = Translation.get("menu.edit.undo");
+				message = citiesRemovedForWater.size() == 1 ? Translation.get("mainWindow.cityRemovedForWater", editMenuName, undoName)
+						: Translation.get("mainWindow.citiesRemovedForWater", String.valueOf(citiesRemovedForWater.size()), editMenuName, undoName);
+			}
 			JOptionPane.showMessageDialog(this, message, Translation.get("mainWindow.citiesRemovedForWater.title"), JOptionPane.WARNING_MESSAGE);
 		}
 		hasEstablishedCityOnWaterBaseline = true;
@@ -2205,9 +2230,16 @@ public class MainWindow extends JFrame implements ILoggerTarget
 	void loadSettingsIntoGUI(MapSettings settings)
 	{
 		hasDrawnCurrentMapAtLeastOnce = false;
-		// The next full draw of this freshly loaded map only establishes a baseline, so loading a map (which can legitimately have cities on
-		// water, e.g. a sub-map) does not warn about cities removed for landing on water.
-		hasEstablishedCityOnWaterBaseline = false;
+		// A map saved in an older version of Nortantis can have cities that sink into the water when it is first drawn in the current version,
+		// because the way shores are drawn or water collision is detected has changed between versions. In that case we want the first draw to
+		// warn the user (with a message that explains the version-difference cause), so treat the loaded map as the baseline rather than
+		// silently establishing it. A current-version map keeps the normal behavior: its first draw only establishes the baseline, and only a
+		// later change the user makes (e.g. switching the shore line style) warns.
+		loadedMapVersion = settings.version;
+		// Only treat the map as being from an older version when it actually records a version, so the warning can always name that version.
+		loadedMapIsFromOlderVersion = loadedMapVersion != null && !loadedMapVersion.isEmpty()
+				&& MapSettings.isVersionGreaterThan(MapSettings.currentVersion, loadedMapVersion);
+		hasEstablishedCityOnWaterBaseline = loadedMapIsFromOlderVersion;
 		mapEditingPanel.clearAllSelectionsAndHighlights();
 
 		updateLastSettingsLoadedOrSaved(settings);
