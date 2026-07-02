@@ -790,10 +790,22 @@ public class TextTool extends EditorTool
 		// If right-click is on a text that isn't currently the selection, select it first so the menu
 		// acts on what the user pointed at. Don't grab focus — see Option A in selection-vs-editing
 		// design (focus would route ctrl+C/V/DELETE to the text-edit field instead of the MapText).
-		MapText underCursor = mainWindow.edits.findTextPicked(getPointOnGraph(e.getPoint()));
-		if (underCursor != null && underCursor != lastSelected)
+		//
+		// Exception: if the right-click landed inside the currently-selected text's selection box, keep that
+		// selection rather than switching to whatever text happens to be under the cursor. Another text can sit
+		// under the same box, and swapping the selection on right-click would surprise the user. (Matches the
+		// Icons tool's isPointInsideMultiIconSelectionBox behavior.)
+		nortantis.geom.Point graphPoint = getPointOnGraph(e.getPoint());
+		boolean insideSelectionBox = lastSelected != null
+				&& ((lastSelected.line1Bounds != null && lastSelected.line1Bounds.contains(graphPoint))
+						|| (lastSelected.line2Bounds != null && lastSelected.line2Bounds.contains(graphPoint)));
+		if (!insideSelectionBox)
 		{
-			handleSelectingTextToEdit(underCursor, false);
+			MapText underCursor = mainWindow.edits.findTextPicked(graphPoint);
+			if (underCursor != null && underCursor != lastSelected)
+			{
+				handleSelectingTextToEdit(underCursor, false);
+			}
 		}
 
 		boolean hasSelection = lastSelected != null;
