@@ -23,7 +23,6 @@ import java.awt.event.KeyEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.awt.image.BufferedImage;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
@@ -953,9 +952,9 @@ public class SubMapDialog
 					boolean redistributeIconsAndRivers = customRadio != null && customRadio.isSelected();
 					MapSettings settings = SubMapCreator.createSubMapSettings(origSettings, origGraph, selBoundsRI, getSubmapWorldSize(), origResolution, subMapSeed, redistributeIconsAndRivers,
 							origFileName);
-					// Set resolution to 1.0 as a baseline; MapCreator.createMap will override it via
+					// Set resolution to the new-map default as a baseline; MapCreator.createMap will override it via
 					// Background.calcMapBoundsAndAdjustResolutionIfNeeded to fit the maxMapSize passed to the updater.
-					settings.resolution = 1.0;
+					settings.resolution = MapSettings.defaultResolution;
 					lastSubMapSettings = settings;
 					return settings;
 				}
@@ -1198,6 +1197,10 @@ public class SubMapDialog
 		mainWindow.mapEditingPanel.clearSelectionBox();
 		step2Dialog.dispose();
 		step2Dialog = null;
+		// The preview draw shrank settings.resolution to fit the preview area (calcMapBoundsAndAdjustResolutionIfNeeded mutates the settings it
+		// is given). loadSettingsIntoGUI captures settings.resolution as the export resolution, so restore the new-map default here; otherwise
+		// the created sub-map would inherit the shrunken preview resolution as its export/display baseline.
+		settings.resolution = MapSettings.defaultResolution;
 		// Re-enable the menu bar that was locked while the dialog was open. The map-related field state is left to loadSettingsIntoGUI
 		// below,
 		// which decides it authoritatively based on whether the sub-map's edits are initialized (they always are).

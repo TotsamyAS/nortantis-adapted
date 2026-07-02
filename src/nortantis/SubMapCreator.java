@@ -1,13 +1,6 @@
 package nortantis;
 
-import nortantis.editor.CenterEdit;
-import nortantis.editor.CenterIcon;
-import nortantis.editor.CenterIconType;
-import nortantis.editor.CenterTrees;
-import nortantis.editor.FreeIcon;
-import nortantis.editor.IconColors;
-import nortantis.editor.RegionEdit;
-import nortantis.editor.Road;
+import nortantis.editor.*;
 import nortantis.geom.Point;
 import nortantis.geom.Rectangle;
 import nortantis.geom.RotatedRectangle;
@@ -15,11 +8,7 @@ import nortantis.graph.voronoi.Center;
 import nortantis.graph.voronoi.Corner;
 import nortantis.graph.voronoi.Edge;
 import nortantis.platform.Font;
-import nortantis.GraphRiver;
-import nortantis.editor.River;
-import nortantis.editor.RiverPathNode;
 import nortantis.swing.MapEdits;
-
 import nortantis.util.OrderlessPair;
 import nortantis.util.Tuple2;
 
@@ -88,8 +77,12 @@ public class SubMapCreator
 		newSettings.generatedWidth = newGenWidth;
 		newSettings.generatedHeight = newGenHeight;
 		newSettings.worldSize = newWorldSize;
+		// Export and display settings are specific to the original map and should not carry over to a brand-new sub-map.
 		newSettings.imageExportPath = null;
 		newSettings.heightmapExportPath = null;
+		newSettings.heightmapResolution = MapSettings.defaultHeightmapResolution;
+		newSettings.defaultMapExportAction = MapSettings.defaultDefaultExportAction;
+		newSettings.defaultHeightmapExportAction = MapSettings.defaultDefaultExportAction;
 		// No rotation/flip on the sub-map.
 		newSettings.rightRotationCount = 0;
 		newSettings.flipHorizontally = false;
@@ -214,6 +207,11 @@ public class SubMapCreator
 
 		// Attach the new edits to the new settings.
 		newSettings.edits = newEdits;
+
+		// The sub-map graph work above needed newSettings.resolution set to originalResolution for its RI ↔ pixel conversions, but the
+		// original map's display/export resolution should not persist on the finished sub-map. Reset it to the default used for a new map;
+		// MapCreator.createMap will adjust it as needed when the sub-map is rendered.
+		newSettings.resolution = MapSettings.defaultResolution;
 
 		return newSettings;
 	}

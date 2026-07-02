@@ -865,6 +865,9 @@ public class MapCreatorTest
 
 		long seed = 987654321L;
 		MapSettings subMapSettings = SubMapCreator.createSubMapSettings(originalSettings, originalGraph, selectionBoundsRI, worldSize, originalSettings.resolution, seed, true);
+		// createSubMapSettings resets resolution to the 1.0 baseline (as production does before MapCreator adjusts it to fit the display).
+		// Render at the source's display resolution so the image matches the expected map and stays small/fast.
+		subMapSettings.resolution = originalSettings.resolution;
 
 		assertEquals(worldSize, subMapSettings.worldSize, "Sub-map should be generated at the requested high detail (world size)");
 
@@ -900,6 +903,9 @@ public class MapCreatorTest
 		long seed = 987654321L;
 		// redistributeIconsAndRivers = false: match-source-detail copies icons/rivers/text instead of redistributing them.
 		MapSettings subMapSettings = SubMapCreator.createSubMapSettings(originalSettings, originalGraph, selectionBoundsRI, worldSize, originalSettings.resolution, seed, false);
+		// createSubMapSettings resets resolution to the 1.0 baseline (as production does before MapCreator adjusts it to fit the display).
+		// Render at the source's display resolution so the image matches the expected map and stays small/fast.
+		subMapSettings.resolution = originalSettings.resolution;
 
 		assertEquals(worldSize, subMapSettings.worldSize, "Sub-map should be generated at the source detail level (world size)");
 
@@ -937,6 +943,9 @@ public class MapCreatorTest
 		long seed = 987654321L;
 		// redistributeIconsAndRivers = true: Choose mode redistributes icons/rivers/text across the new polygon grid.
 		MapSettings subMapSettings = SubMapCreator.createSubMapSettings(originalSettings, originalGraph, selectionBoundsRI, worldSize, originalSettings.resolution, seed, true);
+		// createSubMapSettings resets resolution to the 1.0 baseline (as production does before MapCreator adjusts it to fit the display).
+		// Render at the source's display resolution so the image matches the expected map and stays small/fast.
+		subMapSettings.resolution = originalSettings.resolution;
 
 		assertEquals(worldSize, subMapSettings.worldSize, "Sub-map should be generated at the chosen (multiple-of-1000) world size");
 
@@ -972,6 +981,9 @@ public class MapCreatorTest
 		long seed = 233510192L;
 		// redistributeIconsAndRivers = true: redistribute mode re-routes rivers through the new polygon grid - the path the bug lived in.
 		MapSettings subMapSettings = SubMapCreator.createSubMapSettings(originalSettings, originalGraph, selectionBoundsRI, worldSize, originalSettings.resolution, seed, true);
+		// createSubMapSettings resets resolution to the 1.0 baseline (as production does before MapCreator adjusts it to fit the display).
+		// Render at the source's display resolution so the image matches the expected map and stays small/fast.
+		subMapSettings.resolution = originalSettings.resolution;
 
 		WorldGraph subMapGraph = MapCreator.createGraphForUnitTests(subMapSettings);
 		// Every sub-map center should have land/water (and region) assigned from the source map.

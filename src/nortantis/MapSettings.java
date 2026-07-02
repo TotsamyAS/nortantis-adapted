@@ -46,6 +46,8 @@ public class MapSettings implements Serializable
 	public static final String fileExtensionWithDot = "." + fileExtension;
 	public static final double defaultPointPrecision = 2.0;
 	public static final double defaultLloydRelaxationsScale = 0.1;
+	public static final double defaultResolution = 1.0;
+	public static final double defaultHeightmapResolution = 1.0;
 	private final double defaultTreeHeightScaleForOldMaps = 0.5;
 	private final double defaultRoadWidth = 1.0;
 	private final Stroke defaultRoadStyle = new Stroke(StrokeType.Dots, (float) (MapCreator.calcSizeMultiplierFromResolutionScaleRounded(1.0) * defaultRoadWidth));
@@ -63,8 +65,9 @@ public class MapSettings implements Serializable
 	public long randomSeed;
 	/**
 	 * A scalar multiplied by the map height and width to get the final resolution.
+	 * I set this to the default here just to be safe, even though I believe all code paths override it.
 	 */
-	public double resolution;
+	public double resolution = defaultResolution;
 	public int coastShadingLevel;
 	@Deprecated
 	public int oceanEffectsLevel;
@@ -167,7 +170,10 @@ public class MapSettings implements Serializable
 	public double lloydRelaxationsScale = defaultLloydRelaxationsScale;
 	public String imageExportPath;
 	public String heightmapExportPath;
-	public double heightmapResolution = 1.0;
+	/**
+	 * I set this to the default here just to be safe, even though I believe all code paths override it.
+	 */
+	public double heightmapResolution = defaultHeightmapResolution;
 	public String customImagesPath;
 	/**
 	 * When generating a new map, this is the art pack to use. When editing a map, this is the art pack displayed in the UI.
@@ -179,7 +185,7 @@ public class MapSettings implements Serializable
 	public double hillScale = 1.0;
 	public double duneScale = 1.0;
 	public double cityScale = 1.0;
-	private final ExportAction defaultDefaultExportAction = ExportAction.SaveToFile;
+	public static final ExportAction defaultDefaultExportAction = ExportAction.SaveToFile;
 	public ExportAction defaultMapExportAction = defaultDefaultExportAction;
 	public ExportAction defaultHeightmapExportAction = defaultDefaultExportAction;
 	public Stroke roadStyle;

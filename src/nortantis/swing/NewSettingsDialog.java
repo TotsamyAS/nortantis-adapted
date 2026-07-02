@@ -583,7 +583,7 @@ public class NewSettingsDialog extends JDialog
 
 				// This is only the maximum size because I'm passing in
 				// maxDimensions to MapCreator.create.
-				settings.resolution = 1.0;
+				settings.resolution = MapSettings.defaultResolution;
 
 				return settings;
 			}
