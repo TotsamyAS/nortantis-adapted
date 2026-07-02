@@ -1992,8 +1992,7 @@ public class LandWaterTool extends EditorTool
 
 				if (newRegionButton.isSelected())
 				{
-					Color color = areRegionColorsVisible ? colorDisplay.getBackground() : mainWindow.getLandColor();
-					regionIdToExpand = createNewRegion(color);
+					regionIdToExpand = createNewRegion(getCurrentRegionColor());
 					newRegionButton.setSelected(false);
 					updateColorControlVisibility();
 				}
@@ -2032,7 +2031,7 @@ public class LandWaterTool extends EditorTool
 					continue;
 				}
 				// Always add region IDs to edits even if regions aren't displayed because the user might show them later.
-				Integer newRegionId = getOrCreateRegionIdForEdit(center, mainWindow.getLandColor());
+				Integer newRegionId = getOrCreateRegionIdForEdit(center, getCurrentRegionColor());
 				hasChange |= (edit.regionId == null) || newRegionId != edit.regionId;
 				hasChange |= edit.isWater;
 				mainWindow.edits.centerEdits.put(edit.index, new CenterEdit(edit.index, false, false, newRegionId, edit.icon, edit.trees));
@@ -2638,6 +2637,17 @@ public class LandWaterTool extends EditorTool
 	private Set<Center> getSelectedCenters(java.awt.Point point)
 	{
 		return getSelectedCenters(point, brushSizes.get(brushSizeComboBox.getSelectedIndex()));
+	}
+
+	/**
+	 * The color to use when creating a new political region. When region colors are shown, this is the color currently selected in the
+	 * tool (which survives undo/redo); otherwise regions are invisible, so the theme's single land color is used. Used both by the
+	 * explicit "New Color / Political Region" action and by the fallback that creates a region when there's no existing land nearby to
+	 * extend.
+	 */
+	private Color getCurrentRegionColor()
+	{
+		return areRegionColorsVisible ? colorDisplay.getBackground() : mainWindow.getLandColor();
 	}
 
 	private int getOrCreateRegionIdForEdit(Center center, Color color)
