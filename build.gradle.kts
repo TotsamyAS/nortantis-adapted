@@ -76,6 +76,20 @@ tasks.test {
     systemProperty("runBenchmarks", System.getProperty("runBenchmarks", "false"))
 }
 
+tasks.register<JavaExec>("runRest") {
+    group = "application"
+    description = "Run the Nortantis REST microservice"
+    mainClass.set("nortantis.rest.NortantisRestServer")
+    classpath = sourceSets.main.get().runtimeClasspath
+    jvmArgs = listOf(
+        "--enable-native-access=ALL-UNNAMED",
+        "-Dfile.encoding=UTF-8",
+        "-Djava.awt.headless=true",
+        "-Dsun.java2d.d3d=false",
+        "-Xmx3g",
+    )
+}
+
 // Benchmark task with JFR profiling
 // Usage: ./gradlew benchmark
 // Output: build/profile.jfr (open in JDK Mission Control or IntelliJ)

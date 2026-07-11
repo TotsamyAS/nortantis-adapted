@@ -8,6 +8,8 @@ import java.util.function.Supplier;
 
 public class NameCreator
 {
+	public static final ThreadLocal<String> forcedTitle = new ThreadLocal<>();
+
 	private Random r;
 	private NameGenerator placeNameGenerator;
 	private NameGenerator personNameGenerator;
@@ -152,6 +154,12 @@ public class NameCreator
 	{
 		if (type.equals(TextType.Title))
 		{
+			String title = forcedTitle.get();
+			if (title != null && !title.isBlank())
+			{
+				TitleType titleType = subType == null ? TitleType.Decorated : (TitleType) subType;
+				return titleType == TitleType.NameOnly ? title : "The map of " + title;
+			}
 			TitleType titleType = subType == null ? TitleType.Decorated : (TitleType) subType;
 
 			double probabilityOfPersonName = 0.3;
