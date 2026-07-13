@@ -60,6 +60,12 @@
 				<path d="M12 16v-4" />
 				<path d="M12 8h.01" />
 			</symbol>
+			<symbol id="icon-route" viewBox="0 0 24 24">
+				<circle cx="6" cy="19" r="3" /><path d="M9 19h5.5a3.5 3.5 0 0 0 0-7h-5a3.5 3.5 0 0 1 0-7H15" /><circle cx="18" cy="5" r="3" />
+			</symbol>
+			<symbol id="icon-settings" viewBox="0 0 24 24">
+				<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.51a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" /><circle cx="12" cy="12" r="3" />
+			</symbol>
 			<symbol id="icon-save" viewBox="0 0 24 24">
 				<path
 					d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"
@@ -126,17 +132,20 @@
 				<button class="tool-icon" data-tool-button="terrain" data-tooltip="" aria-label="">
 					<svg><use href="#icon-paintbrush" /></svg>
 				</button>
-				<button class="tool-icon" data-tool-button="boundaries" data-tooltip="" aria-label="">
-					<svg><use href="#icon-split" /></svg>
-				</button>
-				<button class="tool-icon" data-tool-button="regions" data-tooltip="" aria-label="">
+				<button class="tool-icon" data-tool-button="provinces" data-tooltip="" aria-label="">
 					<svg><use href="#icon-palette" /></svg>
+				</button>
+				<button class="tool-icon" data-tool-button="lines" data-tooltip="" aria-label="">
+					<svg><use href="#icon-route" /></svg>
 				</button>
 				<button class="tool-icon" data-tool-button="text" data-tooltip="" aria-label="">
 					<svg><use href="#icon-type" /></svg>
 				</button>
 				<button class="tool-icon" data-tool-button="icons" data-tooltip="" aria-label="">
 					<svg><use href="#icon-mountain" /></svg>
+				</button>
+				<button class="tool-icon" data-tool-button="settings" data-tooltip="" aria-label="">
+					<svg><use href="#icon-settings" /></svg>
 				</button>
 				<button class="tool-icon" data-tool-button="about" data-tooltip="" aria-label="">
 					<svg><use href="#icon-info" /></svg>
@@ -231,12 +240,15 @@
 						<p class="muted" data-label="terrainHint"></p>
 					</section>
 
-					<section class="tool-view" data-tool-panel="boundaries">
-						<h2 data-label="boundaries"></h2>
+					<section class="tool-view" data-tool-panel="provinces">
+						<h2 data-label="provinces"></h2>
+						<div class="segmented">
+							<button id="regionPaint" class="active" type="button" data-label="regionPaint"></button
+							><button id="regionPick" type="button" data-label="regionPick"></button>
+						</div>
 						<div class="segmented">
 							<button
 								id="boundaryDraw"
-								class="active"
 								type="button"
 								data-label="boundaryDraw"
 							></button
@@ -248,25 +260,20 @@
 								<output id="boundaryRadiusValue">36</output></span
 							><input id="boundaryRadius" type="range" min="8" max="90" value="36"
 						/></label>
-						<p class="muted" data-label="boundaryHint"></p>
-					</section>
-
-					<section class="tool-view" data-tool-panel="regions">
-						<h2 data-label="regions"></h2>
-						<div class="segmented">
-							<button
-								id="regionPaint"
-								class="active"
-								type="button"
-								data-label="regionPaint"
-							></button
-							><button id="regionPick" type="button" data-label="regionPick"></button>
-						</div>
 						<label class="field"
 							><span data-label="regionColor"></span
 							><input id="regionColor" type="color" value="#b9945d"
 						/></label>
 						<p id="regionStatus" class="muted" data-label="regionHint"></p>
+					</section>
+
+					<section class="tool-view" data-tool-panel="lines">
+						<h2 data-label="lines"></h2>
+						<div class="segmented"><button id="roadType" class="active" type="button" data-label="roads"></button><button id="riverType" type="button" data-label="rivers"></button></div>
+						<div class="segmented"><button id="lineDraw" class="active" type="button" data-label="lineDraw"></button><button id="lineErase" type="button" data-label="lineErase"></button></div>
+						<label id="riverWidthField" class="field" hidden><span><span data-label="riverWidth"></span>: <output id="riverWidthValue">3</output></span><input id="riverWidth" type="range" min="0" max="14" value="3" /></label>
+						<label class="field"><span><span data-label="lineRadius"></span>: <output id="lineRadiusValue">24</output></span><input id="lineRadius" type="range" min="6" max="72" value="24" /></label>
+						<p class="muted" data-label="linesHint"></p>
 					</section>
 
 					<section class="tool-view" data-tool-panel="text">
@@ -309,6 +316,12 @@
 						/></label>
 						<div id="iconLibrary" class="icon-library"></div>
 						<p class="muted" data-label="iconsHint"></p>
+					</section>
+
+					<section class="tool-view" data-tool-panel="settings">
+						<h2 data-label="settings"></h2>
+						<label class="toggle-row"><input id="showTiles" type="checkbox" checked /><span data-label="showTiles"></span></label>
+						<p class="muted" data-label="showTilesHint"></p>
 					</section>
 
 					<section class="tool-view" data-tool-panel="about">

@@ -8,6 +8,7 @@ import nortantis.Background;
 import nortantis.BorderPosition;
 import nortantis.IconType;
 import nortantis.IconDrawer;
+import nortantis.GraphRiver;
 import nortantis.LandShape;
 import nortantis.MapCreator;
 import nortantis.MapSettings;
@@ -23,7 +24,10 @@ import nortantis.editor.CenterIcon;
 import nortantis.editor.CenterIconType;
 import nortantis.editor.CenterTrees;
 import nortantis.editor.MapParts;
+import nortantis.editor.RegionBoundary;
 import nortantis.editor.RegionEdit;
+import nortantis.editor.River;
+import nortantis.editor.RiverPathNode;
 import nortantis.editor.Road;
 import nortantis.editor.RoadPathNode;
 import nortantis.geom.Dimension;
@@ -56,9 +60,15 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.ArrayDeque;
 import java.util.Base64;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.PriorityQueue;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -74,6 +84,7 @@ public class NortantisRestServer
 	private static final String ICONS_LOG_PREFIX = "[nortantis-icons-service]";
 	private static final String FORESTS_LOG_PREFIX = "[nortantis-forests-service]";
 	private static final String ROADS_LOG_PREFIX = "[nortantis-roads-service]";
+	private static final String RIVERS_LOG_PREFIX = "[nortantis-rivers-service]";
 	private static final String GENERATION_LOG_PREFIX = "[nortantis-generation-service]";
 	private static final String PROJECTS_LOG_PREFIX = "[nortantis-projects-service]";
 	private static final String ASSETS_LOG_PREFIX = "[nortantis-assets-service]";
@@ -100,6 +111,9 @@ public class NortantisRestServer
 		server.createContext("/api/editor/session/region-color", NortantisRestServer::regionColor);
 		server.createContext("/api/editor/session/brush-selection", NortantisRestServer::brushSelection);
 		server.createContext("/api/editor/session/text-pick", NortantisRestServer::textPick);
+		server.createContext("/api/editor/session/history", NortantisRestServer::editorSessionHistory);
+		server.createContext("/api/editor/session/path-preview", NortantisRestServer::editorSessionPathPreview);
+		server.createContext("/api/editor/session/topology", NortantisRestServer::editorSessionTopology);
 		server.createContext("/api/editor/assets/icons", NortantisRestServer::iconAssets);
 		server.createContext("/api/editor/assets/icon-preview", NortantisRestServer::iconPreview);
 		server.createContext("/api/projects/default", NortantisRestServer::defaultProject);
@@ -280,6 +294,122 @@ public class NortantisRestServer
 		catch (Exception ex)
 		{
 			send(exchange, 500, "application/json", ("{\"ok\":false,\"error\":\"" + escape(ex.getMessage()) + "\"}").getBytes(StandardCharsets.UTF_8));
+		}
+	}
+
+	private static void editorSessionHistory(HttpExchange exchange) throws IOException
+	{
+		if (!exchange.getRequestMethod().equals("POST"))
+		{
+			send(exchange, 405, "application/json", "{\"ok\":false}".getBytes(StandardCharsets.UTF_8));
+			return;
+		}
+		try
+		{
+			JSONObject input = readJsonBody(exchange);
+			String sessionId = input.get("sessionId") instanceof String ? ((String) input.get("sessionId")).trim() : "";
+			String action = input.get("action") instanceof String ? ((String) input.get("action")).trim() : "";
+			EditorSession session = EDITOR_SESSIONS.get(sessionId);
+			if (session == null || !("undo".equals(action) || "redo".equals(action)))
+			{
+				throw new IllegalArgumentException("Invalid editor history request");
+			}
+			boolean changed;
+			synchronized (session)
+			{
+				changed = restoreEditorHistory(session, action);
+			}
+			String result = "{\"ok\":true,\"changed\":" + changed
+					+ ",\"canUndo\":" + session.canUndo()
+					+ ",\"canRedo\":" + session.canRedo()
+					+ ",\"previewBase64\":\"" + imageToBase64(session.map, ".png") + "\",\"metadata\":" + sessionMetadataJson(session) + "}";
+			send(exchange, 200, "application/json", result.getBytes(StandardCharsets.UTF_8));
+		}
+		catch (Exception ex)
+		{
+			send(exchange, 400, "application/json", ("{\"ok\":false,\"error\":\"" + escape(ex.getMessage()) + "\"}").getBytes(StandardCharsets.UTF_8));
+		}
+	}
+
+	private static void editorSessionTopology(HttpExchange exchange) throws IOException
+	{
+		if (!exchange.getRequestMethod().equals("POST"))
+		{
+			send(exchange, 405, "application/json", "{\"ok\":false}".getBytes(StandardCharsets.UTF_8));
+			return;
+		}
+		try
+		{
+			JSONObject input = readJsonBody(exchange);
+			String sessionId = input.get("sessionId") instanceof String ? ((String) input.get("sessionId")).trim() : "";
+			EditorSession session = EDITOR_SESSIONS.get(sessionId);
+			if (session == null)
+			{
+				throw new IllegalArgumentException("Missing editor session");
+			}
+			String result;
+			synchronized (session)
+			{
+				result = brushSelectionJson(new HashSet<>(session.mapParts.graph.centers), session);
+			}
+			send(exchange, 200, "application/json", result.getBytes(StandardCharsets.UTF_8));
+		}
+		catch (Exception ex)
+		{
+			send(exchange, 400, "application/json", ("{\"ok\":false,\"error\":\"" + escape(ex.getMessage()) + "\"}").getBytes(StandardCharsets.UTF_8));
+		}
+	}
+
+	private static void editorSessionPathPreview(HttpExchange exchange) throws IOException
+	{
+		if (!exchange.getRequestMethod().equals("POST"))
+		{
+			send(exchange, 405, "application/json", "{\"ok\":false}".getBytes(StandardCharsets.UTF_8));
+			return;
+		}
+		try
+		{
+			JSONObject input = readJsonBody(exchange);
+			String sessionId = input.get("sessionId") instanceof String ? ((String) input.get("sessionId")).trim() : "";
+			JSONObject command = input.get("command") instanceof JSONObject ? (JSONObject) input.get("command") : null;
+			EditorSession session = EDITOR_SESSIONS.get(sessionId);
+			if (session == null || command == null)
+			{
+				throw new IllegalArgumentException("Invalid path preview request");
+			}
+			String result;
+			synchronized (session)
+			{
+				List<Point> inputLine = readLineGraphPoints(session.settings, command, true, borderPadding(session));
+				double radius = command.get("radius") instanceof Number
+						? ((Number) command.get("radius")).doubleValue() * (session.settings.resolution == 0.0 ? 1.0 : session.settings.resolution)
+						: Math.max(8.0, averageNeighborDistance(session.mapParts.graph) * 0.5);
+				List<Point> previewLine = inputLine;
+				String type = command.get("type") instanceof String ? (String) command.get("type") : "";
+				if (type.startsWith("region.boundary"))
+				{
+					SnappedBoundary snapped = snapBoundaryToRegionEdges(session.settings, session.mapParts.graph, inputLine, radius);
+					if (snapped != null && !snapped.points().isEmpty())
+					{
+						previewLine = snapped.points();
+					}
+				}
+				else if (type.startsWith("river."))
+				{
+					SnappedPath snapped = snapLineToGraphEdges(session.mapParts.graph, inputLine, radius);
+					if (snapped != null && !snapped.points().isEmpty())
+					{
+						previewLine = snapped.points();
+					}
+				}
+				Set<Center> selected = centersNearBoundaryLine(session.settings, session.mapParts.graph, previewLine, Math.max(radius, averageNeighborDistance(session.mapParts.graph) * 0.65));
+				result = pathPreviewJson(previewLine, selected, session);
+			}
+			send(exchange, 200, "application/json", result.getBytes(StandardCharsets.UTF_8));
+		}
+		catch (Exception ex)
+		{
+			send(exchange, 400, "application/json", ("{\"ok\":false,\"error\":\"" + escape(ex.getMessage()) + "\"}").getBytes(StandardCharsets.UTF_8));
 		}
 	}
 
@@ -832,6 +962,7 @@ public class NortantisRestServer
 			if (sessionId != null && !sessionId.isBlank() && command != null && isIncrementalCommand(command))
 			{
 				editSession = existingSession != null ? existingSession : getOrCreateEditorSession(sessionId, project, readMaxDimensions(input));
+				MapSettings historyBefore = editSession.prepareHistory(command);
 				if ("region.paint".equals(command.get("type")) && !editSession.settings.drawRegionColors)
 				{
 					editSession = applyFirstRegionPaint(sessionId, command, editSession);
@@ -842,6 +973,7 @@ public class NortantisRestServer
 				{
 					previewBase64 = applyIncrementalEdit(settings, command, editSession, readReturnPreview(input));
 				}
+				editSession.commitHistory(historyBefore, command);
 			}
 			else
 			{
@@ -1338,7 +1470,7 @@ public class NortantisRestServer
 		ImageCache cache = ImageCache.getInstance(settings.artPack, settings.customImagesPath);
 		for (IconType type : IconType.values())
 		{
-			if (type != IconType.mountains && type != IconType.sand && type != IconType.trees)
+			if (type != IconType.mountains && type != IconType.sand && type != IconType.trees && type != IconType.cities)
 			{
 				continue;
 			}
@@ -1502,7 +1634,8 @@ public class NortantisRestServer
 		{
 			settings.edits.initializeRegionEdits(graph.regions.values());
 		}
-		if ("icon.center.set".equals(type) || "icon.center.clear".equals(type) || "trees.center.set".equals(type) || "trees.center.clear".equals(type) || "road.add".equals(type) || "region.paint".equals(type) || "region.boundary.draw".equals(type)
+		if ("icon.center.set".equals(type) || "icon.center.clear".equals(type) || "trees.center.set".equals(type) || "trees.center.clear".equals(type) || "road.add".equals(type) || "road.draw".equals(type) || "road.erase".equals(type)
+				|| "river.draw".equals(type) || "river.erase".equals(type) || "region.paint".equals(type) || "region.boundary.draw".equals(type)
 				|| "region.boundary.erase".equals(type))
 		{
 			applyMapToolCommand(settings, graph, command, false, null);
@@ -1514,7 +1647,8 @@ public class NortantisRestServer
 	private static boolean isIncrementalCommand(JSONObject command)
 	{
 		Object type = command.get("type");
-		return "terrain.brush".equals(type) || "text.add".equals(type) || "text.update".equals(type) || "text.delete".equals(type) || "icon.center.set".equals(type) || "icon.center.clear".equals(type) || "trees.center.set".equals(type) || "trees.center.clear".equals(type) || "road.add".equals(type) || "region.paint".equals(type)
+		return "terrain.brush".equals(type) || "text.add".equals(type) || "text.update".equals(type) || "text.delete".equals(type) || "icon.center.set".equals(type) || "icon.center.clear".equals(type) || "trees.center.set".equals(type) || "trees.center.clear".equals(type) || "road.add".equals(type) || "road.draw".equals(type) || "road.erase".equals(type)
+				|| "river.draw".equals(type) || "river.erase".equals(type) || "region.paint".equals(type)
 				|| "region.boundary.draw".equals(type) || "region.boundary.erase".equals(type);
 	}
 
@@ -1710,6 +1844,7 @@ public class NortantisRestServer
 			{
 				nextMap = new MapCreator().createMap(nextSettings, previous.maxDimensions, nextParts);
 				EditorSession next = new EditorSession(nextSettings, nextParts, nextMap, previous.maxDimensions);
+				next.copyHistoryFrom(previous);
 				if (!EDITOR_SESSIONS.replace(sessionId, previous, next))
 				{
 					throw new IllegalStateException("Editor session changed during region color initialization");
@@ -1911,35 +2046,92 @@ public class NortantisRestServer
 			}
 			return changed;
 		}
-		if ("road.add".equals(type))
+		if ("road.add".equals(type) || "road.draw".equals(type) || "road.erase".equals(type))
 		{
-			JSONArray points = (JSONArray) command.get("points");
-			if (points == null || points.size() < 2)
-			{
-				throw new IllegalArgumentException("Road requires at least two points");
-			}
-			List<Point> path = new ArrayList<>();
+			List<Point> graphLine = readLineGraphPoints(settings, command, sessionCoordinates, sessionBorderPadding);
 			Set<Integer> changed = new HashSet<>();
 			double resolution = settings.resolution == 0.0 ? 1.0 : settings.resolution;
-			for (Object pointValue : points)
+			double radius = command.get("radius") instanceof Number ? ((Number) command.get("radius")).doubleValue() * resolution : Math.max(8.0, averageNeighborDistance(graph) * 0.5);
+			addCentersAndNeighbors(changed, centersNearBoundaryLine(settings, graph, graphLine, Math.max(radius, averageNeighborDistance(graph))));
+			settings.drawRoads = true;
+			if (!"road.erase".equals(type))
 			{
-				if (!(pointValue instanceof JSONObject))
+				settings.edits.roads.add(Road.fromLocations(graphLine.stream().map(point -> point.mult(1.0 / resolution)).toList()));
+			}
+			else
+			{
+				List<Road> replacement = new ArrayList<>();
+				int touched = 0;
+				for (Road road : settings.edits.roads)
 				{
-					continue;
+					List<Road> parts = splitRoadOutsideStroke(road, graphLine, radius, resolution);
+					if (parts.size() != 1 || parts.get(0) != road)
+					{
+						touched++;
+					}
+					replacement.addAll(parts);
 				}
-				Point pointRi = readGraphPointRi(settings, (JSONObject) pointValue, sessionCoordinates, sessionBorderPadding);
-				path.add(pointRi);
-				Center center = graph.findClosestCenter(pointRi.mult(resolution), true);
-				if (center != null)
+				settings.edits.roads = new CopyOnWriteArrayList<>(replacement);
+				if (isRoadsLoggingEnabled())
 				{
-					changed.add(center.index);
+					roadLog("path:erased", "touched", touched, "remaining", replacement.size(), "changedCount", changed.size());
 				}
 			}
-			settings.drawRoads = true;
-			settings.edits.roads.add(Road.fromLocations(path));
 			if (isRoadsLoggingEnabled())
 			{
-				roadLog("path:added", "pointCount", path.size(), "changedCount", changed.size(), "roadCount", settings.edits.roads.size());
+				roadLog("path:changed", "type", type, "pointCount", graphLine.size(), "changedCount", changed.size(), "roadCount", settings.edits.roads.size());
+			}
+			return changed;
+		}
+		if ("river.draw".equals(type) || "river.erase".equals(type))
+		{
+			List<Point> graphLine = readLineGraphPoints(settings, command, sessionCoordinates, sessionBorderPadding);
+			double resolution = settings.resolution == 0.0 ? 1.0 : settings.resolution;
+			double radius = command.get("radius") instanceof Number ? ((Number) command.get("radius")).doubleValue() * resolution : Math.max(8.0, averageNeighborDistance(graph) * 0.5);
+			Set<Integer> changed = new HashSet<>();
+			if ("river.draw".equals(type))
+			{
+				SnappedPath snapped = snapLineToGraphEdges(graph, graphLine, radius);
+				if (snapped == null || snapped.edges().isEmpty())
+				{
+					throw new IllegalArgumentException("River could not be snapped to map edges");
+				}
+				int sliderBase = command.get("width") instanceof Number ? ((Number) command.get("width")).intValue() : 2;
+				int widthLevel = GraphRiver.sliderBaseToRiverLevel(Math.max(0, Math.min(GraphRiver.MAX_RIVER_SLIDER_BASE, sliderBase)));
+				List<RiverPathNode> nodes = new ArrayList<>();
+				for (int index = 0; index < snapped.points().size(); index++)
+				{
+					boolean last = index == snapped.points().size() - 1;
+					Edge edge = last ? null : snapped.edges().get(index);
+					nodes.add(new RiverPathNode(snapped.points().get(index).mult(1.0 / resolution), last ? 0 : widthLevel, last ? 0L : edge.noisyEdgesSeed,
+							last ? RiverPathNode.EDGE_INDEX_NONE : edge.index));
+				}
+				settings.edits.rivers.add(new River(nodes));
+				addCentersAndNeighbors(changed, graph.getCentersFromEdges(snapped.edges()));
+				if (isRiversLoggingEnabled())
+				{
+					riverLog("path:added", "edgeIds", snapped.edges().stream().map(edge -> edge.index).toList(), "widthLevel", widthLevel, "changedCount", changed.size());
+				}
+			}
+			else
+			{
+				List<River> replacement = new ArrayList<>();
+				int touched = 0;
+				for (River river : settings.edits.rivers)
+				{
+					List<River> parts = splitRiverOutsideStroke(river, graphLine, radius, resolution);
+					if (parts.size() != 1 || parts.get(0) != river)
+					{
+						touched++;
+					}
+					replacement.addAll(parts);
+				}
+				settings.edits.rivers = new CopyOnWriteArrayList<>(replacement);
+				addCentersAndNeighbors(changed, centersNearBoundaryLine(settings, graph, graphLine, Math.max(radius, averageNeighborDistance(graph))));
+				if (isRiversLoggingEnabled())
+				{
+					riverLog("path:erased", "touched", touched, "remaining", replacement.size(), "changedCount", changed.size());
+				}
 			}
 			return changed;
 		}
@@ -2024,24 +2216,27 @@ public class NortantisRestServer
 				settings.edits.regionBoundaryLines = new CopyOnWriteArrayList<>();
 			}
 			List<Point> line = readLineGraphPoints(settings, command, sessionCoordinates, sessionBorderPadding);
-			List<Point> lineRi = readLineRiPoints(settings, command, sessionCoordinates, sessionBorderPadding);
-			double radius = ((Number) command.get("radius")).doubleValue() * (settings.resolution == 0.0 ? 1.0 : settings.resolution);
-			Set<Edge> cutEdges = findEdgesNearLine(graph, line, radius);
+			double resolution = settings.resolution == 0.0 ? 1.0 : settings.resolution;
+			double radius = ((Number) command.get("radius")).doubleValue() * resolution;
 			Set<Integer> changed = new HashSet<>();
-			if (isBordersLoggingEnabled())
-			{
-				borderLog("boundary:line", "type", type, "linePoints", line.size(), "first", line.get(0), "last", line.get(line.size() - 1), "radius", radius, "cutEdges", cutEdges.size(),
-						"sessionCoordinates", sessionCoordinates, "sessionBorderPadding", sessionBorderPadding);
-			}
 			if ("region.boundary.draw".equals(type))
 			{
+				SnappedBoundary snapped = snapBoundaryToRegionEdges(settings, graph, line, radius);
+				if (snapped == null || snapped.edges().isEmpty() || snapped.points().size() < 2)
+				{
+					throw new IllegalArgumentException("Boundary could not be snapped to a region edge path");
+				}
+				List<Point> snappedRi = snapped.points().stream().map(point -> point.mult(1.0 / resolution)).toList();
 				double selectionRadius = Math.max(radius * 1.75, 42.0);
-				Set<Center> centersToRedraw = centersNearBoundaryLine(settings, graph, line, selectionRadius);
+				Set<Center> centersToRedraw = centersNearBoundaryLine(settings, graph, snapped.points(), selectionRadius);
+				BoundarySplit split = splitRegionAlongBoundary(settings, graph, snapped);
+				centersToRedraw.addAll(split.centers());
 				if (isBordersLoggingEnabled())
 				{
-					borderLog("boundary:explicit-draw", "pathPoints", lineRi.size(), "selectionRadius", selectionRadius, "redrawCenters", centersToRedraw.size());
+					borderLog("boundary:snapped", "inputPoints", line.size(), "snappedPoints", snapped.points().size(), "snappedEdges", snapped.edges().size(), "edgeIds", snapped.edges().stream().map(edge -> edge.index).toList(),
+							"sourceRegionId", snapped.sourceRegionId(), "createdRegionId", split.createdRegionId(), "selectionRadius", selectionRadius, "splitCenters", split.centers().size(), "redrawCenters", centersToRedraw.size());
 				}
-				settings.edits.regionBoundaryLines.add(Road.fromLocations(lineRi));
+				settings.edits.regionBoundaryLines.add(new RegionBoundary(snappedRi, snapped.edges().stream().map(edge -> edge.index).toList(), snapped.sourceRegionId(), split.createdRegionId()));
 				addCentersAndNeighbors(changed, centersToRedraw);
 				if (isBordersLoggingEnabled())
 				{
@@ -2050,8 +2245,8 @@ public class NortantisRestServer
 				return changed;
 			}
 			int removedLines = 0;
-			List<Road> removed = new ArrayList<>();
-			for (Road boundaryLine : settings.edits.regionBoundaryLines)
+			List<RegionBoundary> removed = new ArrayList<>();
+			for (RegionBoundary boundaryLine : settings.edits.regionBoundaryLines)
 			{
 				if (boundaryLine.nodes == null || boundaryLine.nodes.size() < 2)
 				{
@@ -2062,13 +2257,25 @@ public class NortantisRestServer
 				{
 					boundaryGraphLine.add(node.getLoc().mult(settings.resolution == 0.0 ? 1.0 : settings.resolution));
 				}
-				if (linesAreClose(boundaryGraphLine, line, radius))
+				Set<Edge> boundaryEdges = resolveBoundaryEdges(boundaryLine, graph, resolution);
+				boolean touched = boundaryEdges.stream().anyMatch(edge -> edge.v0 != null && edge.v1 != null && lineTouchesSegment(line, edge.v0.loc, edge.v1.loc, radius));
+				if (!touched)
+				{
+					touched = linesAreClose(boundaryGraphLine, line, radius);
+				}
+				if (touched)
 				{
 					removed.add(boundaryLine);
+					mergeBoundaryRegions(settings, graph, boundaryLine, changed);
 					addCentersAndNeighbors(changed, centersNearBoundaryLine(settings, graph, boundaryGraphLine, Math.max(radius * 1.75, 42.0)));
+					if (isBordersLoggingEnabled())
+					{
+						borderLog("boundary:erase-hit", "edgeIds", boundaryLine.edgeIds, "sourceRegionId", boundaryLine.sourceRegionId, "createdRegionId", boundaryLine.createdRegionId,
+								"resolvedEdges", boundaryEdges.size());
+					}
 				}
 			}
-			for (Road boundaryLine : removed)
+			for (RegionBoundary boundaryLine : removed)
 			{
 				if (settings.edits.regionBoundaryLines.remove(boundaryLine))
 				{
@@ -2264,6 +2471,594 @@ public class NortantisRestServer
 			}
 		}
 		return false;
+	}
+
+	private static SnappedBoundary snapBoundaryToRegionEdges(MapSettings settings, WorldGraph graph, List<Point> line, double radius)
+	{
+		Center sourceCenter = graph.centers.stream()
+				.filter(center -> isEditableRegionCenter(settings, center))
+				.min(Comparator.comparingDouble(center -> center.loc.distanceTo(line.get(0))))
+				.orElse(null);
+		Integer sourceRegionId = sourceCenter == null ? null : getCenterRegionId(settings, sourceCenter);
+		if (sourceRegionId == null)
+		{
+			return null;
+		}
+
+		Set<Edge> allowedEdges = new HashSet<>();
+		Set<Corner> allowedCorners = new HashSet<>();
+		for (Edge edge : graph.edges)
+		{
+			if (edge.v0 == null || edge.v1 == null || edge.d0 == null || edge.d1 == null)
+			{
+				continue;
+			}
+			if (!sourceRegionId.equals(getCenterRegionId(settings, edge.d0)) || !sourceRegionId.equals(getCenterRegionId(settings, edge.d1)))
+			{
+				continue;
+			}
+			if (!isEditableRegionCenter(settings, edge.d0) || !isEditableRegionCenter(settings, edge.d1))
+			{
+				continue;
+			}
+			allowedEdges.add(edge);
+			allowedCorners.add(edge.v0);
+			allowedCorners.add(edge.v1);
+		}
+		if (allowedEdges.isEmpty())
+		{
+			return null;
+		}
+
+		double neighborDistance = averageNeighborDistance(graph);
+		boolean closed = line.size() >= 4 && line.get(0).distanceTo(line.get(line.size() - 1)) <= Math.max(radius * 1.5, neighborDistance * 1.35);
+		List<Corner> waypoints = boundaryWaypoints(line, allowedCorners, sourceRegionId, settings, neighborDistance, closed);
+		if (waypoints.size() < 2)
+		{
+			return null;
+		}
+		List<Edge> orderedEdges = new ArrayList<>();
+		for (int index = 0; index < waypoints.size() - 1; index++)
+		{
+			Corner start = waypoints.get(index);
+			Corner end = waypoints.get(index + 1);
+			List<Point> target = List.of(start.loc, end.loc);
+			List<Edge> segment = shortestEdgePath(start, end, allowedEdges, target, Math.max(8.0, radius));
+			if (segment.isEmpty())
+			{
+				return null;
+			}
+			for (Edge edge : segment)
+			{
+				if (!orderedEdges.isEmpty() && orderedEdges.get(orderedEdges.size() - 1).equals(edge))
+				{
+					continue;
+				}
+				orderedEdges.add(edge);
+			}
+		}
+		if (orderedEdges.isEmpty())
+		{
+			return null;
+		}
+		List<Point> orderedPoints = new ArrayList<>();
+		Corner current = waypoints.get(0);
+		orderedPoints.add(current.loc);
+		for (Edge edge : orderedEdges)
+		{
+			Corner next = edge.getOtherCorner(current);
+			if (next == null)
+			{
+				return null;
+			}
+			current = next;
+			orderedPoints.add(current.loc);
+		}
+		if (isBordersLoggingEnabled())
+		{
+			borderLog("boundary:waypoints", "closed", closed, "inputPoints", line.size(), "waypoints", waypoints.stream().map(corner -> corner.index).toList(),
+					"edgeIds", orderedEdges.stream().map(edge -> edge.index).toList());
+		}
+		return new SnappedBoundary(orderedEdges, orderedPoints, sourceRegionId);
+	}
+
+	private static List<Corner> boundaryWaypoints(List<Point> line, Set<Corner> corners, Integer sourceRegionId, MapSettings settings, double spacing, boolean closed)
+	{
+		List<Corner> result = new ArrayList<>();
+		Corner start = closed
+				? nearestCorner(corners, line.get(0), null)
+				: nearestRegionBoundaryAnchor(corners, line.get(0), sourceRegionId, settings, null);
+		if (start == null)
+		{
+			return result;
+		}
+		result.add(start);
+		double accumulated = 0.0;
+		Point previous = line.get(0);
+		double sampleSpacing = Math.max(8.0, spacing * 0.65);
+		for (int index = 1; index < line.size() - 1; index++)
+		{
+			Point point = line.get(index);
+			accumulated += previous.distanceTo(point);
+			previous = point;
+			if (accumulated < sampleSpacing)
+			{
+				continue;
+			}
+			Corner waypoint = nearestCorner(corners, point, result.get(result.size() - 1));
+			if (waypoint != null)
+			{
+				result.add(waypoint);
+				accumulated = 0.0;
+			}
+		}
+		Corner end = closed
+				? start
+				: nearestRegionBoundaryAnchor(corners, line.get(line.size() - 1), sourceRegionId, settings, result.get(result.size() - 1));
+		if (end != null && (closed || !end.equals(result.get(result.size() - 1))))
+		{
+			result.add(end);
+		}
+		return result;
+	}
+
+	private static Corner nearestCorner(Set<Corner> corners, Point point, Corner excluded)
+	{
+		return corners.stream().filter(corner -> excluded == null || !corner.equals(excluded)).min(Comparator.comparingDouble(corner -> corner.loc.distanceTo(point))).orElse(null);
+	}
+
+	private static Corner nearestRegionBoundaryAnchor(Set<Corner> corners, Point point, Integer sourceRegionId, MapSettings settings, Corner excluded)
+	{
+		Corner anchored = corners.stream()
+				.filter(corner -> (excluded == null || !corner.equals(excluded)) && isRegionBoundaryAnchor(corner, sourceRegionId, settings))
+				.min(Comparator.comparingDouble(corner -> corner.loc.distanceTo(point)))
+				.orElse(null);
+		return anchored != null ? anchored : nearestCorner(corners, point, excluded);
+	}
+
+	private static List<Edge> shortestEdgePath(Corner start, Corner end, Set<Edge> allowedEdges, List<Point> targetLine, double attractionScale)
+	{
+		if (start.equals(end))
+		{
+			return List.of();
+		}
+		Map<Corner, Double> distances = new HashMap<>();
+		Map<Corner, Edge> previousEdges = new HashMap<>();
+		PriorityQueue<BoundaryQueueNode> queue = new PriorityQueue<>(Comparator.comparingDouble(BoundaryQueueNode::distance));
+		distances.put(start, 0.0);
+		queue.add(new BoundaryQueueNode(start, 0.0));
+		while (!queue.isEmpty())
+		{
+			BoundaryQueueNode node = queue.poll();
+			if (node.distance() > distances.getOrDefault(node.corner(), Double.MAX_VALUE))
+			{
+				continue;
+			}
+			if (node.corner().equals(end))
+			{
+				break;
+			}
+			for (Edge edge : node.corner().protrudes)
+			{
+				if (!allowedEdges.contains(edge))
+				{
+					continue;
+				}
+				Corner next = edge.getOtherCorner(node.corner());
+				if (next == null)
+				{
+					continue;
+				}
+				double lineDistance = distanceToLine(edge.midpoint, targetLine) / attractionScale;
+				double weight = edge.v0.loc.distanceTo(edge.v1.loc) * (1.0 + lineDistance * lineDistance * 10.0);
+				double nextDistance = node.distance() + weight;
+				if (nextDistance < distances.getOrDefault(next, Double.MAX_VALUE))
+				{
+					distances.put(next, nextDistance);
+					previousEdges.put(next, edge);
+					queue.add(new BoundaryQueueNode(next, nextDistance));
+				}
+			}
+		}
+		if (!previousEdges.containsKey(end))
+		{
+			return List.of();
+		}
+		List<Edge> reversed = new ArrayList<>();
+		Corner current = end;
+		while (!current.equals(start))
+		{
+			Edge edge = previousEdges.get(current);
+			if (edge == null)
+			{
+				return List.of();
+			}
+			reversed.add(edge);
+			current = edge.getOtherCorner(current);
+		}
+		List<Edge> result = new ArrayList<>(reversed.size());
+		for (int index = reversed.size() - 1; index >= 0; index--)
+		{
+			result.add(reversed.get(index));
+		}
+		return result;
+	}
+
+	private static SnappedPath snapLineToGraphEdges(WorldGraph graph, List<Point> line, double radius)
+	{
+		Set<Edge> allowedEdges = new HashSet<>();
+		Set<Corner> corners = new HashSet<>();
+		for (Edge edge : graph.edges)
+		{
+			if (edge.v0 == null || edge.v1 == null)
+			{
+				continue;
+			}
+			allowedEdges.add(edge);
+			corners.add(edge.v0);
+			corners.add(edge.v1);
+		}
+		if (allowedEdges.isEmpty())
+		{
+			return null;
+		}
+		List<Corner> waypoints = new ArrayList<>();
+		Corner start = nearestCorner(corners, line.get(0), null);
+		if (start == null)
+		{
+			return null;
+		}
+		waypoints.add(start);
+		double spacing = Math.max(8.0, averageNeighborDistance(graph) * 0.65);
+		double accumulated = 0.0;
+		Point previous = line.get(0);
+		for (int index = 1; index < line.size() - 1; index++)
+		{
+			Point point = line.get(index);
+			accumulated += previous.distanceTo(point);
+			previous = point;
+			if (accumulated < spacing)
+			{
+				continue;
+			}
+			Corner waypoint = nearestCorner(corners, point, waypoints.get(waypoints.size() - 1));
+			if (waypoint != null)
+			{
+				waypoints.add(waypoint);
+				accumulated = 0.0;
+			}
+		}
+		Corner end = nearestCorner(corners, line.get(line.size() - 1), waypoints.get(waypoints.size() - 1));
+		if (end != null)
+		{
+			waypoints.add(end);
+		}
+		List<Edge> edges = new ArrayList<>();
+		for (int index = 0; index < waypoints.size() - 1; index++)
+		{
+			List<Edge> segment = shortestEdgePath(waypoints.get(index), waypoints.get(index + 1), allowedEdges,
+					List.of(waypoints.get(index).loc, waypoints.get(index + 1).loc), Math.max(8.0, radius));
+			if (segment.isEmpty())
+			{
+				return null;
+			}
+			for (Edge edge : segment)
+			{
+				if (edges.isEmpty() || !edges.get(edges.size() - 1).equals(edge))
+				{
+					edges.add(edge);
+				}
+			}
+		}
+		if (edges.isEmpty())
+		{
+			return null;
+		}
+		List<Point> points = new ArrayList<>();
+		Corner current = waypoints.get(0);
+		points.add(current.loc);
+		for (Edge edge : edges)
+		{
+			current = edge.getOtherCorner(current);
+			if (current == null)
+			{
+				return null;
+			}
+			points.add(current.loc);
+		}
+		return new SnappedPath(edges, points);
+	}
+
+	private static boolean isRegionBoundaryAnchor(Corner corner, Integer sourceRegionId, MapSettings settings)
+	{
+		for (Edge edge : corner.protrudes)
+		{
+			Integer leftRegion = edge.d0 == null ? null : getCenterRegionId(settings, edge.d0);
+			Integer rightRegion = edge.d1 == null ? null : getCenterRegionId(settings, edge.d1);
+			boolean leftSource = sourceRegionId.equals(leftRegion) && isEditableRegionCenter(settings, edge.d0);
+			boolean rightSource = sourceRegionId.equals(rightRegion) && isEditableRegionCenter(settings, edge.d1);
+			if (leftSource != rightSource)
+			{
+				return true;
+			}
+		}
+		return corner.isBorder;
+	}
+
+	private static BoundarySplit splitRegionAlongBoundary(MapSettings settings, WorldGraph graph, SnappedBoundary boundary)
+	{
+		Set<Edge> blockedEdges = new HashSet<>(boundary.edges());
+		for (Edge edge : boundary.edges())
+		{
+			if (edge.d0 == null || edge.d1 == null)
+			{
+				continue;
+			}
+			if (!boundary.sourceRegionId().equals(getCenterRegionId(settings, edge.d0)) || !boundary.sourceRegionId().equals(getCenterRegionId(settings, edge.d1)))
+			{
+				continue;
+			}
+			Set<Center> left = collectRegionComponent(settings, edge.d0, boundary.sourceRegionId(), blockedEdges);
+			Set<Center> right = collectRegionComponent(settings, edge.d1, boundary.sourceRegionId(), blockedEdges);
+			if (left.isEmpty() || right.isEmpty() || left.equals(right))
+			{
+				continue;
+			}
+			Set<Center> splitCenters = left.size() <= right.size() ? left : right;
+			int newRegionId = createNewRegionId(settings, graph);
+			nortantis.platform.Color sourceColor = getRegionColor(settings, graph, boundary.sourceRegionId());
+			settings.edits.regionEdits.put(newRegionId, new RegionEdit(newRegionId, sourceColor == null ? settings.regionBaseColor : sourceColor));
+			for (Center center : splitCenters)
+			{
+				CenterEdit edit = settings.edits.centerEdits.get(center.index);
+				if (edit == null)
+				{
+					edit = new CenterEdit(center.index, center.isWater, center.isLake, boundary.sourceRegionId(), null, null);
+				}
+				settings.edits.centerEdits.put(center.index, edit.copyWithRegionId(newRegionId));
+			}
+			if (isBordersLoggingEnabled())
+			{
+				borderLog("boundary:region-split", "sourceRegionId", boundary.sourceRegionId(), "newRegionId", newRegionId, "leftSize", left.size(), "rightSize", right.size(), "movedCenters", splitCenters.size());
+			}
+			return new BoundarySplit(splitCenters, newRegionId);
+		}
+		throw new IllegalArgumentException("Boundary must connect existing region or coast boundaries");
+	}
+
+	private static void mergeBoundaryRegions(MapSettings settings, WorldGraph graph, RegionBoundary boundary, Set<Integer> changed)
+	{
+		Integer retainedRegion = boundary.sourceRegionId;
+		Integer removedRegion = boundary.createdRegionId;
+		if (retainedRegion == null || removedRegion == null)
+		{
+			double resolution = settings.resolution == 0.0 ? 1.0 : settings.resolution;
+			for (Edge edge : resolveBoundaryEdges(boundary, graph, resolution))
+			{
+				Integer left = edge.d0 == null ? null : getCenterRegionId(settings, edge.d0);
+				Integer right = edge.d1 == null ? null : getCenterRegionId(settings, edge.d1);
+				if (left != null && right != null && !left.equals(right))
+				{
+					retainedRegion = Math.min(left, right);
+					removedRegion = Math.max(left, right);
+					break;
+				}
+			}
+		}
+		if (retainedRegion == null || removedRegion == null || retainedRegion.equals(removedRegion))
+		{
+			return;
+		}
+		if (!regionsConnectedWithoutBoundary(settings, graph, retainedRegion, removedRegion, boundary))
+		{
+			if (isBordersLoggingEnabled())
+			{
+				borderLog("boundary:merge-skipped", "retainedRegionId", retainedRegion, "removedRegionId", removedRegion, "reason", "remaining-barrier");
+			}
+			return;
+		}
+		Set<Center> merged = centersForRegion(settings, graph, removedRegion);
+		for (Center center : merged)
+		{
+			CenterEdit edit = settings.edits.centerEdits.get(center.index);
+			if (edit == null)
+			{
+				edit = new CenterEdit(center.index, center.isWater, center.isLake, removedRegion, null, null);
+			}
+			settings.edits.centerEdits.put(center.index, edit.copyWithRegionId(retainedRegion));
+		}
+		settings.edits.regionEdits.remove(removedRegion);
+		addCentersAndNeighbors(changed, merged);
+		if (isBordersLoggingEnabled())
+		{
+			borderLog("boundary:region-merged", "removedRegionId", removedRegion, "retainedRegionId", retainedRegion, "mergedCenters", merged.size());
+		}
+	}
+
+	private static boolean regionsConnectedWithoutBoundary(MapSettings settings, WorldGraph graph, Integer firstRegion, Integer secondRegion, RegionBoundary excluded)
+	{
+		double resolution = settings.resolution == 0.0 ? 1.0 : settings.resolution;
+		Set<Edge> blocked = new HashSet<>();
+		for (RegionBoundary other : settings.edits.regionBoundaryLines)
+		{
+			if (other != excluded)
+			{
+				blocked.addAll(resolveBoundaryEdges(other, graph, resolution));
+			}
+		}
+		Center start = graph.centers.stream().filter(center -> firstRegion.equals(getCenterRegionId(settings, center))).findFirst().orElse(null);
+		if (start == null)
+		{
+			return false;
+		}
+		Set<Center> visited = new HashSet<>();
+		ArrayDeque<Center> queue = new ArrayDeque<>();
+		visited.add(start);
+		queue.add(start);
+		while (!queue.isEmpty())
+		{
+			Center current = queue.removeFirst();
+			if (secondRegion.equals(getCenterRegionId(settings, current)))
+			{
+				return true;
+			}
+			for (Edge edge : current.borders)
+			{
+				if (blocked.contains(edge))
+				{
+					continue;
+				}
+				Center next = edge.d0 == current ? edge.d1 : edge.d0;
+				if (next == null || visited.contains(next))
+				{
+					continue;
+				}
+				Integer nextRegion = getCenterRegionId(settings, next);
+				if (firstRegion.equals(nextRegion) || secondRegion.equals(nextRegion))
+				{
+					visited.add(next);
+					queue.add(next);
+				}
+			}
+		}
+		return false;
+	}
+
+	private static Set<Edge> resolveBoundaryEdges(RegionBoundary boundary, WorldGraph graph, double resolution)
+	{
+		Set<Edge> result = new HashSet<>();
+		if (boundary.edgeIds != null && !boundary.edgeIds.isEmpty())
+		{
+			Set<Integer> ids = new HashSet<>(boundary.edgeIds);
+			for (Edge edge : graph.edges)
+			{
+				if (ids.contains(edge.index))
+				{
+					result.add(edge);
+				}
+			}
+		}
+		if (!result.isEmpty() || boundary.nodes == null || boundary.nodes.size() < 2)
+		{
+			return result;
+		}
+		List<Point> graphLine = boundary.nodes.stream().map(node -> node.getLoc().mult(resolution)).toList();
+		return findEdgesMatchingLineSegments(graph, graphLine, Math.max(2.0, averageNeighborDistance(graph) * 0.12));
+	}
+
+	private static boolean lineTouchesSegment(List<Point> line, Point start, Point end, double radius)
+	{
+		for (int index = 0; index < line.size() - 1; index++)
+		{
+			if (segmentsClose(start, end, line.get(index), line.get(index + 1), radius))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static List<Road> splitRoadOutsideStroke(Road road, List<Point> stroke, double radius, double resolution)
+	{
+		if (road.nodes == null || road.nodes.size() < 2)
+		{
+			return List.of();
+		}
+		List<Road> result = new ArrayList<>();
+		List<RoadPathNode> current = new ArrayList<>();
+		current.add(road.nodes.get(0));
+		boolean touched = false;
+		for (int index = 0; index < road.nodes.size() - 1; index++)
+		{
+			RoadPathNode next = road.nodes.get(index + 1);
+			boolean erase = lineTouchesSegment(stroke, road.nodes.get(index).getLoc().mult(resolution), next.getLoc().mult(resolution), radius);
+			if (erase)
+			{
+				touched = true;
+				if (current.size() >= 2)
+				{
+					result.add(new Road(current));
+				}
+				current = new ArrayList<>();
+				current.add(next);
+			}
+			else
+			{
+				current.add(next);
+			}
+		}
+		if (current.size() >= 2)
+		{
+			result.add(new Road(current));
+		}
+		return touched ? result : List.of(road);
+	}
+
+	private static List<River> splitRiverOutsideStroke(River river, List<Point> stroke, double radius, double resolution)
+	{
+		if (river.nodes == null || river.nodes.size() < 2)
+		{
+			return List.of();
+		}
+		List<River> result = new ArrayList<>();
+		List<RiverPathNode> current = new ArrayList<>();
+		current.add(river.nodes.get(0));
+		boolean touched = false;
+		for (int index = 0; index < river.nodes.size() - 1; index++)
+		{
+			RiverPathNode next = river.nodes.get(index + 1);
+			boolean erase = lineTouchesSegment(stroke, river.nodes.get(index).getLoc().mult(resolution), next.getLoc().mult(resolution), radius);
+			if (erase)
+			{
+				touched = true;
+				appendRiverPart(result, current);
+				current = new ArrayList<>();
+				current.add(next);
+			}
+			else
+			{
+				current.add(next);
+			}
+		}
+		appendRiverPart(result, current);
+		return touched ? result : List.of(river);
+	}
+
+	private static void appendRiverPart(List<River> result, List<RiverPathNode> nodes)
+	{
+		if (nodes.size() < 2)
+		{
+			return;
+		}
+		List<RiverPathNode> copy = new ArrayList<>(nodes);
+		RiverPathNode last = copy.get(copy.size() - 1);
+		copy.set(copy.size() - 1, new RiverPathNode(last.getLoc(), 0, 0L, RiverPathNode.EDGE_INDEX_NONE, last.getCornerIndexAnchor()));
+		result.add(new River(copy));
+	}
+
+	private static Set<Edge> findEdgesMatchingLineSegments(WorldGraph graph, List<Point> line, double tolerance)
+	{
+		Set<Edge> result = new HashSet<>();
+		for (int index = 0; index < line.size() - 1; index++)
+		{
+			Point start = line.get(index);
+			Point end = line.get(index + 1);
+			for (Edge edge : graph.edges)
+			{
+				if (edge.v0 == null || edge.v1 == null)
+				{
+					continue;
+				}
+				boolean forward = edge.v0.loc.distanceTo(start) <= tolerance && edge.v1.loc.distanceTo(end) <= tolerance;
+				boolean reverse = edge.v1.loc.distanceTo(start) <= tolerance && edge.v0.loc.distanceTo(end) <= tolerance;
+				if (forward || reverse)
+				{
+					result.add(edge);
+					break;
+				}
+			}
+		}
+		return result;
 	}
 
 	private static Set<Edge> findEdgesNearLine(WorldGraph graph, List<Point> line, double radius)
@@ -2491,7 +3286,7 @@ public class NortantisRestServer
 		}
 		double resolution = settings.resolution == 0.0 ? 1.0 : settings.resolution;
 		int lineIndex = 0;
-		for (Road boundaryLine : settings.edits.regionBoundaryLines)
+		for (RegionBoundary boundaryLine : settings.edits.regionBoundaryLines)
 		{
 			lineIndex++;
 			if (boundaryLine.nodes == null || boundaryLine.nodes.size() < 2)
@@ -2503,7 +3298,15 @@ public class NortantisRestServer
 			{
 				graphLine.add(node.getLoc().mult(resolution));
 			}
-			Set<Edge> lineEdges = findBarrierEdgesNearLine(settings, graph, graphLine, regionId, radius);
+			Set<Edge> lineEdges = resolveBoundaryEdges(boundaryLine, graph, resolution);
+			if (lineEdges.isEmpty())
+			{
+				lineEdges = findBarrierEdgesNearLine(settings, graph, graphLine, regionId, radius);
+			}
+			else
+			{
+				lineEdges.removeIf(edge -> edge.d0 == null || edge.d1 == null || !regionId.equals(getCenterRegionId(settings, edge.d0)) || !regionId.equals(getCenterRegionId(settings, edge.d1)));
+			}
 			result.addAll(lineEdges);
 			if (isRegionPaintLoggingEnabled())
 			{
@@ -2832,11 +3635,39 @@ public class NortantisRestServer
 
 	private static String brushSelectionJson(Set<Center> selected, EditorSession session)
 	{
-		double resolution = session.settings.resolution == 0.0 ? 1.0 : session.settings.resolution;
-		int borderPadding = borderPadding(session);
 		StringBuilder result = new StringBuilder("{\"ok\":true,\"sessionReady\":true,\"metadata\":");
 		result.append(sessionMetadataJson(session));
-		result.append(",\"polygons\":[");
+		result.append(",\"polygons\":");
+		appendPolygonsJson(result, selected, session);
+		result.append("}");
+		return result.toString();
+	}
+
+	private static String pathPreviewJson(List<Point> points, Set<Center> selected, EditorSession session)
+	{
+		double resolution = session.settings.resolution == 0.0 ? 1.0 : session.settings.resolution;
+		int borderPadding = borderPadding(session);
+		StringBuilder result = new StringBuilder("{\"ok\":true,\"points\":[");
+		for (int index = 0; index < points.size(); index++)
+		{
+			if (index > 0)
+			{
+				result.append(",");
+			}
+			Point point = points.get(index);
+			result.append("[").append((point.x + borderPadding) / resolution).append(",").append((point.y + borderPadding) / resolution).append("]");
+		}
+		result.append("],\"polygons\":");
+		appendPolygonsJson(result, selected, session);
+		result.append("}");
+		return result.toString();
+	}
+
+	private static void appendPolygonsJson(StringBuilder result, Set<Center> selected, EditorSession session)
+	{
+		double resolution = session.settings.resolution == 0.0 ? 1.0 : session.settings.resolution;
+		int borderPadding = borderPadding(session);
+		result.append("[");
 		boolean firstCenter = true;
 		for (Center center : selected)
 		{
@@ -2870,8 +3701,7 @@ public class NortantisRestServer
 			}
 			result.append("]}");
 		}
-		result.append("]}");
-		return result.toString();
+		result.append("]");
 	}
 
 	private static Integer findNearestRegionId(MapSettings settings, WorldGraph graph, Point point)
@@ -2898,6 +3728,82 @@ public class NortantisRestServer
 				.orElse(null);
 	}
 
+	private static boolean restoreEditorHistory(EditorSession session, String action)
+	{
+		MapSettings target = session.historyTarget(action);
+		if (target == null)
+		{
+			return false;
+		}
+		MapSettings current = session.settings;
+		ensureEdits(current);
+		ensureEdits(target);
+		Set<Integer> changedCenters = new HashSet<>();
+		Set<Integer> centerIds = new HashSet<>(current.edits.centerEdits.keySet());
+		centerIds.addAll(target.edits.centerEdits.keySet());
+		for (Integer centerId : centerIds)
+		{
+			if (!Objects.equals(current.edits.centerEdits.get(centerId), target.edits.centerEdits.get(centerId)))
+			{
+				changedCenters.add(centerId);
+			}
+		}
+
+		Set<Integer> changedRegions = new HashSet<>(current.edits.regionEdits.keySet());
+		changedRegions.addAll(target.edits.regionEdits.keySet());
+		changedRegions.removeIf(regionId -> Objects.equals(current.edits.regionEdits.get(regionId), target.edits.regionEdits.get(regionId)));
+		if (!changedRegions.isEmpty())
+		{
+			for (Center center : session.mapParts.graph.centers)
+			{
+				Integer currentRegion = getCenterRegionId(current, center);
+				Integer targetRegion = getCenterRegionId(target, center);
+				if (changedRegions.contains(currentRegion) || changedRegions.contains(targetRegion))
+				{
+					changedCenters.add(center.index);
+				}
+			}
+		}
+		if (current.drawRegionColors != target.drawRegionColors || current.drawRegionBoundaries != target.drawRegionBoundaries
+				|| !Objects.equals(current.edits.regionBoundaryLines, target.edits.regionBoundaryLines)
+				|| !Objects.equals(current.edits.roads, target.edits.roads) || !Objects.equals(current.edits.rivers, target.edits.rivers))
+		{
+			for (Center center : session.mapParts.graph.centers)
+			{
+				changedCenters.add(center.index);
+			}
+		}
+
+		boolean textChanged = !Objects.equals(current.edits.text, target.edits.text);
+		List<MapText> changedText = new ArrayList<>();
+		if (textChanged)
+		{
+			current.edits.text.forEach(text -> changedText.add(text.deepCopy()));
+			target.edits.text.forEach(text -> changedText.add(text.deepCopy()));
+		}
+
+		session.settings = target;
+		try
+		{
+			MapCreator creator = new MapCreator();
+			if (!changedCenters.isEmpty())
+			{
+				creator.incrementalUpdateForCentersAndEdges(target, session.mapParts, session.map, changedCenters, null, false);
+			}
+			if (textChanged && !changedText.isEmpty())
+			{
+				creator.incrementalUpdateText(target, session.mapParts, session.map, changedText);
+			}
+			session.completeHistory(action, current);
+			return true;
+		}
+		catch (RuntimeException ex)
+		{
+			session.settings = current;
+			throw ex;
+		}
+	}
+
 	private static void ensureEdits(MapSettings settings)
 	{
 		if (settings.edits == null)
@@ -2920,6 +3826,10 @@ public class NortantisRestServer
 		{
 			settings.edits.roads = new CopyOnWriteArrayList<>();
 		}
+		if (settings.edits.rivers == null)
+		{
+			settings.edits.rivers = new CopyOnWriteArrayList<>();
+		}
 		if (settings.edits.regionBoundaryLines == null)
 		{
 			settings.edits.regionBoundaryLines = new CopyOnWriteArrayList<>();
@@ -2930,12 +3840,32 @@ public class NortantisRestServer
 	{
 	}
 
+	private record BoundaryQueueNode(Corner corner, double distance)
+	{
+	}
+
+	private record SnappedBoundary(List<Edge> edges, List<Point> points, Integer sourceRegionId)
+	{
+	}
+
+	private record BoundarySplit(Set<Center> centers, Integer createdRegionId)
+	{
+	}
+
+	private record SnappedPath(List<Edge> edges, List<Point> points)
+	{
+	}
+
 	private static class EditorSession
 	{
-		final MapSettings settings;
+		private static final int MAX_HISTORY = 50;
+		MapSettings settings;
 		final MapParts mapParts;
 		final Image map;
 		final Dimension maxDimensions;
+		final ArrayDeque<MapSettings> undoHistory = new ArrayDeque<>();
+		final ArrayDeque<MapSettings> redoHistory = new ArrayDeque<>();
+		String activeHistoryGroup;
 
 		EditorSession(MapSettings settings, MapParts mapParts, Image map, Dimension maxDimensions)
 		{
@@ -2943,6 +3873,82 @@ public class NortantisRestServer
 			this.mapParts = mapParts;
 			this.map = map;
 			this.maxDimensions = maxDimensions;
+		}
+
+		MapSettings prepareHistory(JSONObject command)
+		{
+			String group = historyGroup(command);
+			if (group != null && group.equals(activeHistoryGroup))
+			{
+				return null;
+			}
+			return settings.deepCopy();
+		}
+
+		void commitHistory(MapSettings before, JSONObject command)
+		{
+			if (before == null)
+			{
+				return;
+			}
+			String group = historyGroup(command);
+			if (before.equals(settings))
+			{
+				return;
+			}
+			activeHistoryGroup = group;
+			undoHistory.push(before);
+			while (undoHistory.size() > MAX_HISTORY)
+			{
+				undoHistory.removeLast();
+			}
+			redoHistory.clear();
+		}
+
+		MapSettings historyTarget(String action)
+		{
+			ArrayDeque<MapSettings> source = "undo".equals(action) ? undoHistory : redoHistory;
+			return source.isEmpty() ? null : source.peek().deepCopy();
+		}
+
+		void completeHistory(String action, MapSettings current)
+		{
+			ArrayDeque<MapSettings> source = "undo".equals(action) ? undoHistory : redoHistory;
+			ArrayDeque<MapSettings> destination = "undo".equals(action) ? redoHistory : undoHistory;
+			source.pop();
+			destination.push(current.deepCopy());
+			while (destination.size() > MAX_HISTORY)
+			{
+				destination.removeLast();
+			}
+			activeHistoryGroup = null;
+		}
+
+		void copyHistoryFrom(EditorSession source)
+		{
+			undoHistory.addAll(source.undoHistory);
+			redoHistory.addAll(source.redoHistory);
+			activeHistoryGroup = source.activeHistoryGroup;
+		}
+
+		boolean canUndo()
+		{
+			return !undoHistory.isEmpty();
+		}
+
+		boolean canRedo()
+		{
+			return !redoHistory.isEmpty();
+		}
+
+		private static String historyGroup(JSONObject command)
+		{
+			if (command == null || !(command.get("historyGroup") instanceof String))
+			{
+				return null;
+			}
+			String value = ((String) command.get("historyGroup")).trim();
+			return value.isEmpty() ? null : value;
 		}
 
 		void close()
@@ -2985,6 +3991,11 @@ public class NortantisRestServer
 	private static boolean isRoadsLoggingEnabled()
 	{
 		return isServiceLoggingEnabled("ROADS_LOGGING");
+	}
+
+	private static boolean isRiversLoggingEnabled()
+	{
+		return isServiceLoggingEnabled("RIVERS_LOGGING");
 	}
 
 	private static boolean isServiceLoggingEnabled(String key)
@@ -3071,6 +4082,11 @@ public class NortantisRestServer
 		writeToolLog(ROADS_LOG_PREFIX, event, pairs);
 	}
 
+	private static void riverLog(String event, Object... pairs)
+	{
+		writeToolLog(RIVERS_LOG_PREFIX, event, pairs);
+	}
+
 	private static void toolLog(ToolLog tool, String event, Object... pairs)
 	{
 		writeToolLog(tool.prefix, event, pairs);
@@ -3100,7 +4116,8 @@ public class NortantisRestServer
 			case "text.add", "text.update", "text.delete" -> ToolLog.TEXT;
 			case "icon.center.set", "icon.center.clear" -> ToolLog.ICONS;
 			case "trees.center.set", "trees.center.clear" -> ToolLog.FORESTS;
-			case "road.add" -> ToolLog.ROADS;
+			case "road.add", "road.draw", "road.erase" -> ToolLog.ROADS;
+			case "river.draw", "river.erase" -> ToolLog.RIVERS;
 			default -> null;
 		};
 	}
@@ -3119,6 +4136,7 @@ public class NortantisRestServer
 		ICONS("ICONS_LOGGING", ICONS_LOG_PREFIX),
 		FORESTS("FORESTS_LOGGING", FORESTS_LOG_PREFIX),
 		ROADS("ROADS_LOGGING", ROADS_LOG_PREFIX),
+		RIVERS("RIVERS_LOGGING", RIVERS_LOG_PREFIX),
 		GENERATION("GENERATION_LOGGING", GENERATION_LOG_PREFIX),
 		PROJECTS("PROJECTS_LOGGING", PROJECTS_LOG_PREFIX),
 		ASSETS("ASSETS_LOGGING", ASSETS_LOG_PREFIX);

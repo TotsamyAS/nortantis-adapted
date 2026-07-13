@@ -74,35 +74,6 @@ public class MapCreator implements WarningLogger
 		}
 	}
 
-	private void drawCustomRegionBoundaryLines(final MapSettings settings, Image map, Rectangle drawBounds)
-	{
-		if (settings.edits == null || settings.edits.regionBoundaryLines == null || settings.edits.regionBoundaryLines.isEmpty())
-		{
-			return;
-		}
-
-		try (Painter p = map.createPainter(DrawQuality.High))
-		{
-			if (drawBounds != null)
-			{
-				p.translate(-drawBounds.x, -drawBounds.y);
-			}
-			p.setColor(settings.regionBoundaryColor);
-			p.setStroke(settings.regionBoundaryStyle, settings.resolution);
-			for (Road line : settings.edits.regionBoundaryLines)
-			{
-				if (line.nodes == null || line.nodes.size() < 2)
-				{
-					continue;
-				}
-				List<Point> locations = PathOperations.toLocationList(line.nodes);
-				List<Point> path = CurveCreator.createCurve(locations);
-				List<IntPoint> pathScaled = path.stream().map(point -> point.mult(settings.resolution).toIntPoint()).toList();
-				p.drawPolyline(pathScaled);
-			}
-		}
-	}
-
 	public IntRectangle incrementalUpdateText(final MapSettings settings, MapParts mapParts, Image fullSizeMap, List<MapText> textChanged)
 	{
 		migrateLegacyRiversIfNeeded(settings, mapParts.graph);
@@ -427,8 +398,6 @@ public class MapCreator implements WarningLogger
 					mapParts.graph.drawRegionBoundaries(p, settings.regionBoundaryStyle, centersToDraw, drawBounds);
 				}
 			}
-			drawCustomRegionBoundaryLines(settings, mapSnippet, drawBounds);
-
 			checkForCancel();
 
 			new RiverDrawer(settings, mapParts.graph).drawRivers(mapSnippet, drawBounds);
@@ -1257,7 +1226,6 @@ public class MapCreator implements WarningLogger
 				graph.drawRegionBoundaries(g, settings.regionBoundaryStyle, null, null);
 			}
 		}
-		drawCustomRegionBoundaryLines(settings, map, null);
 
 		checkForCancel();
 

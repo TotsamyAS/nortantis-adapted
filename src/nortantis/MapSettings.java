@@ -814,7 +814,7 @@ public class MapSettings implements Serializable
 			return linesJson;
 		}
 
-		for (Road line : edits.regionBoundaryLines)
+		for (RegionBoundary line : edits.regionBoundaryLines)
 		{
 			JSONObject lineObj = new JSONObject();
 
@@ -827,6 +827,20 @@ public class MapSettings implements Serializable
 				}
 			}
 			lineObj.put("path", pathJson);
+			if (line.edgeIds != null && !line.edgeIds.isEmpty())
+			{
+				JSONArray edgeIdsJson = new JSONArray();
+				line.edgeIds.forEach(edgeId -> edgeIdsJson.add((long) edgeId));
+				lineObj.put("edgeIds", edgeIdsJson);
+			}
+			if (line.sourceRegionId != null)
+			{
+				lineObj.put("sourceRegionId", (long) line.sourceRegionId);
+			}
+			if (line.createdRegionId != null)
+			{
+				lineObj.put("createdRegionId", (long) line.createdRegionId);
+			}
 			linesJson.add(lineObj);
 		}
 
@@ -2144,9 +2158,9 @@ public class MapSettings implements Serializable
 		return roads;
 	}
 
-	private CopyOnWriteArrayList<Road> parseRegionBoundaryLines(JSONObject editsJson)
+	private CopyOnWriteArrayList<RegionBoundary> parseRegionBoundaryLines(JSONObject editsJson)
 	{
-		CopyOnWriteArrayList<Road> lines = new CopyOnWriteArrayList<>();
+		CopyOnWriteArrayList<RegionBoundary> lines = new CopyOnWriteArrayList<>();
 
 		if (!editsJson.containsKey("regionBoundaryLines"))
 		{
@@ -2166,7 +2180,17 @@ public class MapSettings implements Serializable
 					path.add(Point.fromJSonValue(pointString));
 				}
 			}
-			lines.add(Road.fromLocations(path));
+			List<Integer> edgeIds = new ArrayList<>();
+			if (lineJson.get("edgeIds") instanceof JSONArray edgeIdsJson)
+			{
+				for (Object edgeId : edgeIdsJson)
+				{
+					edgeIds.add(((Number) edgeId).intValue());
+				}
+			}
+			Integer sourceRegionId = lineJson.get("sourceRegionId") instanceof Number ? ((Number) lineJson.get("sourceRegionId")).intValue() : null;
+			Integer createdRegionId = lineJson.get("createdRegionId") instanceof Number ? ((Number) lineJson.get("createdRegionId")).intValue() : null;
+			lines.add(new RegionBoundary(path, edgeIds, sourceRegionId, createdRegionId));
 		}
 		return lines;
 	}

@@ -8,6 +8,7 @@ import nortantis.WorldGraph;
 import nortantis.editor.CenterEdit;
 import nortantis.editor.EdgeEdit;
 import nortantis.editor.RegionEdit;
+import nortantis.editor.RegionBoundary;
 import nortantis.editor.River;
 import nortantis.editor.RiverPathNode;
 import nortantis.editor.Road;
@@ -45,7 +46,7 @@ public class MapEdits implements Serializable
 	public Map<Integer, EdgeEdit> edgeEdits;
 	public FreeIconCollection freeIcons;
 	public CopyOnWriteArrayList<Road> roads;
-	public CopyOnWriteArrayList<Road> regionBoundaryLines;
+	public CopyOnWriteArrayList<RegionBoundary> regionBoundaryLines;
 	/** All rivers (both generated from the graph and user-drawn). */
 	public CopyOnWriteArrayList<River> rivers;
 	/**
@@ -81,7 +82,7 @@ public class MapEdits implements Serializable
 		edgeEdits = new TreeMap<>();
 		freeIcons = new FreeIconCollection();
 		roads = new CopyOnWriteArrayList<Road>();
-		regionBoundaryLines = new CopyOnWriteArrayList<Road>();
+		regionBoundaryLines = new CopyOnWriteArrayList<RegionBoundary>();
 		rivers = new CopyOnWriteArrayList<River>();
 		hasInitializedRivers = false;
 		textBoundsNeedRefresh = true;
@@ -262,8 +263,8 @@ public class MapEdits implements Serializable
 		copy.roads = new CopyOnWriteArrayList<Road>();
 		copy.roads.addAll(deepCopyOfRoads);
 
-		List<Road> deepCopyOfRegionBoundaryLines = regionBoundaryLines == null ? List.of() : regionBoundaryLines.stream().map(road -> new Road(road)).toList();
-		copy.regionBoundaryLines = new CopyOnWriteArrayList<Road>();
+		List<RegionBoundary> deepCopyOfRegionBoundaryLines = regionBoundaryLines == null ? List.of() : regionBoundaryLines.stream().map(RegionBoundary::new).toList();
+		copy.regionBoundaryLines = new CopyOnWriteArrayList<RegionBoundary>();
 		copy.regionBoundaryLines.addAll(deepCopyOfRegionBoundaryLines);
 
 		List<River> deepCopyOfRivers = rivers.stream().map(river -> new River(river)).toList();
