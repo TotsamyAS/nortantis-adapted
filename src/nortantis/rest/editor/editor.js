@@ -393,7 +393,7 @@
 		if (state.activeTool === 'terrain') return { radius: state.terrainRadius, exact: true };
 		if (state.activeTool === 'provinces' && (state.provinceMode === 'boundaryDraw' || state.provinceMode === 'boundaryErase')) return { radius: state.boundaryRadius, exact: false };
 		if (state.activeTool === 'lines') return { radius: state.lineRadius, exact: false };
-		if (state.activeTool === 'icons' && state.selectedAsset?.type === 'trees') return { radius: state.treeRadius, exact: true };
+		if (state.activeTool === 'icons' && (state.iconMode === 'erase' || state.selectedAsset?.type === 'trees')) return { radius: state.treeRadius, exact: true };
 		return null;
 	}
 
@@ -780,7 +780,7 @@
 					state.selectedAsset = { ...asset, artPack: state.iconAssets.artPack };
 					library.querySelectorAll('.icon-tile').forEach((tile) => tile.classList.toggle('active', tile === button));
 					byId('treeDensityField').hidden = type !== 'trees';
-					byId('treeRadiusField').hidden = type !== 'trees';
+					byId('treeRadiusField').hidden = state.iconMode !== 'erase' && type !== 'trees';
 					if (state.cursorPoint) updateBrushFeedback(state.cursorPoint);
 				};
 				grid.append(button);
@@ -805,12 +805,12 @@
 	}
 
 	function iconAt(point) {
-		if (!state.selectedAsset && state.iconMode === 'place') return Promise.resolve();
+		if (state.iconMode === 'erase') return sendEdit({ type: 'relief.erase', x: point.x, y: point.y, radius: state.treeRadius }, true);
+		if (!state.selectedAsset) return Promise.resolve();
 		const asset = state.selectedAsset;
 		if (asset?.type === 'trees') {
 			return sendEdit({ type: state.iconMode === 'place' ? 'trees.center.set' : 'trees.center.clear', x: point.x, y: point.y, radius: state.treeRadius, artPack: asset.artPack, treeType: asset.group, density: state.treeDensity / 10 }, true);
 		}
-		if (state.iconMode === 'erase') return sendEdit({ type: 'icon.center.clear', x: point.x, y: point.y }, true);
 		return sendEdit({ type: 'icon.center.set', x: point.x, y: point.y, iconKind: asset.type, artPack: asset.artPack, groupId: asset.group, iconName: asset.name }, true);
 	}
 
@@ -833,7 +833,7 @@
 			const response = await fetch('/api/editor/session/generate-stream', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ sessionId: state.sessionId, name: state.projectName, size, blank: state.generationBlank })
+				body: JSON.stringify({ sessionId: state.sessionId, name: state.projectName, size, blank: state.generationBlank, locale: state.locale || FALLBACK_LOCALE })
 			});
 			if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`);
 			await readSse(response.body, (event, data) => {
@@ -936,8 +936,8 @@
 	byId('deleteText').onclick = () => void deleteSelectedText();
 	inlineText.onkeydown = (event) => { if (event.key === 'Enter' || event.key === 'Escape') { event.preventDefault(); void commitInlineText(); } };
 	inlineText.onblur = () => void commitInlineText();
-	byId('iconPlace').onclick = () => { state.iconMode = 'place'; byId('iconPlace').classList.add('active'); byId('iconErase').classList.remove('active'); };
-	byId('iconErase').onclick = () => { state.iconMode = 'erase'; byId('iconErase').classList.add('active'); byId('iconPlace').classList.remove('active'); };
+	byId('iconPlace').onclick = () => { state.iconMode = 'place'; byId('iconPlace').classList.add('active'); byId('iconErase').classList.remove('active'); byId('treeRadiusField').hidden = state.selectedAsset?.type !== 'trees'; };
+	byId('iconErase').onclick = () => { state.iconMode = 'erase'; byId('iconErase').classList.add('active'); byId('iconPlace').classList.remove('active'); byId('treeRadiusField').hidden = false; if (state.cursorPoint) updateBrushFeedback(state.cursorPoint); };
 	byId('treeDensity').oninput = (event) => { state.treeDensity = Number(event.target.value); byId('treeDensityValue').value = String(state.treeDensity); };
 	byId('treeRadius').oninput = (event) => { state.treeRadius = Number(event.target.value); byId('treeRadiusValue').value = String(state.treeRadius); if (state.cursorPoint) updateBrushFeedback(state.cursorPoint); };
 
@@ -969,7 +969,7 @@
 			}
 			void pickText(point);
 		}
-		if (state.activeTool === 'icons') { state.drawing = state.selectedAsset?.type === 'trees'; void iconAt(point); }
+		if (state.activeTool === 'icons') { state.drawing = state.iconMode === 'erase' || state.selectedAsset?.type === 'trees'; void iconAt(point); }
 	});
 
 	canvas.addEventListener('pointermove', (event) => {
@@ -992,7 +992,7 @@
 			if (!previous || Math.hypot(point.x - previous.x, point.y - previous.y) >= 8) { state.linePoints.push(point); schedulePathPreview([...state.linePoints], `${state.lineType}.${state.lineMode}`, state.lineRadius); }
 		}
 		if (state.activeTool === 'text' && state.draggingText) { state.textDragPoint = point; renderOverlay(); }
-		if (state.activeTool === 'icons' && state.drawing && state.selectedAsset?.type === 'trees') void iconAt(point);
+		if (state.activeTool === 'icons' && state.drawing && (state.iconMode === 'erase' || state.selectedAsset?.type === 'trees')) void iconAt(point);
 	});
 
 	async function finishPointer() {

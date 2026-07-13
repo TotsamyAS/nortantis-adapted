@@ -14,6 +14,7 @@ import nortantis.MapCreator;
 import nortantis.MapSettings;
 import nortantis.MapText;
 import nortantis.NameCreator;
+import nortantis.NameLanguagePack;
 import nortantis.Region;
 import nortantis.SettingsGenerator;
 import nortantis.TextDrawer;
@@ -36,6 +37,7 @@ import nortantis.graph.voronoi.Center;
 import nortantis.graph.voronoi.Corner;
 import nortantis.graph.voronoi.Edge;
 import nortantis.platform.Image;
+import nortantis.platform.Font;
 import nortantis.platform.ImageHelper;
 import nortantis.platform.PlatformFactory;
 import nortantis.platform.awt.AwtFactory;
@@ -701,6 +703,16 @@ public class NortantisRestServer
 	{
 		int size = readMapSize(input);
 		boolean blank = Boolean.TRUE.equals(input.get("blank"));
+		settings.nameLocale = NameLanguagePack.normalizeLocale(input.get("locale") instanceof String ? (String) input.get("locale") : "ru");
+		if ("ru".equals(settings.nameLocale))
+		{
+			settings.titleFont = fontWithCyrillicFallback(settings.titleFont);
+			settings.regionFont = fontWithCyrillicFallback(settings.regionFont);
+			settings.mountainRangeFont = fontWithCyrillicFallback(settings.mountainRangeFont);
+			settings.otherMountainsFont = fontWithCyrillicFallback(settings.otherMountainsFont);
+			settings.citiesFont = fontWithCyrillicFallback(settings.citiesFont);
+			settings.riverFont = fontWithCyrillicFallback(settings.riverFont);
+		}
 		settings.generatedWidth = size;
 		settings.generatedHeight = size;
 		settings.worldSize = worldSizeForMapSize(size);
@@ -724,6 +736,15 @@ public class NortantisRestServer
 				settings.edits.centerEdits.put(center.index, new CenterEdit(center.index, true, false, null, null, null));
 			}
 		}
+	}
+
+	private static Font fontWithCyrillicFallback(Font font)
+	{
+		if (font == null || font.canDisplayUpTo("Карта земель Северин") < 0)
+		{
+			return font;
+		}
+		return Font.create("Serif", font.getStyle(), font.getSize());
 	}
 
 	private static int readMapSize(JSONObject input)
@@ -1634,7 +1655,7 @@ public class NortantisRestServer
 		{
 			settings.edits.initializeRegionEdits(graph.regions.values());
 		}
-		if ("icon.center.set".equals(type) || "icon.center.clear".equals(type) || "trees.center.set".equals(type) || "trees.center.clear".equals(type) || "road.add".equals(type) || "road.draw".equals(type) || "road.erase".equals(type)
+		if ("icon.center.set".equals(type) || "icon.center.clear".equals(type) || "relief.erase".equals(type) || "trees.center.set".equals(type) || "trees.center.clear".equals(type) || "road.add".equals(type) || "road.draw".equals(type) || "road.erase".equals(type)
 				|| "river.draw".equals(type) || "river.erase".equals(type) || "region.paint".equals(type) || "region.boundary.draw".equals(type)
 				|| "region.boundary.erase".equals(type))
 		{
@@ -1647,7 +1668,7 @@ public class NortantisRestServer
 	private static boolean isIncrementalCommand(JSONObject command)
 	{
 		Object type = command.get("type");
-		return "terrain.brush".equals(type) || "text.add".equals(type) || "text.update".equals(type) || "text.delete".equals(type) || "icon.center.set".equals(type) || "icon.center.clear".equals(type) || "trees.center.set".equals(type) || "trees.center.clear".equals(type) || "road.add".equals(type) || "road.draw".equals(type) || "road.erase".equals(type)
+		return "terrain.brush".equals(type) || "text.add".equals(type) || "text.update".equals(type) || "text.delete".equals(type) || "icon.center.set".equals(type) || "icon.center.clear".equals(type) || "relief.erase".equals(type) || "trees.center.set".equals(type) || "trees.center.clear".equals(type) || "road.add".equals(type) || "road.draw".equals(type) || "road.erase".equals(type)
 				|| "river.draw".equals(type) || "river.erase".equals(type) || "region.paint".equals(type)
 				|| "region.boundary.draw".equals(type) || "region.boundary.erase".equals(type);
 	}
@@ -1978,6 +1999,59 @@ public class NortantisRestServer
 			}
 			return previousCenter == null ? Set.of() : Set.of(previousCenter.index);
 		}
+		if ("relief.erase".equals(type))
+		{
+			Point point = readGraphPointScaled(settings, command, sessionCoordinates, sessionBorderPadding);
+			double resolution = settings.resolution == 0.0 ? 1.0 : settings.resolution;
+			double radius = command.get("radius") instanceof Number ? ((Number) command.get("radius")).doubleValue() * resolution : 48.0 * resolution;
+			Set<Center> selected = selectCentersForBrush(graph, point, radius);
+			Set<Integer> changed = new HashSet<>();
+			List<nortantis.editor.FreeIcon> removedIcons = settings.edits.freeIcons.doWithLockAndReturnResult(() ->
+			{
+				List<nortantis.editor.FreeIcon> removed = new ArrayList<>();
+				for (nortantis.editor.FreeIcon icon : settings.edits.freeIcons)
+				{
+					if (icon == null)
+					{
+						continue;
+					}
+					boolean selectedAnchor = icon.centerIndex != null && selected.stream().anyMatch(center -> center.index == icon.centerIndex);
+					boolean selectedLocation = icon.getScaledLocation(resolution).distanceTo(point) <= radius;
+					if (selectedAnchor || selectedLocation)
+					{
+						removed.add(icon);
+					}
+				}
+				settings.edits.freeIcons.removeAll(removed);
+				return removed;
+			});
+			for (Center center : selected)
+			{
+				CenterEdit edit = settings.edits.centerEdits.get(center.index);
+				if (edit == null)
+				{
+					edit = new CenterEdit(center.index, center.isWater, center.isLake, center.region != null ? center.region.id : null, null, null);
+				}
+				settings.edits.centerEdits.put(center.index, new CenterEdit(edit.index, edit.isWater, edit.isLake, edit.regionId, null, null));
+				changed.add(center.index);
+			}
+			for (nortantis.editor.FreeIcon icon : removedIcons)
+			{
+				Center center = icon.centerIndex != null && icon.centerIndex >= 0 && icon.centerIndex < graph.centers.size()
+						? graph.centers.get(icon.centerIndex)
+						: graph.findClosestCenter(icon.getScaledLocation(resolution), true);
+				if (center != null)
+				{
+					changed.add(center.index);
+				}
+			}
+			settings.edits.hasIconEdits = true;
+			if (isIconsLoggingEnabled())
+			{
+				iconLog("relief:erased", "point", point, "radius", radius, "selectedCenters", selected.size(), "removedIcons", removedIcons.size(), "changedCount", changed.size());
+			}
+			return changed;
+		}
 		if ("icon.center.set".equals(type) || "icon.center.clear".equals(type))
 		{
 			Point point = readGraphPointScaled(settings, command, sessionCoordinates, sessionBorderPadding);
@@ -2285,6 +2359,33 @@ public class NortantisRestServer
 			if (isBordersLoggingEnabled())
 			{
 				borderLog("boundary:erase-success", "durationMs", elapsedMs(borderStartedAt), "removedLines", removedLines, "changedCount", changed.size(), "lineCount", settings.edits.regionBoundaryLines.size());
+			}
+			if (removedLines == 0)
+			{
+				Set<String> mergedPairs = new HashSet<>();
+				for (Edge edge : findNativeRegionEdgesNearLine(settings, graph, line, radius))
+				{
+					if (edge.d0 == null || edge.d1 == null || !isEditableRegionCenter(settings, edge.d0) || !isEditableRegionCenter(settings, edge.d1))
+					{
+						continue;
+					}
+					Integer first = getCenterRegionId(settings, edge.d0);
+					Integer second = getCenterRegionId(settings, edge.d1);
+					if (first == null || second == null || first.equals(second))
+					{
+						continue;
+					}
+					int retained = Math.min(first, second);
+					int removedRegion = Math.max(first, second);
+					if (mergedPairs.add(retained + ":" + removedRegion))
+					{
+						mergeRegionIds(settings, graph, retained, removedRegion, changed);
+					}
+				}
+				if (isBordersLoggingEnabled())
+				{
+					borderLog("boundary:native-erase", "mergedPairs", mergedPairs, "changedCount", changed.size());
+				}
 			}
 			return changed;
 		}
@@ -2875,6 +2976,26 @@ public class NortantisRestServer
 		}
 	}
 
+	private static void mergeRegionIds(MapSettings settings, WorldGraph graph, int retainedRegion, int removedRegion, Set<Integer> changed)
+	{
+		Set<Center> merged = centersForRegion(settings, graph, removedRegion);
+		for (Center center : merged)
+		{
+			CenterEdit edit = settings.edits.centerEdits.get(center.index);
+			if (edit == null)
+			{
+				edit = new CenterEdit(center.index, center.isWater, center.isLake, removedRegion, null, null);
+			}
+			settings.edits.centerEdits.put(center.index, edit.copyWithRegionId(retainedRegion));
+		}
+		settings.edits.regionEdits.remove(removedRegion);
+		addCentersAndNeighbors(changed, merged);
+		if (isBordersLoggingEnabled())
+		{
+			borderLog("boundary:native-region-merged", "removedRegionId", removedRegion, "retainedRegionId", retainedRegion, "mergedCenters", merged.size());
+		}
+	}
+
 	private static boolean regionsConnectedWithoutBoundary(MapSettings settings, WorldGraph graph, Integer firstRegion, Integer secondRegion, RegionBoundary excluded)
 	{
 		double resolution = settings.resolution == 0.0 ? 1.0 : settings.resolution;
@@ -3089,6 +3210,30 @@ public class NortantisRestServer
 			}
 		}
 		return crossing.isEmpty() ? nearby : crossing;
+	}
+
+	private static Set<Edge> findNativeRegionEdgesNearLine(MapSettings settings, WorldGraph graph, List<Point> line, double radius)
+	{
+		Set<Edge> result = new HashSet<>();
+		double hitRadius = Math.max(radius, averageNeighborDistance(graph) * 0.55);
+		for (Edge edge : graph.edges)
+		{
+			if (edge.d0 == null || edge.d1 == null || edge.v0 == null || edge.v1 == null)
+			{
+				continue;
+			}
+			Integer first = getCenterRegionId(settings, edge.d0);
+			Integer second = getCenterRegionId(settings, edge.d1);
+			if (first == null || second == null || first.equals(second))
+			{
+				continue;
+			}
+			if (lineTouchesSegment(line, edge.v0.loc, edge.v1.loc, hitRadius) || lineTouchesSegment(line, edge.d0.loc, edge.d1.loc, hitRadius))
+			{
+				result.add(edge);
+			}
+		}
+		return result;
 	}
 
 	private static Set<Center> centersOnOneSideOfBoundaryLine(MapSettings settings, Set<Edge> cutEdges, List<Point> line)
@@ -4114,7 +4259,7 @@ public class NortantisRestServer
 			case "region.boundary.draw", "region.boundary.erase" -> ToolLog.BORDERS;
 			case "region.paint" -> ToolLog.REGION_PAINT;
 			case "text.add", "text.update", "text.delete" -> ToolLog.TEXT;
-			case "icon.center.set", "icon.center.clear" -> ToolLog.ICONS;
+			case "icon.center.set", "icon.center.clear", "relief.erase" -> ToolLog.ICONS;
 			case "trees.center.set", "trees.center.clear" -> ToolLog.FORESTS;
 			case "road.add", "road.draw", "road.erase" -> ToolLog.ROADS;
 			case "river.draw", "river.erase" -> ToolLog.RIVERS;

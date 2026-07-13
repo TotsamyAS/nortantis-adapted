@@ -13,17 +13,20 @@ public class NameCreator
 	private Random r;
 	private NameGenerator placeNameGenerator;
 	private NameGenerator personNameGenerator;
+	private NameGenerator regionNameGenerator;
 	private NameCompiler nameCompiler;
 	private final double maxWordLengthComparedToAverage = 2.0;
 	private final double probabilityOfKeepingNameLength1 = 0.0;
 	private final double probabilityOfKeepingNameLength2 = 0.0;
 	private final double probabilityOfKeepingNameLength3 = 0.3;
 	private Set<String> namesGenerated;
+	private NameLanguagePack languagePack;
 
 	public NameCreator(MapSettings settings)
 	{
 		this.r = new Random(settings.textRandomSeed);
 		this.namesGenerated = new HashSet<>();
+		this.languagePack = NameLanguagePack.fromSettings(settings);
 		processBooks(settings.books);
 	}
 
@@ -33,7 +36,12 @@ public class NameCreator
 		List<String> personNames = new ArrayList<>();
 		List<Pair<String>> nounAdjectivePairs = new ArrayList<>();
 		List<Pair<String>> nounVerbPairs = new ArrayList<>();
-		for (String book : books)
+		if (languagePack.isRussian())
+		{
+			placeNames.addAll(languagePack.placeNames());
+			personNames.addAll(languagePack.personNames());
+		}
+		else for (String book : books)
 		{
 			placeNames.addAll(Assets.readNameList(Assets.getAssetsPath() + "/books/" + book + "_place_names.txt"));
 			personNames.addAll(Assets.readNameList(Assets.getAssetsPath() + "/books/" + book + "_person_names.txt"));
@@ -43,6 +51,10 @@ public class NameCreator
 
 		placeNameGenerator = new NameGenerator(r, placeNames, maxWordLengthComparedToAverage, probabilityOfKeepingNameLength1, probabilityOfKeepingNameLength2, probabilityOfKeepingNameLength3);
 		personNameGenerator = new NameGenerator(r, personNames, maxWordLengthComparedToAverage, probabilityOfKeepingNameLength1, probabilityOfKeepingNameLength2, probabilityOfKeepingNameLength3);
+		regionNameGenerator = languagePack.isRussian()
+				? new NameGenerator(r, new ArrayList<>(languagePack.regionNames()), maxWordLengthComparedToAverage, probabilityOfKeepingNameLength1,
+						probabilityOfKeepingNameLength2, probabilityOfKeepingNameLength3)
+				: placeNameGenerator;
 
 		nameCompiler = new NameCompiler(r, nounAdjectivePairs, nounVerbPairs);
 	}
@@ -83,6 +95,48 @@ public class NameCreator
 	{
 		Supplier<String> nameCreator = () -> nameCompiler.compileName();
 		return innerCreateUniqueName(format, requireUnique, nameCreator);
+	}
+
+	private String generateRegionName(String format, boolean requireUnique)
+	{
+		Supplier<String> nameCreator = () ->
+		{
+			final int maxRetries = 100;
+			for (@SuppressWarnings("unused") int retry : new Range(maxRetries))
+			{
+				String candidate = regionNameGenerator.generateName("");
+				if (!containsDisallowedRegionComponent(candidate))
+				{
+					return candidate;
+				}
+			}
+			throw new NotEnoughNamesException();
+		};
+		return innerCreateUniqueName(format, requireUnique, nameCreator);
+	}
+
+	private boolean containsDisallowedRegionComponent(String name)
+	{
+		for (String component : name.split("\\s+"))
+		{
+			String normalized = normalizeRegionNamePart(component);
+			for (String suffix : languagePack.regionDisallowedSuffixes())
+			{
+				String normalizedSuffix = normalizeRegionNamePart(suffix);
+				if (!normalizedSuffix.isEmpty() && normalized.length() > normalizedSuffix.length() && normalized.endsWith(normalizedSuffix))
+				{
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	private String normalizeRegionNamePart(String value)
+	{
+		StringBuilder result = new StringBuilder();
+		value.toLowerCase(Locale.ROOT).codePoints().filter(Character::isLetter).forEach(result::appendCodePoint);
+		return result.toString();
 	}
 
 	private String innerCreateUniqueName(String format, boolean requireUnique, Supplier<String> nameCreator)
@@ -152,6 +206,10 @@ public class NameCreator
 	 */
 	public String generateNameOfType(TextType type, Object subType, boolean requireUnique)
 	{
+		if (languagePack.isRussian())
+		{
+			return generateRussianNameOfType(type, subType, requireUnique);
+		}
 		if (type.equals(TextType.Title))
 		{
 			String title = forcedTitle.get();
@@ -234,19 +292,15 @@ public class NameCreator
 		else if (type.equals(TextType.City))
 		{
 			CityType cityType = (CityType) subType;
+			if (cityType == CityType.City || cityType == CityType.Town)
+			{
+				return generatePlaceName("%s", requireUnique);
+			}
 			String structureName;
 			if (cityType.equals(CityType.Fortification))
 			{
 				structureName = ProbabilityHelper.sampleCategorical(r,
 						Arrays.asList(new Tuple2<>(0.2, "Castle"), new Tuple2<>(0.2, "Fort"), new Tuple2<>(0.2, "Fortress"), new Tuple2<>(0.2, "Keep"), new Tuple2<>(0.2, "Citadel")));
-			}
-			else if (cityType.equals(CityType.City))
-			{
-				structureName = ProbabilityHelper.sampleCategorical(r, Arrays.asList(new Tuple2<>(0.75, "City"), new Tuple2<>(0.25, "Town")));
-			}
-			else if (cityType.equals(CityType.Town))
-			{
-				structureName = ProbabilityHelper.sampleCategorical(r, Arrays.asList(new Tuple2<>(0.2, "City"), new Tuple2<>(0.4, "Village"), new Tuple2<>(0.4, "Town")));
 			}
 			else if (cityType.equals(CityType.Homestead))
 			{
@@ -338,6 +392,77 @@ public class NameCreator
 		{
 			throw new UnsupportedOperationException("Unknown text type: " + type);
 		}
+	}
+
+	private String generateRussianNameOfType(TextType type, Object subType, boolean requireUnique)
+	{
+		if (type == TextType.Title)
+		{
+			TitleType titleType = subType == null ? TitleType.Decorated : (TitleType) subType;
+			String title = forcedTitle.get();
+			if (title != null && !title.isBlank())
+			{
+				return titleType == TitleType.NameOnly ? title : "Карта мира «" + title + "»";
+			}
+			return titleType == TitleType.NameOnly
+					? generateRegionName("%s", requireUnique)
+					: generateRegionName("Карта земель %s", requireUnique);
+		}
+		if (type == TextType.Region)
+		{
+			String format = ProbabilityHelper.sampleCategorical(r,
+					Arrays.asList(new Tuple2<>(0.16, "Королевство %s"), new Tuple2<>(0.05, "Империя %s"), new Tuple2<>(0.79, "%s")));
+			return generateRegionName(format, requireUnique);
+		}
+		if (type == TextType.Mountain_range)
+		{
+			return generatePlaceName(ProbabilityHelper.sampleCategorical(r,
+					Arrays.asList(new Tuple2<>(0.55, "Хребет %s"), new Tuple2<>(0.45, "%s хребет"))), requireUnique);
+		}
+		if (type == TextType.Other_mountains)
+		{
+			OtherMountainsType mountainType = subType == null ? OtherMountainsType.Mountains : (OtherMountainsType) subType;
+			String format = switch (mountainType)
+			{
+				case Mountains -> "Горы %s";
+				case Peak -> "Вершина %s";
+				case Peaks -> "Пики %s";
+			};
+			return generatePlaceName(format, requireUnique);
+		}
+		if (type == TextType.City)
+		{
+			CityType cityType = subType == null ? ProbabilityHelper.sampleEnumUniform(r, CityType.class) : (CityType) subType;
+			if (cityType == CityType.City || cityType == CityType.Town)
+			{
+				return generatePlaceName("%s", requireUnique);
+			}
+			String structure = switch (cityType)
+			{
+				case Fortification -> ProbabilityHelper.sampleCategorical(r,
+						Arrays.asList(new Tuple2<>(0.35, "Крепость"), new Tuple2<>(0.35, "Замок"), new Tuple2<>(0.3, "Цитадель")));
+				case Homestead -> "Поселение";
+				case Farm -> "Усадьба";
+				case City, Town -> throw new IllegalStateException("City and town labels use proper names without a structure prefix");
+			};
+			String format = ProbabilityHelper.sampleCategorical(r,
+					Arrays.asList(new Tuple2<>(0.45, structure + " %s"), new Tuple2<>(0.4, "%s"), new Tuple2<>(0.15, "%s — " + structure.toLowerCase(Locale.ROOT))));
+			return generatePlaceName(format, requireUnique);
+		}
+		if (type == TextType.River)
+		{
+			RiverType riverType = subType == null ? RiverType.Large : (RiverType) subType;
+			String format = riverType == RiverType.Large
+					? ProbabilityHelper.sampleCategorical(r, Arrays.asList(new Tuple2<>(0.75, "Река %s"), new Tuple2<>(0.25, "%s")))
+					: ProbabilityHelper.sampleCategorical(r, Arrays.asList(new Tuple2<>(0.55, "Ручей %s"), new Tuple2<>(0.45, "Река %s")));
+			return generatePlaceName(format, requireUnique);
+		}
+		if (type == TextType.Lake)
+		{
+			return generatePlaceName(ProbabilityHelper.sampleCategorical(r,
+					Arrays.asList(new Tuple2<>(0.75, "Озеро %s"), new Tuple2<>(0.25, "%s озеро"))), requireUnique);
+		}
+		throw new UnsupportedOperationException("Unknown text type: " + type);
 	}
 
 	private String getOtherMountainNameFormat(OtherMountainsType mountainType)

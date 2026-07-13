@@ -129,6 +129,7 @@ public class MapSettings implements Serializable
 	public int brightnessRange;
 	public boolean drawText;
 	public long textRandomSeed;
+	public String nameLocale = "ru";
 	public Set<String> books;
 	public Font titleFont;
 	public Font regionFont;
@@ -444,6 +445,7 @@ public class MapSettings implements Serializable
 
 		root.put("drawText", drawText);
 		root.put("textRandomSeed", textRandomSeed);
+		root.put("nameLocale", nameLocale);
 
 		JSONArray booksArray = new JSONArray();
 		for (String book : books)
@@ -1212,6 +1214,7 @@ public class MapSettings implements Serializable
 
 		drawText = (boolean) root.get("drawText");
 		textRandomSeed = (long) root.get("textRandomSeed");
+		nameLocale = NameLanguagePack.normalizeLocale(root.containsKey("nameLocale") ? (String) root.get("nameLocale") : "ru");
 
 		JSONArray booksArray = (JSONArray) root.get("books");
 		books = new TreeSet<String>();
@@ -2396,6 +2399,7 @@ public class MapSettings implements Serializable
 		brightnessRange = old.brightnessRange;
 		drawText = old.drawText;
 		textRandomSeed = old.textRandomSeed;
+		nameLocale = "ru";
 		books = old.books;
 		titleFont = old.titleFont;
 		regionFont = old.regionFont;
@@ -2950,6 +2954,8 @@ public class MapSettings implements Serializable
 			differences.add("textColor: " + textColor + " vs " + other.textColor);
 		if (textRandomSeed != other.textRandomSeed)
 			differences.add("textRandomSeed: " + textRandomSeed + " vs " + other.textRandomSeed);
+		if (!Objects.equals(nameLocale, other.nameLocale))
+			differences.add("nameLocale: " + nameLocale + " vs " + other.nameLocale);
 		if (!Objects.equals(titleFont, other.titleFont))
 			differences.add("titleFont: " + titleFont + " vs " + other.titleFont);
 		if (Double.doubleToLongBits(treeHeightScale) != Double.doubleToLongBits(other.treeHeightScale))
@@ -2987,7 +2993,7 @@ public class MapSettings implements Serializable
 				oceanColor, oceanEffectsColor, oceanEffectsLevel, oceanShadingColor, oceanShadingLevel, oceanWavesColor, oceanWavesLevel, oceanWavesType, otherMountainsFont, overlayImageDefaultScale,
 				overlayImageDefaultTransparency, overlayImagePath, overlayImageTransparency, overlayOffsetResolutionInvariant, overlayScale, pointPrecision, randomSeed, regionBaseColor,
 				regionBoundaryColor, regionBoundaryStyle, regionCount, regionFont, regionsRandomSeed, resolution, rightRotationCount, riverColor, riverFont, roadColor, roadStyle, saturationRange,
-				solidColorBackground, textColor, textRandomSeed, titleFont, treeHeightScale, version, worldSize);
+				solidColorBackground, textColor, textRandomSeed, nameLocale, titleFont, treeHeightScale, version, worldSize);
 	}
 
 	@Override
@@ -3052,7 +3058,7 @@ public class MapSettings implements Serializable
 				&& regionsRandomSeed == other.regionsRandomSeed && Double.doubleToLongBits(resolution) == Double.doubleToLongBits(other.resolution) && rightRotationCount == other.rightRotationCount
 				&& Objects.equals(riverColor, other.riverColor) && Objects.equals(riverFont, other.riverFont) && Objects.equals(roadColor, other.roadColor)
 				&& Objects.equals(roadStyle, other.roadStyle) && saturationRange == other.saturationRange && solidColorBackground == other.solidColorBackground
-				&& Objects.equals(textColor, other.textColor) && textRandomSeed == other.textRandomSeed && Objects.equals(titleFont, other.titleFont)
+				&& Objects.equals(textColor, other.textColor) && textRandomSeed == other.textRandomSeed && Objects.equals(nameLocale, other.nameLocale) && Objects.equals(titleFont, other.titleFont)
 				&& Double.doubleToLongBits(treeHeightScale) == Double.doubleToLongBits(other.treeHeightScale) && Objects.equals(version, other.version) && worldSize == other.worldSize;
 	}
 

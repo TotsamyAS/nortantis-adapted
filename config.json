@@ -1,15 +1,15 @@
 {
 	"logging": {
 		"BRUSH_LOGGING": false,
-		"BORDERS_LOGGING": true,
+		"BORDERS_LOGGING": false,
 		"REGION_PAINT_LOGGING": false,
 		"TEXT_FIELD_LOGGING": false,
 		"ICONS_LOGGING": false,
-		"FORESTS_LOGGING": false,
+		"FORESTS_LOGGING": true,
 		"ROADS_LOGGING": false,
 		"RIVERS_LOGGING": false,
 		"GENERATION_LOGGING": false,
 		"PROJECTS_LOGGING": false,
-		"ASSETS_LOGGING": false
+		"ASSETS_LOGGING": true
 	}
 }
