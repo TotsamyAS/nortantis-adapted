@@ -1,15 +1,43 @@
-# nortantis
-Nortantis is a fantasy map generator and editor originally created as an academic project. It uses a simple tectonic plate simulation to create islands and continents with trees, rivers, and mountains. The result has the appearance of an old-fashioned hand-drawn map.
+# Nortantis REST Service
 
-For more information and examples of generated maps, see the project page <a href="https://jandjheydorn.com/nortantis">here</a>.
+Этот репозиторий представляет собой форк [Nortantis](https://jandjheydorn.com/nortantis), адаптированный для использования в качестве REST-микросервиса.
 
-If you wish to build Nortantis from source rather than use the installers, do the following:
-<ol>
-	<li>Checkout the source code.</li>
-	<li>Install Java JDK 21 or later. How to do that will depend on your OS. A good internet search should tell you how.</li>
-	<li>In a command prompt, navigate to the top 'nortantis' folder in the source code, then run this command: ./gradlew :run
-</ol>
+Оригинальный Nortantis — генератор и редактор фэнтезийных карт, изначально созданный как академический проект. Он использует упрощённую симуляцию тектонических плит для создания островов и континентов с реками, лесами, горами, городами и другими объектами. Результат стилизован под старинную рисованную карту.
 
-<br>
+В этом форке основное внимание уделено серверной генерации и редактированию карт. Desktop-интерфейс Nortantis не является основной точкой запуска и постепенно удаляется из проекта.
 
-Privacy policy: This program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it. (I had to add this for digital signing. Nortantis doesn't transfer any personal information.)
+## Назначение форка
+
+Сервис используется основным приложением для:
+
+- создания новых проектов Nortantis;
+- генерации карт;
+- открытия и редактирования проектов `.nort`;
+- пошагового редактирования карты через editor session;
+- экспорта карт в PNG и JPG;
+- работы с регионами, текстом, дорогами, реками, иконками и деревьями;
+- получения preview и служебных данных редактора.
+
+В проект также входит веб-редактор, доступный через REST-сервер.
+
+## Требования
+
+Для локальной разработки требуется:
+
+- Java JDK 21 или новее;
+- доступ в интернет при первом запуске Gradle Wrapper, чтобы загрузить Gradle и зависимости;
+- не менее 4 ГБ доступной оперативной памяти для генерации больших карт.
+
+Отдельно устанавливать Gradle не требуется — проект использует Gradle Wrapper.
+
+## Лицензия
+
+Проект основан на Nortantis и распространяется с сохранением лицензии и уведомлений оригинального проекта.
+
+Актуальные условия находятся в файле:
+
+```text
+LICENSE
+```
+
+При распространении, публикации исходного кода или развёртывании изменённой версии необходимо соблюдать условия лицензии оригинального проекта и сохранять copyright-уведомления сторонних компонентов.
