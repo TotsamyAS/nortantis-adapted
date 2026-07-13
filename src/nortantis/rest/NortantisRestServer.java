@@ -89,6 +89,7 @@ public class NortantisRestServer
 	private static final String RIVERS_LOG_PREFIX = "[nortantis-rivers-service]";
 	private static final String GENERATION_LOG_PREFIX = "[nortantis-generation-service]";
 	private static final String PROJECTS_LOG_PREFIX = "[nortantis-projects-service]";
+	private static final String SAVE_EXPORT_LOG_PREFIX = "[nortantis-save-export-service]";
 	private static final String ASSETS_LOG_PREFIX = "[nortantis-assets-service]";
 	private static final ConcurrentHashMap<String, Boolean> SERVICE_LOGGING = new ConcurrentHashMap<>();
 	private static final ConcurrentHashMap<String, EditorSession> EDITOR_SESSIONS = new ConcurrentHashMap<>();
@@ -240,10 +241,16 @@ public class NortantisRestServer
 		}
 		Path project = Files.createTempFile("nortantis-editor-project-", MapSettings.fileExtensionWithDot);
 		long startedAt = System.nanoTime();
+		String operationId = "untracked";
 		try
 		{
 			JSONObject input = readJsonBody(exchange);
+			operationId = normalizeOperationId(input.get("operationId"));
 			String sessionId = (String) input.get("sessionId");
+			if (isToolLoggingEnabled(ToolLog.SAVE_EXPORT))
+			{
+				toolLog(ToolLog.SAVE_EXPORT, "serialize:start", "operationId", operationId, "projectId", sessionId);
+			}
 			EditorSession session = sessionId == null ? null : EDITOR_SESSIONS.get(sessionId);
 			if (session == null)
 			{
@@ -254,17 +261,17 @@ public class NortantisRestServer
 				session.settings.writeToFile(project.toString());
 			}
 			String result = "{\"ok\":true,\"projectBase64\":\"" + Base64.getEncoder().encodeToString(Files.readAllBytes(project)) + "\",\"metadata\":" + sessionMetadataJson(session) + "}";
-			if (isToolLoggingEnabled(ToolLog.PROJECTS))
+			if (isToolLoggingEnabled(ToolLog.SAVE_EXPORT))
 			{
-				toolLog(ToolLog.PROJECTS, "session-project:success", "sessionId", sessionId, "durationMs", elapsedMs(startedAt), "projectBytes", Files.size(project));
+				toolLog(ToolLog.SAVE_EXPORT, "serialize:success", "operationId", operationId, "projectId", sessionId, "durationMs", elapsedMs(startedAt), "projectBytes", Files.size(project));
 			}
 			send(exchange, 200, "application/json", result.getBytes(StandardCharsets.UTF_8));
 		}
 		catch (Exception ex)
 		{
-			if (isToolLoggingEnabled(ToolLog.PROJECTS))
+			if (isToolLoggingEnabled(ToolLog.SAVE_EXPORT))
 			{
-				toolLog(ToolLog.PROJECTS, "session-project:error", "durationMs", elapsedMs(startedAt), "error", ex.toString());
+				toolLog(ToolLog.SAVE_EXPORT, "serialize:error", "operationId", operationId, "durationMs", elapsedMs(startedAt), "errorType", ex.getClass().getSimpleName());
 			}
 			send(exchange, 500, "application/json", ("{\"ok\":false,\"error\":\"" + escape(ex.getMessage()) + "\"}").getBytes(StandardCharsets.UTF_8));
 		}
@@ -423,9 +430,11 @@ public class NortantisRestServer
 			return;
 		}
 		long startedAt = System.nanoTime();
+		String operationId = "untracked";
 		try
 		{
 			JSONObject input = readJsonBody(exchange);
+			operationId = normalizeOperationId(input.get("operationId"));
 			String sessionId = (String) input.get("sessionId");
 			String format = input.get("format") instanceof String ? ((String) input.get("format")).trim().toLowerCase() : "jpg";
 			EditorSession session = sessionId == null ? null : EDITOR_SESSIONS.get(sessionId);
@@ -435,17 +444,17 @@ public class NortantisRestServer
 			}
 			String extension = "png".equals(format) ? ".png" : ".jpg";
 			String result = "{\"ok\":true,\"imageBase64\":\"" + imageToBase64(session.map, extension) + "\",\"format\":\"" + ("png".equals(format) ? "png" : "jpg") + "\"}";
-			if (isToolLoggingEnabled(ToolLog.PROJECTS))
+			if (isToolLoggingEnabled(ToolLog.SAVE_EXPORT))
 			{
-				toolLog(ToolLog.PROJECTS, "session-export:success", "sessionId", sessionId, "format", format, "durationMs", elapsedMs(startedAt));
+				toolLog(ToolLog.SAVE_EXPORT, "session-export:success", "operationId", operationId, "projectId", sessionId, "format", format, "durationMs", elapsedMs(startedAt));
 			}
 			send(exchange, 200, "application/json", result.getBytes(StandardCharsets.UTF_8));
 		}
 		catch (Exception ex)
 		{
-			if (isToolLoggingEnabled(ToolLog.PROJECTS))
+			if (isToolLoggingEnabled(ToolLog.SAVE_EXPORT))
 			{
-				toolLog(ToolLog.PROJECTS, "session-export:error", "durationMs", elapsedMs(startedAt), "error", ex.toString());
+				toolLog(ToolLog.SAVE_EXPORT, "session-export:error", "operationId", operationId, "durationMs", elapsedMs(startedAt), "errorType", ex.getClass().getSimpleName());
 			}
 			send(exchange, 500, "application/json", ("{\"ok\":false,\"error\":\"" + escape(ex.getMessage()) + "\"}").getBytes(StandardCharsets.UTF_8));
 		}
@@ -822,10 +831,17 @@ public class NortantisRestServer
 		ExportFormat exportFormat = readExportFormat(exchange);
 		Dimension maxDimensions = readMaxDimensions(exchange);
 		String sessionId = readSessionId(exchange);
+		String operationId = normalizeOperationId(exchange.getRequestHeaders().getFirst("X-Nortantis-Operation-Id"));
+		long startedAt = System.nanoTime();
 		Path image = Files.createTempFile("nortantis-export-", exportFormat.extension);
 		try
 		{
-			Files.write(project, exchange.getRequestBody().readAllBytes());
+			byte[] projectBytes = exchange.getRequestBody().readAllBytes();
+			if (isToolLoggingEnabled(ToolLog.SAVE_EXPORT))
+			{
+				toolLog(ToolLog.SAVE_EXPORT, "render:start", "operationId", operationId, "format", exportFormat.extension.substring(1), "projectBytes", projectBytes.length);
+			}
+			Files.write(project, projectBytes);
 			MapSettings settings = new MapSettings(project.toString());
 			String title = readMapTitle(exchange);
 			if (title != null && !title.isBlank())
@@ -841,10 +857,20 @@ public class NortantisRestServer
 			}
 			ImageHelper.getInstance().write(result, image.toString());
 			ImageCache.clear();
-			send(exchange, 200, exportFormat.contentType, Files.readAllBytes(image));
+			byte[] imageBytes = Files.readAllBytes(image);
+			if (isToolLoggingEnabled(ToolLog.SAVE_EXPORT))
+			{
+				toolLog(ToolLog.SAVE_EXPORT, "render:success", "operationId", operationId, "format", exportFormat.extension.substring(1), "imageBytes", imageBytes.length,
+						"width", result.getWidth(), "height", result.getHeight(), "durationMs", elapsedMs(startedAt));
+			}
+			send(exchange, 200, exportFormat.contentType, imageBytes);
 		}
 		catch (Exception ex)
 		{
+			if (isToolLoggingEnabled(ToolLog.SAVE_EXPORT))
+			{
+				toolLog(ToolLog.SAVE_EXPORT, "render:error", "operationId", operationId, "durationMs", elapsedMs(startedAt), "errorType", ex.getClass().getSimpleName());
+			}
 			send(exchange, 500, "application/json", ("{\"ok\":false,\"error\":\"" + escape(ex.getMessage()) + "\"}").getBytes());
 		}
 		finally
@@ -4148,6 +4174,12 @@ public class NortantisRestServer
 		return Boolean.TRUE.equals(SERVICE_LOGGING.get(key));
 	}
 
+	private static String normalizeOperationId(Object value)
+	{
+		String operationId = value instanceof String ? ((String) value).trim() : "";
+		return operationId.matches("[A-Za-z0-9][A-Za-z0-9_-]{0,63}") ? operationId : "untracked";
+	}
+
 	private static void loadServiceConfig()
 	{
 		SERVICE_LOGGING.clear();
@@ -4284,6 +4316,7 @@ public class NortantisRestServer
 		RIVERS("RIVERS_LOGGING", RIVERS_LOG_PREFIX),
 		GENERATION("GENERATION_LOGGING", GENERATION_LOG_PREFIX),
 		PROJECTS("PROJECTS_LOGGING", PROJECTS_LOG_PREFIX),
+		SAVE_EXPORT("SAVE_EXPORT_LOGGING", SAVE_EXPORT_LOG_PREFIX),
 		ASSETS("ASSETS_LOGGING", ASSETS_LOG_PREFIX);
 
 		final String configKey;

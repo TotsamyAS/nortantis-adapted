@@ -10,6 +10,7 @@
 		"RIVERS_LOGGING": false,
 		"GENERATION_LOGGING": false,
 		"PROJECTS_LOGGING": false,
+		"SAVE_EXPORT_LOGGING": false,
 		"ASSETS_LOGGING": true
 	}
 }

@@ -89,6 +89,10 @@
 				<path d="M3 6h18" />
 				<path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
 			</symbol>
+			<symbol id="icon-pencil" viewBox="0 0 24 24">
+				<path d="M12 20h9" />
+				<path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+			</symbol>
 		</svg>
 
 		<div class="editor-shell">
@@ -154,7 +158,7 @@
 
 			<aside class="tool-panel">
 				<header class="session-bar">
-					<a id="backLink" class="back-button" href="/hub" data-tooltip="" aria-label="">
+					<a id="backLink" class="back-button" href="#" data-tooltip="" aria-label="">
 						<svg><use href="#icon-arrow-left" /></svg>
 					</a>
 					<div class="session-title">
@@ -349,6 +353,41 @@
 				</div>
 			</aside>
 		</div>
+
+		<div id="appToast" class="app-toast success" role="status" aria-live="polite" hidden>
+			<span></span>
+		</div>
+
+		<dialog id="deleteProjectDialog" class="editor-dialog confirm-dialog">
+			<form method="dialog" class="dialog-card">
+				<header>
+					<h2 data-label="deleteProjectTitle"></h2>
+					<button class="dialog-close" value="cancel" data-label-aria="close" aria-label="">×</button>
+				</header>
+				<p id="deleteProjectMessage" class="muted"></p>
+				<div class="modal-actions">
+					<button class="ui-button" value="cancel" data-label="cancel"></button>
+					<button id="confirmProjectDelete" class="ui-button danger" type="button" data-label="confirmDelete"></button>
+				</div>
+			</form>
+		</dialog>
+
+		<dialog id="renameProjectDialog" class="editor-dialog confirm-dialog">
+			<form id="renameProjectForm" class="dialog-card">
+				<header>
+					<h2 data-label="renameProjectTitle"></h2>
+					<button class="dialog-close" type="button" data-rename-close data-label-aria="close" aria-label="">×</button>
+				</header>
+				<label class="field">
+					<span data-label="projectName"></span>
+					<input id="renameProjectName" type="text" maxlength="128" required />
+				</label>
+				<div class="modal-actions">
+					<button class="ui-button" type="button" data-rename-close data-label="cancel"></button>
+					<button class="ui-button primary" type="submit" data-label="renameProjectConfirm"></button>
+				</div>
+			</form>
+		</dialog>
 
 		<dialog id="generationDialog" class="editor-dialog">
 			<form method="dialog" class="dialog-card">

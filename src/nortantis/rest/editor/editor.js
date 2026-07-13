@@ -57,7 +57,11 @@
 		historyCounter: 0,
 		dirty: false,
 		generationBlank: false,
-		previewVersion: 0
+		previewVersion: 0,
+		projectPreviewData: {},
+		deleteProjectCandidate: null,
+		renameProjectCandidate: null,
+		lastHostStatus: ''
 	};
 	let brushSelectionTimer = 0;
 	let brushSelectionVersion = 0;
@@ -65,6 +69,7 @@
 	let queuedBrushSelection = null;
 	let pathPreviewTimer = 0;
 	let pathPreviewVersion = 0;
+	let toastTimer = 0;
 
 	const byId = (id) => document.getElementById(id);
 	const canvas = byId('canvas');
@@ -112,6 +117,14 @@
 		const createButton = byId('createProjectForm').querySelector('button');
 		createButton.dataset.tooltip = label('create');
 		createButton.setAttribute('aria-label', label('create'));
+		if (state.deleteProjectCandidate) {
+			byId('deleteProjectMessage').textContent = label('deleteProjectConfirmation', {
+				name: state.deleteProjectCandidate.name
+			});
+		}
+		if (state.renameProjectCandidate) {
+			byId('renameProjectName').value = state.renameProjectCandidate.name;
+		}
 		fillTextTypes();
 		renderHostState();
 	}
@@ -170,6 +183,15 @@
 		byId('statusText').textContent = text || '';
 	}
 
+	function showToast(text) {
+		if (!text) return;
+		const toast = byId('appToast');
+		toast.querySelector('span').textContent = text;
+		toast.hidden = false;
+		clearTimeout(toastTimer);
+		toastTimer = window.setTimeout(() => { toast.hidden = true; }, 3200);
+	}
+
 	function showLoading(title, text, progress = 0) {
 		byId('loadingTitle').textContent = title;
 		byId('loadingText').textContent = text || '';
@@ -200,6 +222,11 @@
 		byId('projectTitle').textContent = state.projectName || host.projects.find((project) => project.id === host.selectedProjectId)?.name || label('editorTitle');
 		const hostError = host.errorCode ? state.labels.errors[host.errorCode] || label('genericError') : '';
 		const hostStatus = host.statusCode ? state.labels.statuses[host.statusCode] || '' : '';
+		if (!host.statusCode) state.lastHostStatus = '';
+		else if (hostStatus && host.statusCode !== state.lastHostStatus) {
+			state.lastHostStatus = host.statusCode;
+			if (host.statusCode === 'saved' || host.statusCode === 'exported') showToast(hostStatus);
+		}
 		setStatus(hostError || hostStatus || (host.saving ? label('save') : host.exporting ? label('export') : state.dirty ? label('unsaved') : state.sessionId ? label('ready') : ''));
 		byId('saveProject').disabled = !state.sessionId || host.saving;
 		byId('exportProject').disabled = !state.sessionId || host.exporting;
@@ -218,12 +245,7 @@
 		}
 		renderProjects();
 		if (host.sourceCodeURL) byId('forkLink').href = host.sourceCodeURL;
-		byId('backLink').href = validBackUrl(host.backUrl);
-	}
-
-	function validBackUrl(value) {
-		const path = String(value || '');
-		return path === '/hub' || /^\/campaigns\/[0-9a-f-]{36}$/i.test(path) ? path : '/hub';
+		byId('backLink').href = '#';
 	}
 
 	function renderProjects() {
@@ -242,25 +264,84 @@
 			const main = document.createElement('button');
 			main.type = 'button';
 			main.className = 'project-main';
+			const preview = document.createElement('span');
+			preview.className = 'project-preview';
+			const previewSource = state.projectPreviewData[project.id] || project.previewUrl;
+			if (previewSource) {
+				const image = document.createElement('img');
+				image.src = previewSource;
+				image.alt = label('projectPreviewAlt', { name: project.name });
+				image.width = 32;
+				image.height = 32;
+				image.loading = 'lazy';
+				image.decoding = 'async';
+				image.onerror = () => {
+					image.remove();
+					preview.classList.add('empty');
+					preview.innerHTML = iconUse('folder-open');
+				};
+				preview.append(image);
+			} else {
+				preview.classList.add('empty');
+				preview.innerHTML = iconUse('folder-open');
+			}
+			const details = document.createElement('span');
+			details.className = 'project-details';
 			const name = document.createElement('strong');
 			name.textContent = project.name;
 			const size = document.createElement('span');
 			size.textContent = formatBytes(project.size);
-			main.append(name, size);
+			details.append(name, size);
+			main.append(preview, details);
 			main.onclick = () => postParent('nortantis:project-open', { projectId: project.id });
+			const rename = document.createElement('button');
+			rename.type = 'button';
+			rename.className = 'ui-button icon-only project-rename';
+			rename.innerHTML = iconUse('pencil');
+			rename.setAttribute('aria-label', `${label('renameProject')}: ${project.name}`);
+			rename.onclick = () => openRenameProjectDialog(project);
 			const remove = document.createElement('button');
 			remove.type = 'button';
 			remove.className = 'ui-button danger icon-only project-delete';
 			remove.innerHTML = iconUse('trash');
 			remove.setAttribute('aria-label', `${label('deleteProject')}: ${project.name}`);
-			remove.onclick = () => postParent('nortantis:project-delete', { projectId: project.id });
-			card.append(main, remove);
+			remove.onclick = () => openDeleteProjectDialog(project);
+			card.append(main, rename, remove);
 			container.append(card);
 		});
 	}
 
+	function openDeleteProjectDialog(project) {
+		state.deleteProjectCandidate = project;
+		byId('deleteProjectMessage').textContent = label('deleteProjectConfirmation', { name: project.name });
+		byId('deleteProjectDialog').showModal();
+	}
+
+	function closeDeleteProjectDialog() {
+		state.deleteProjectCandidate = null;
+		byId('deleteProjectDialog').close();
+	}
+
+	function openRenameProjectDialog(project) {
+		state.renameProjectCandidate = project;
+		byId('renameProjectName').value = project.name;
+		byId('renameProjectDialog').showModal();
+		byId('renameProjectName').focus();
+		byId('renameProjectName').select();
+	}
+
+	function closeRenameProjectDialog() {
+		state.renameProjectCandidate = null;
+		byId('renameProjectDialog').close();
+	}
+
 	function postParent(type, payload = {}) {
 		parent.postMessage({ type, ...payload }, '*');
+	}
+
+	function operationId(prefix) {
+		const unique = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+		return `${prefix}-${unique}`;
 	}
 
 	async function postJson(url, body) {
@@ -284,7 +365,7 @@
 		mapSurface.style.transform = `translate(${state.panX}px, ${state.panY}px) scale(${state.scale})`;
 	}
 
-	function setPreview(base64, resetView) {
+	function setPreview(base64, resetView, onReady) {
 		const version = ++state.previewVersion;
 		map.onload = () => {
 			if (version !== state.previewVersion) return;
@@ -295,8 +376,43 @@
 			overlay.setAttribute('viewBox', `0 0 ${map.naturalWidth} ${map.naturalHeight}`);
 			if (resetView || !state.hasFit) fit(); else applyTransform();
 			renderOverlay();
+			onReady?.();
 		};
 		map.src = `data:image/png;base64,${base64}`;
+	}
+
+	function createProjectThumbnailBase64() {
+		if (!map.naturalWidth || !map.naturalHeight) return '';
+		const thumbnail = document.createElement('canvas');
+		thumbnail.width = 32;
+		thumbnail.height = 32;
+		const context = thumbnail.getContext('2d');
+		if (!context) return '';
+		context.fillStyle = '#120706';
+		context.fillRect(0, 0, 32, 32);
+		context.imageSmoothingEnabled = true;
+		context.imageSmoothingQuality = 'high';
+		const scale = Math.min(32 / map.naturalWidth, 32 / map.naturalHeight);
+		const width = map.naturalWidth * scale;
+		const height = map.naturalHeight * scale;
+		context.drawImage(map, (32 - width) / 2, (32 - height) / 2, width, height);
+		return thumbnail.toDataURL('image/jpeg', 0.82).slice('data:image/jpeg;base64,'.length);
+	}
+
+	function publishProjectThumbnail(force = false) {
+		if (!state.sessionId) return '';
+		const project = state.host.projects.find((item) => item.id === state.sessionId);
+		if (!force && project?.previewUrl) return '';
+		const previewBase64 = createProjectThumbnailBase64();
+		if (!previewBase64) return '';
+		state.projectPreviewData[state.sessionId] = `data:image/jpeg;base64,${previewBase64}`;
+		renderProjects();
+		postParent('nortantis:project-preview', {
+			operationId: operationId('preview'),
+			projectId: state.sessionId,
+			previewBase64
+		});
+		return previewBase64;
 	}
 
 	function clearWorkspace() {
@@ -498,7 +614,7 @@
 		try {
 			const json = await postJson('/api/editor/session/open', { sessionId: state.sessionId, projectBase64: data.projectBase64, previewMaxDimensionPixels: data.previewMaxDimensionPixels || 1536 });
 			state.metadata = json.metadata;
-			setPreview(json.previewBase64, true);
+			setPreview(json.previewBase64, true, () => publishProjectThumbnail(false));
 			void loadTopology();
 			setStatus(label('ready'));
 		} catch {
@@ -508,18 +624,21 @@
 		}
 	}
 
-	async function currentProject() {
+	async function currentProject(currentOperationId) {
 		if (!state.sessionId) throw new Error('Missing editor session');
-		const json = await postJson('/api/editor/session/project', { sessionId: state.sessionId });
+		const json = await postJson('/api/editor/session/project', { sessionId: state.sessionId, operationId: currentOperationId });
 		return json.projectBase64;
 	}
 
 	async function saveProject() {
 		if (!state.sessionId) return;
+		const currentOperationId = operationId('save');
 		setStatus(label('save'));
 		try {
-			const projectBase64 = await currentProject();
-			postParent('nortantis:save', { projectId: state.sessionId, projectBase64 });
+			const projectBase64 = await currentProject(currentOperationId);
+			const previewBase64 = createProjectThumbnailBase64();
+			if (previewBase64) state.projectPreviewData[state.sessionId] = `data:image/jpeg;base64,${previewBase64}`;
+			postParent('nortantis:save', { operationId: currentOperationId, projectId: state.sessionId, projectBase64, previewBase64 });
 			state.dirty = false;
 		} catch {
 			setStatus(label('genericError'));
@@ -528,10 +647,13 @@
 
 	async function exportProject() {
 		if (!state.sessionId) return;
+		const currentOperationId = operationId('export');
 		setStatus(label('export'));
 		try {
-			const projectBase64 = await currentProject();
-			postParent('nortantis:export', { projectId: state.sessionId, projectBase64, format: 'jpg' });
+			const projectBase64 = await currentProject(currentOperationId);
+			const previewBase64 = createProjectThumbnailBase64();
+			if (previewBase64) state.projectPreviewData[state.sessionId] = `data:image/jpeg;base64,${previewBase64}`;
+			postParent('nortantis:export', { operationId: currentOperationId, projectId: state.sessionId, projectBase64, previewBase64, format: 'jpg' });
 		} catch {
 			setStatus(label('genericError'));
 		}
@@ -851,7 +973,7 @@
 					state.hasFit = false;
 					state.tilePolygons = [];
 					state.topologySessionId = null;
-					setPreview(result.previewBase64, true);
+					setPreview(result.previewBase64, true, () => publishProjectThumbnail(true));
 					void loadTopology();
 					state.dirty = true;
 					setStatus(label('unsaved'));
@@ -896,6 +1018,10 @@
 	}
 
 	document.querySelectorAll('[data-tool-button]').forEach((button) => { button.onclick = () => setTool(button.dataset.toolButton); });
+	byId('backLink').onclick = (event) => {
+		event.preventDefault();
+		postParent('nortantis:back');
+	};
 	byId('createProjectForm').onsubmit = (event) => {
 		event.preventDefault();
 		const name = byId('newProjectName').value.trim();
@@ -903,6 +1029,29 @@
 		postParent('nortantis:project-create', { name });
 		byId('newProjectName').value = '';
 	};
+	byId('confirmProjectDelete').onclick = () => {
+		const project = state.deleteProjectCandidate;
+		if (!project) return;
+		closeDeleteProjectDialog();
+		postParent('nortantis:project-delete', { projectId: project.id });
+	};
+	byId('deleteProjectDialog').addEventListener('close', () => {
+		state.deleteProjectCandidate = null;
+	});
+	byId('renameProjectForm').onsubmit = (event) => {
+		event.preventDefault();
+		const project = state.renameProjectCandidate;
+		const name = byId('renameProjectName').value.trim();
+		if (!project || !name) return;
+		closeRenameProjectDialog();
+		postParent('nortantis:project-rename', { projectId: project.id, name });
+	};
+	document.querySelectorAll('[data-rename-close]').forEach((button) => {
+		button.onclick = () => closeRenameProjectDialog();
+	});
+	byId('renameProjectDialog').addEventListener('close', () => {
+		state.renameProjectCandidate = null;
+	});
 	byId('saveProject').onclick = () => void saveProject();
 	byId('exportProject').onclick = () => void exportProject();
 	byId('generateMap').onclick = () => openGenerationDialog(false);
@@ -1056,6 +1205,9 @@
 		if (event.source !== parent || !event.data || typeof event.data !== 'object') return;
 		if (event.data.type === 'nortantis:host-state') {
 			state.host = { ...state.host, ...event.data.state };
+			const activeProject = state.host.projects.find((project) => project.id === state.sessionId);
+			if (activeProject) state.projectName = activeProject.name;
+			renderHostState();
 			void applyLocale(event.data.locale).then(() => {
 				if (!state.host.projects.length && state.sessionId) clearWorkspace();
 				else if (!state.host.projects.length) emptyWorkspace.hidden = false;
