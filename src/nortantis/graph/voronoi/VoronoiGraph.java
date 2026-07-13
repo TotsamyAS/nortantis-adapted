@@ -12,7 +12,6 @@ import nortantis.platform.Color;
 import nortantis.platform.Painter;
 import nortantis.platform.Transform;
 import nortantis.util.Range;
-import nortantis.util.VisibleForTesting;
 import org.apache.commons.math3.geometry.euclidean.threed.Vector3D;
 
 import java.util.*;
@@ -238,7 +237,6 @@ public abstract class VoronoiGraph
 		p.fillPolygon(x, y);
 	}
 
-	@VisibleForTesting
 	public static void drawTriangleElevation(Painter p, Corner c1, Corner c2, Center center)
 	{
 		Vector3D v1 = new Vector3D(c1.loc.x, c1.loc.y, c1.elevation);
@@ -288,7 +286,6 @@ public abstract class VoronoiGraph
 		return new Vector3D(point.getX() + xChange, point.getY() + yChange, 0.0);
 	}
 
-	@VisibleForTesting
 	public static Vector3D findHighestZ(Vector3D v1, Vector3D v2, Vector3D v3)
 	{
 		if (v1.getZ() > v2.getZ())

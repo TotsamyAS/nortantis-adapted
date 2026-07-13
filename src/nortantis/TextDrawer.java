@@ -7,8 +7,6 @@ import nortantis.geom.Point;
 import nortantis.geom.Rectangle;
 import nortantis.geom.RotatedRectangle;
 import nortantis.graph.voronoi.Center;
-import nortantis.graph.voronoi.Corner;
-import nortantis.graph.voronoi.Edge;
 import nortantis.platform.*;
 import nortantis.util.*;
 import org.apache.commons.math3.exception.NoDataException;
@@ -564,16 +562,6 @@ public class TextDrawer
 		return result;
 	}
 
-	@SuppressWarnings("unused")
-	private Set<Point> extractLocationsFromCorners(Collection<Corner> corners)
-	{
-		Set<Point> result = new TreeSet<Point>();
-		for (Corner c : corners)
-		{
-			result.add(c.loc);
-		}
-		return result;
-	}
 
 	private Set<Point> extractLocationsFromRiver(nortantis.editor.River river)
 	{

@@ -163,7 +163,6 @@ public class NameCompiler
 	 * @param verb
 	 * @return
 	 */
-	@VisibleForTesting
 	public String convertVerbToPresentTense(String verb)
 	{
 		List<Character> vowels = Arrays.asList('a', 'e', 'i', 'o', 'u');

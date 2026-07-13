@@ -44,9 +44,7 @@ import nortantis.platform.PlatformFactory;
 import nortantis.platform.awt.AwtFactory;
 import nortantis.swing.MapEdits;
 import nortantis.swing.translation.Translation;
-import nortantis.util.Assets;
 import nortantis.util.GeometryHelper;
-import nortantis.util.Logger;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
@@ -54,7 +52,6 @@ import org.imgscalr.Scalr.Method;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.PrintStream;
 import java.io.OutputStream;
 import java.io.InputStreamReader;
 import java.net.InetSocketAddress;
@@ -75,11 +72,9 @@ import java.util.PriorityQueue;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.Executors;
 
 public class NortantisRestServer
 {
-	private static final Object EXPORT_STREAM_LOCK = new Object();
 	private static final String BRUSH_LOG_PREFIX = "[nortantis-brush-service]";
 	private static final String BORDERS_LOG_PREFIX = "[nortantis-borders-service]";
 	private static final String REGION_PAINT_LOG_PREFIX = "[nortantis-region-paint-service]";
@@ -106,12 +101,9 @@ public class NortantisRestServer
 		HttpServer server = HttpServer.create(new InetSocketAddress(port), 0);
 		server.createContext("/editor", NortantisRestServer::editor);
 		server.createContext("/health", NortantisRestServer::health);
-		server.createContext("/api/editor/session/open", NortantisRestServer::editorSessionOpen);
 		server.createContext("/api/editor/session/open-stream", NortantisRestServer::editorSessionOpenStream);
 		server.createContext("/api/editor/session/edit", NortantisRestServer::editProject);
-		server.createContext("/api/editor/session/render", NortantisRestServer::editorSessionRender);
 		server.createContext("/api/editor/session/project", NortantisRestServer::editorSessionProject);
-		server.createContext("/api/editor/session/export", NortantisRestServer::editorSessionExport);
 		server.createContext("/api/editor/session/generate-stream", NortantisRestServer::editorSessionGenerateStream);
 		server.createContext("/api/editor/session/region-color", NortantisRestServer::regionColor);
 		server.createContext("/api/editor/session/brush-selection", NortantisRestServer::brushSelection);
@@ -122,16 +114,8 @@ public class NortantisRestServer
 		server.createContext("/api/editor/assets/icons", NortantisRestServer::iconAssets);
 		server.createContext("/api/editor/assets/icon-preview", NortantisRestServer::iconPreview);
 		server.createContext("/api/projects/default", NortantisRestServer::defaultProject);
-		server.createContext("/api/projects/metadata", NortantisRestServer::projectMetadata);
 		server.createContext("/api/projects/export", NortantisRestServer::exportProject);
-		server.createContext("/api/projects/export-stream", NortantisRestServer::exportProjectStream);
-		server.createContext("/api/projects/edit", NortantisRestServer::editProject);
-		server.createContext("/api/projects/region-color", NortantisRestServer::regionColor);
-		server.createContext("/api/projects/text-pick", NortantisRestServer::textPick);
-		server.createContext("/api/projects/brush-selection", NortantisRestServer::brushSelection);
 		server.createContext("/api/assets/icons", NortantisRestServer::iconAssets);
-		server.createContext("/api/assets/icon-preview", NortantisRestServer::iconPreview);
-		server.setExecutor(Executors.newFixedThreadPool(Integer.parseInt(System.getenv().getOrDefault("NORTANTIS_REST_THREADS", "2"))));
 		server.start();
 		System.out.println("Nortantis REST server listening on " + port);
 	}
@@ -180,57 +164,6 @@ public class NortantisRestServer
 			}
 			exchange.getResponseHeaders().set("Cache-Control", "no-store");
 			send(exchange, 200, contentType, input.readAllBytes());
-		}
-	}
-
-	private static void editorSessionOpen(HttpExchange exchange) throws IOException
-	{
-		if (!exchange.getRequestMethod().equals("POST"))
-		{
-			send(exchange, 405, "application/json", "{\"ok\":false}".getBytes(StandardCharsets.UTF_8));
-			return;
-		}
-		Path project = Files.createTempFile("nortantis-editor-open-", MapSettings.fileExtensionWithDot);
-		long startedAt = System.nanoTime();
-		String sessionId = "";
-		try
-		{
-			JSONObject input = readJsonBody(exchange);
-			sessionId = (String) input.get("sessionId");
-			String projectBase64 = (String) input.get("projectBase64");
-			if (sessionId == null || sessionId.isBlank() || projectBase64 == null || projectBase64.isBlank())
-			{
-				throw new IllegalArgumentException("Missing session");
-			}
-			Files.write(project, Base64.getDecoder().decode(projectBase64));
-			if (isToolLoggingEnabled(ToolLog.PROJECTS))
-			{
-				toolLog(ToolLog.PROJECTS, "session-open:start", "sessionId", sessionId, "projectBytes", Files.size(project));
-			}
-			MapSettings settings = new MapSettings(project.toString());
-			Dimension maxDimensions = readMaxDimensions(input);
-			MapParts mapParts = new MapParts();
-			Image image = new MapCreator().createMap(settings, maxDimensions, mapParts);
-			storeEditorSession(sessionId, settings, mapParts, image, maxDimensions);
-			EditorSession session = EDITOR_SESSIONS.get(sessionId);
-			String result = "{\"ok\":true,\"previewBase64\":\"" + imageToBase64(image, ".png") + "\",\"metadata\":" + sessionMetadataJson(session) + "}";
-			if (isToolLoggingEnabled(ToolLog.PROJECTS))
-			{
-				toolLog(ToolLog.PROJECTS, "session-open:success", "sessionId", sessionId, "durationMs", elapsedMs(startedAt), "mapWidth", image.getWidth(), "mapHeight", image.getHeight());
-			}
-			send(exchange, 200, "application/json", result.getBytes(StandardCharsets.UTF_8));
-		}
-		catch (Exception ex)
-		{
-			if (isToolLoggingEnabled(ToolLog.PROJECTS))
-			{
-				toolLog(ToolLog.PROJECTS, "session-open:error", "sessionId", sessionId, "durationMs", elapsedMs(startedAt), "error", ex.toString());
-			}
-			send(exchange, 500, "application/json", ("{\"ok\":false,\"error\":\"" + escape(ex.getMessage()) + "\"}").getBytes(StandardCharsets.UTF_8));
-		}
-		finally
-		{
-			Files.deleteIfExists(project);
 		}
 	}
 
@@ -350,31 +283,6 @@ public class NortantisRestServer
 		finally
 		{
 			Files.deleteIfExists(project);
-		}
-	}
-
-	private static void editorSessionRender(HttpExchange exchange) throws IOException
-	{
-		if (!exchange.getRequestMethod().equals("POST"))
-		{
-			send(exchange, 405, "application/json", "{\"ok\":false}".getBytes(StandardCharsets.UTF_8));
-			return;
-		}
-		try
-		{
-			JSONObject input = readJsonBody(exchange);
-			String sessionId = (String) input.get("sessionId");
-			EditorSession session = sessionId == null ? null : EDITOR_SESSIONS.get(sessionId);
-			if (session == null)
-			{
-				throw new IllegalArgumentException("Missing editor session");
-			}
-			String result = "{\"ok\":true,\"previewBase64\":\"" + imageToBase64(session.map, ".png") + "\",\"metadata\":" + sessionMetadataJson(session) + "}";
-			send(exchange, 200, "application/json", result.getBytes(StandardCharsets.UTF_8));
-		}
-		catch (Exception ex)
-		{
-			send(exchange, 500, "application/json", ("{\"ok\":false,\"error\":\"" + escape(ex.getMessage()) + "\"}").getBytes(StandardCharsets.UTF_8));
 		}
 	}
 
@@ -508,44 +416,6 @@ public class NortantisRestServer
 		}
 	}
 
-	private static void editorSessionExport(HttpExchange exchange) throws IOException
-	{
-		if (!exchange.getRequestMethod().equals("POST"))
-		{
-			send(exchange, 405, "application/json", "{\"ok\":false}".getBytes(StandardCharsets.UTF_8));
-			return;
-		}
-		long startedAt = System.nanoTime();
-		String operationId = "untracked";
-		try
-		{
-			JSONObject input = readJsonBody(exchange);
-			operationId = normalizeOperationId(input.get("operationId"));
-			String sessionId = (String) input.get("sessionId");
-			String format = input.get("format") instanceof String ? ((String) input.get("format")).trim().toLowerCase() : "jpg";
-			EditorSession session = sessionId == null ? null : EDITOR_SESSIONS.get(sessionId);
-			if (session == null)
-			{
-				throw new IllegalArgumentException("Missing editor session");
-			}
-			String extension = "png".equals(format) ? ".png" : ".jpg";
-			String result = "{\"ok\":true,\"imageBase64\":\"" + imageToBase64(session.map, extension) + "\",\"format\":\"" + ("png".equals(format) ? "png" : "jpg") + "\"}";
-			if (isToolLoggingEnabled(ToolLog.SAVE_EXPORT))
-			{
-				toolLog(ToolLog.SAVE_EXPORT, "session-export:success", "operationId", operationId, "projectId", sessionId, "format", format, "durationMs", elapsedMs(startedAt));
-			}
-			send(exchange, 200, "application/json", result.getBytes(StandardCharsets.UTF_8));
-		}
-		catch (Exception ex)
-		{
-			if (isToolLoggingEnabled(ToolLog.SAVE_EXPORT))
-			{
-				toolLog(ToolLog.SAVE_EXPORT, "session-export:error", "operationId", operationId, "durationMs", elapsedMs(startedAt), "errorType", ex.getClass().getSimpleName());
-			}
-			send(exchange, 500, "application/json", ("{\"ok\":false,\"error\":\"" + escape(ex.getMessage()) + "\"}").getBytes(StandardCharsets.UTF_8));
-		}
-	}
-
 	private static void editorSessionGenerateStream(HttpExchange exchange) throws IOException
 	{
 		if (!exchange.getRequestMethod().equals("POST"))
@@ -635,114 +505,6 @@ public class NortantisRestServer
 			Files.deleteIfExists(project);
 		}
 	}
-
-	private static String editorHtml()
-	{
-		return """
-<!doctype html>
-<html lang="ru">
-<head>
-	<meta charset="utf-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<title>Nortantis Web Editor</title>
-	<style>
-		:root{color-scheme:dark;--gold:#d88b35;--wine:#6f241f;--text:#faf9d9;--muted:#e4b279;--line:rgba(216,139,53,.36);--panel:rgba(18,7,5,.76);--panel-strong:rgba(6,0,0,.88);--card:rgba(0,0,0,.24);--field:rgba(255,238,186,.08);--danger:#ffb0a8}
-		*{box-sizing:border-box}body{margin:0;height:100vh;background:radial-gradient(circle at top left,rgba(216,139,53,.16),transparent 34%),linear-gradient(135deg,#160805,#050202);color:var(--text);font:14px/1.35 system-ui,-apple-system,Segoe UI,sans-serif;overflow:hidden}
-		.editor{height:100vh;min-width:0;display:grid;grid-template-columns:minmax(0,1fr) 42px minmax(330px,24vw);grid-template-rows:minmax(0,1fr);overflow:hidden}
-		.stage{position:relative;min-width:0;min-height:0;overflow:hidden;background:rgba(0,0,0,.18)}
-		.canvas{position:absolute;inset:0;overflow:hidden;cursor:crosshair;touch-action:none;outline:none}
-		.canvas.is-panning{cursor:grabbing}
-		.map{position:absolute;left:50%;top:50%;max-width:none;transform-origin:0 0;image-rendering:auto;user-select:none;-webkit-user-drag:none;border:1px solid rgba(216,139,53,.18);box-shadow:0 18px 60px rgba(0,0,0,.45)}
-		.loading{position:absolute;inset:0;display:grid;place-items:center;background:radial-gradient(circle at center,rgba(18,7,5,.88),rgba(5,2,2,.94));z-index:3}
-		.loading-card{width:min(420px,90vw);padding:20px;border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,var(--panel),var(--panel-strong));box-shadow:0 18px 48px rgba(0,0,0,.46)}
-		.bar{height:8px;border:1px solid var(--line);border-radius:999px;background:#100d0a;overflow:hidden}.bar span{display:block;height:100%;width:42%;background:linear-gradient(90deg,var(--gold),#f4c469);animation:pulse 1.1s infinite alternate}
-		@keyframes pulse{from{transform:translateX(-70%)}to{transform:translateX(180%)}}
-		.tool-rail{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:12px;padding:10px 5px;border-left:1px solid var(--line);border-right:1px solid var(--line);background:rgba(0,0,0,.18)}
-		.rail-button{width:32px;height:32px;min-height:32px;padding:0;border:1px solid rgba(216,139,53,.28);border-radius:12px;background:rgba(0,0,0,.18);color:var(--text);font-weight:900;display:grid;place-items:center}
-		.rail-button:hover,.rail-button.active{border-color:rgba(216,139,53,.72);background:rgba(216,139,53,.16);color:var(--gold)}
-		.panel{min-height:0;min-width:0;background:linear-gradient(180deg,var(--panel),var(--panel-strong));display:flex;flex-direction:column}
-		.head{padding:10px;border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center;justify-content:space-between}
-		.head strong{display:block;max-width:100%;font-size:12px;line-height:1.1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.status{color:var(--muted);font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-		.tools{padding:12px;display:grid;gap:14px;overflow:auto}
-		.group{display:grid;gap:12px;padding:0 0 16px;margin:0 0 16px;border-bottom:1px solid rgba(216,139,53,.16)}.group:last-child{border-bottom:0;margin-bottom:0;padding-bottom:0}.group h2{font-size:16px;color:var(--text);margin:0}
-		.panel-view{display:none}.panel-view.active{display:grid}
-		.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-		button{display:inline-flex;min-height:42px;align-items:center;justify-content:center;gap:6px;border:1px solid rgba(216,139,53,.28);border-radius:12px;padding:9px 10px;background:rgba(0,0,0,.18);color:var(--text);font:inherit;font-weight:800;cursor:pointer;transition:border-color .16s ease,background .16s ease,color .16s ease,transform .16s ease}
-		button:hover:not(:disabled),button.active{border-color:rgba(216,139,53,.72);background:rgba(216,139,53,.16);color:var(--gold)}button:active:not(:disabled){transform:translateY(1px)}button.danger{color:var(--danger)}
-		button.land.active{border-color:rgba(197,152,79,.9);background:linear-gradient(180deg,rgba(115,89,43,.34),rgba(76,98,54,.22));color:#f2d28d}
-		button.water.active{border-color:rgba(96,169,201,.85);background:linear-gradient(180deg,rgba(45,103,132,.34),rgba(31,62,96,.24));color:#9ed8f1}
-		label.field{display:grid;gap:6px;color:var(--muted);font-size:12px;font-weight:700}
-		input[type=range]{width:100%;accent-color:var(--gold)}.hint{color:var(--muted);font-size:12px;margin:0}.button-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.full-width{grid-column:1/-1;width:100%}
-		@media(max-width:900px){.editor{grid-template-columns:minmax(0,1fr) 42px minmax(280px,78vw)}}
-	</style>
-</head>
-<body>
-	<div class="editor">
-		<main class="stage">
-			<div id="canvas" class="canvas"><img id="map" class="map" alt=""></div>
-			<div id="loading" class="loading"><div class="loading-card"><strong>Загрузка проекта Nortantis</strong><p class="hint" id="loadingText">Ожидание данных от приложения...</p><div class="bar"><span></span></div></div></div>
-		</main>
-		<nav class="tool-rail" aria-label="Инструменты">
-			<button class="rail-button active" data-panel-button="terrain" aria-label="Суша и море">◐</button>
-			<button class="rail-button" data-panel-button="project" aria-label="Проект">▣</button>
-			<button class="rail-button" data-panel-button="info" aria-label="О сервисе">i</button>
-		</nav>
-		<aside class="panel">
-			<div class="head"><div><strong id="title">Nortantis</strong><div id="status" class="status">Ожидание</div></div></div>
-			<div class="tools">
-				<section class="group panel-view active" data-panel="terrain">
-					<h2>Суша и море</h2>
-					<div class="button-grid"><button id="land" class="land active">Суша</button><button id="water" class="water">Море</button></div>
-					<label class="field">Размер кисти: <span id="radiusLabel">48</span>
-					<input id="radius" type="range" min="8" max="140" value="48">
-					</label>
-					<p class="hint">ЛКМ рисует. СКМ или пробел + движение мыши перемещает холст. Колесо масштабирует.</p>
-				</section>
-				<section class="group panel-view" data-panel="project">
-					<h2>Проект</h2>
-					<div class="button-grid"><button id="save">Сохранить</button><button id="export">Экспорт JPG</button></div>
-					<p class="hint">Сохранение и экспорт идут через основное приложение, чтобы квота хранилища оставалась источником истины.</p>
-				</section>
-				<section class="group panel-view" data-panel="info">
-					<h2>О сервисе</h2>
-					<p class="hint">Этот редактор выполняется внутри Nortantis-сервиса. Основное приложение передаёт проект только при открытии, сохранении и экспорте.</p>
-				</section>
-			</div>
-		</aside>
-	</div>
-	<script>
-		const state={sessionId:null,metadata:null,mode:'land',radius:48,scale:1,panX:0,panY:0,drawing:false,panning:false,space:false,pending:false,queued:null,dirty:false,hasFit:false};
-		const map=document.getElementById('map'),canvas=document.getElementById('canvas'),loading=document.getElementById('loading'),loadingText=document.getElementById('loadingText'),status=document.getElementById('status'),landButton=document.getElementById('land'),waterButton=document.getElementById('water');
-		const setStatus=(text)=>{status.textContent=text};
-		function fit(){if(!map.naturalWidth)return;const r=canvas.getBoundingClientRect();state.scale=Math.min(r.width/map.naturalWidth,r.height/map.naturalHeight)*0.92;state.panX=-map.naturalWidth*state.scale/2;state.panY=-map.naturalHeight*state.scale/2;state.hasFit=true;applyTransform()}
-		function applyTransform(){map.style.transform=`translate(${state.panX}px,${state.panY}px) scale(${state.scale})`}
-		function setPreview(base64,resetView){map.onload=()=>{if(resetView||!state.hasFit)fit();else applyTransform()};map.src='data:image/png;base64,'+base64}
-		function mapPoint(event){const r=map.getBoundingClientRect();return{x:(event.clientX-r.left)/r.width*state.metadata.width,y:(event.clientY-r.top)/r.height*state.metadata.height}}
-		async function postJson(url,body){const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const json=await res.json();if(!json.ok)throw new Error(json.error||'request failed');return json}
-		async function openProject(data){state.sessionId=data.projectId;state.hasFit=false;document.getElementById('title').textContent=data.name||'Nortantis';loading.style.display='grid';loadingText.textContent='Создание редакторской сессии...';setStatus('Открытие');const json=await postJson('/api/editor/session/open',{sessionId:state.sessionId,projectBase64:data.projectBase64,previewMaxDimensionPixels:data.previewMaxDimensionPixels||1536});state.metadata=json.metadata;setPreview(json.previewBase64,true);loading.style.display='none';setStatus('Готово')}
-		async function editAt(point){const command={type:'terrain.brush',mode:state.mode,x:point.x,y:point.y,radius:state.radius};if(state.pending){state.queued=command;return}state.pending=true;try{const json=await postJson('/api/editor/session/edit',{sessionId:state.sessionId,command,returnPreview:true,omitProjectBytes:true});if(json.metadata)state.metadata=json.metadata;if(json.previewBase64)setPreview(json.previewBase64,false);state.dirty=true;setStatus('Есть несохранённые изменения')}catch(e){setStatus('Ошибка: '+e.message)}finally{state.pending=false;if(state.queued){const next=state.queued;state.queued=null;await editAt({x:next.x,y:next.y})}}}
-		async function currentProject(){const json=await postJson('/api/editor/session/project',{sessionId:state.sessionId});return json.projectBase64}
-		landButton.onclick=()=>{state.mode='land';landButton.classList.add('active');waterButton.classList.remove('active')};
-		waterButton.onclick=()=>{state.mode='water';waterButton.classList.add('active');landButton.classList.remove('active')};
-		document.getElementById('radius').oninput=(e)=>{state.radius=Number(e.target.value);document.getElementById('radiusLabel').textContent=String(state.radius)};
-		document.getElementById('save').onclick=async()=>{setStatus('Сохранение...');const projectBase64=await currentProject();parent.postMessage({type:'nortantis:save',projectId:state.sessionId,projectBase64},'*')};
-		document.getElementById('export').onclick=async()=>{setStatus('Экспорт...');const projectBase64=await currentProject();parent.postMessage({type:'nortantis:export',projectId:state.sessionId,projectBase64,format:'jpg'},'*')};
-		document.querySelectorAll('[data-panel-button]').forEach(button=>button.onclick=()=>{const key=button.dataset.panelButton;document.querySelectorAll('[data-panel-button]').forEach(item=>item.classList.toggle('active',item===button));document.querySelectorAll('[data-panel]').forEach(panel=>panel.classList.toggle('active',panel.dataset.panel===key))});
-		canvas.addEventListener('pointerdown',e=>{if(!state.metadata)return;canvas.setPointerCapture(e.pointerId);if(e.button===1||state.space){state.panning=true;canvas.classList.add('is-panning');state.lastX=e.clientX;state.lastY=e.clientY;return}if(e.button===0){state.drawing=true;editAt(mapPoint(e))}});
-		canvas.addEventListener('pointermove',e=>{if(state.panning){state.panX+=e.clientX-state.lastX;state.panY+=e.clientY-state.lastY;state.lastX=e.clientX;state.lastY=e.clientY;applyTransform();return}if(state.drawing)editAt(mapPoint(e))});
-		canvas.addEventListener('pointerup',()=>{state.drawing=false;state.panning=false;canvas.classList.remove('is-panning')});
-		canvas.addEventListener('wheel',e=>{e.preventDefault();const before=mapPoint(e);state.scale*=e.deltaY<0?1.1:0.9;applyTransform();const after=mapPoint(e);const r=map.getBoundingClientRect();state.panX+=(after.x-before.x)/state.metadata.width*r.width;state.panY+=(after.y-before.y)/state.metadata.height*r.height;applyTransform()},{passive:false});
-		window.addEventListener('keydown',e=>{if(e.code==='Space')state.space=true;const step=e.shiftKey?72:32;const code=e.code.toLowerCase(),key=(e.key||'').toLowerCase();if(code==='arrowup'||code==='keyw'||key==='w'||key==='ц'){state.panY+=step;applyTransform()}if(code==='arrowdown'||code==='keys'||key==='s'||key==='ы'){state.panY-=step;applyTransform()}if(code==='arrowleft'||code==='keya'||key==='a'||key==='ф'){state.panX+=step;applyTransform()}if(code==='arrowright'||code==='keyd'||key==='d'||key==='в'){state.panX-=step;applyTransform()}});
-		window.addEventListener('keyup',e=>{if(e.code==='Space')state.space=false});
-		window.addEventListener('resize',()=>{if(state.hasFit)applyTransform();else fit()});
-		window.addEventListener('message',e=>{if(e.data?.type==='nortantis:open')openProject(e.data)});
-		parent.postMessage({type:'nortantis:ready'},'*');
-	</script>
-</body>
-</html>
-		""";
-	}
-
 	private static void health(HttpExchange exchange) throws IOException
 	{
 		if (!exchange.getRequestMethod().equals("GET"))
@@ -991,91 +753,6 @@ public class NortantisRestServer
 		}
 	}
 
-	private static void projectMetadata(HttpExchange exchange) throws IOException
-	{
-		if (!exchange.getRequestMethod().equals("POST"))
-		{
-			send(exchange, 405, "application/json", "{\"ok\":false}".getBytes());
-			return;
-		}
-		Path project = Files.createTempFile("nortantis-project-", MapSettings.fileExtensionWithDot);
-		try
-		{
-			Files.write(project, exchange.getRequestBody().readAllBytes());
-			MapSettings settings = new MapSettings(project.toString());
-			String sessionId = readSessionId(exchange);
-			EditorSession session = sessionId == null ? null : EDITOR_SESSIONS.get(sessionId);
-			String body = session != null ? metadataJson(session) : metadataJson(settings);
-			send(exchange, 200, "application/json", body.getBytes(StandardCharsets.UTF_8));
-		}
-		catch (Exception ex)
-		{
-			send(exchange, 500, "application/json", ("{\"ok\":false,\"error\":\"" + escape(ex.getMessage()) + "\"}").getBytes());
-		}
-		finally
-		{
-			Files.deleteIfExists(project);
-		}
-	}
-
-	private static void exportProjectStream(HttpExchange exchange) throws IOException
-	{
-		if (!exchange.getRequestMethod().equals("POST"))
-		{
-			send(exchange, 405, "application/json", "{\"ok\":false}".getBytes());
-			return;
-		}
-		exchange.getResponseHeaders().set("Content-Type", "text/event-stream; charset=utf-8");
-		exchange.getResponseHeaders().set("Cache-Control", "no-store");
-		exchange.sendResponseHeaders(200, 0);
-		try (OutputStream output = exchange.getResponseBody())
-		{
-			SseEmitter emitter = new SseEmitter(output);
-			synchronized (EXPORT_STREAM_LOCK)
-			{
-				Path project = Files.createTempFile("nortantis-project-", MapSettings.fileExtensionWithDot);
-				Path image = Files.createTempFile("nortantis-export-", ".png");
-				Dimension maxDimensions = readMaxDimensions(exchange);
-				String sessionId = readSessionId(exchange);
-				PrintStream originalOut = System.out;
-				PrintStream forwardingOut = new PrintStream(new PhaseForwardingOutputStream(originalOut, emitter), true, StandardCharsets.UTF_8);
-				try
-				{
-					Files.write(project, exchange.getRequestBody().readAllBytes());
-					System.setOut(forwardingOut);
-					MapSettings settings = new MapSettings(project.toString());
-					String title = readMapTitle(exchange);
-					if (title != null && !title.isBlank())
-					{
-						NameCreator.forcedTitle.set(title);
-					}
-					ImageCache.clear();
-					MapParts mapParts = sessionId == null ? null : new MapParts();
-					Image result = new MapCreator().createMap(settings, maxDimensions, mapParts);
-					if (sessionId != null)
-					{
-						storeEditorSession(sessionId, settings, mapParts, result, maxDimensions);
-					}
-					ImageHelper.getInstance().write(result, image.toString());
-					ImageCache.clear();
-					emitter.send("image", Base64.getEncoder().encodeToString(Files.readAllBytes(image)));
-					emitter.send("done", "{}");
-				}
-				catch (Exception ex)
-				{
-					emitter.send("error", "{\"error\":\"" + escape(ex.getMessage()) + "\"}");
-				}
-				finally
-				{
-					NameCreator.forcedTitle.remove();
-					System.setOut(originalOut);
-					forwardingOut.flush();
-					Files.deleteIfExists(project);
-					Files.deleteIfExists(image);
-				}
-			}
-		}
-	}
 
 	private static void editProject(HttpExchange exchange) throws IOException
 	{
@@ -1591,17 +1268,6 @@ public class NortantisRestServer
 	{
 		Object value = input.get("returnPreview");
 		return !(value instanceof Boolean) || ((Boolean) value);
-	}
-
-	private static String metadataJson(MapSettings settings)
-	{
-		return "{\"ok\":true,\"width\":" + settings.generatedWidth + ",\"height\":" + settings.generatedHeight + ",\"resolution\":" + settings.resolution
-				+ ",\"borderPadding\":" + borderPadding(settings) + ",\"capabilities\":{\"text\":true,\"landWaterBrush\":true,\"jpgExport\":true,\"icons\":true,\"roads\":true,\"regions\":true}}";
-	}
-
-	private static String metadataJson(EditorSession session)
-	{
-		return "{\"ok\":true," + sessionMetadataFieldsJson(session) + "}";
 	}
 
 	private static String sessionMetadataJson(EditorSession session)
@@ -2663,23 +2329,6 @@ public class NortantisRestServer
 		return largest + 1;
 	}
 
-	private static Integer findNeighborRegionId(MapSettings settings, WorldGraph graph, Center center, Integer currentRegionId)
-	{
-		for (Center neighbor : center.neighbors)
-		{
-			Integer neighborRegionId = getCenterRegionId(settings, neighbor);
-			if (neighborRegionId != null && !neighborRegionId.equals(currentRegionId))
-			{
-				return neighborRegionId;
-			}
-		}
-		return settings.edits.centerEdits.values().stream()
-				.filter(edit -> edit.regionId != null && !edit.regionId.equals(currentRegionId) && edit.index >= 0 && edit.index < graph.centers.size())
-				.min((left, right) -> Double.compare(graph.centers.get(left.index).loc.distanceTo(center.loc), graph.centers.get(right.index).loc.distanceTo(center.loc)))
-				.map(edit -> edit.regionId)
-				.orElse(null);
-	}
-
 	private static List<Point> readLineGraphPoints(MapSettings settings, JSONObject command, boolean sessionCoordinates, Integer sessionBorderPadding)
 	{
 		JSONArray values = (JSONArray) command.get("points");
@@ -2693,28 +2342,6 @@ public class NortantisRestServer
 			if (value instanceof JSONObject)
 			{
 				result.add(readGraphPointScaled(settings, (JSONObject) value, sessionCoordinates, sessionBorderPadding));
-			}
-		}
-		if (result.size() < 2)
-		{
-			throw new IllegalArgumentException("Boundary line requires at least two valid points");
-		}
-		return result;
-	}
-
-	private static List<Point> readLineRiPoints(MapSettings settings, JSONObject command, boolean sessionCoordinates, Integer sessionBorderPadding)
-	{
-		JSONArray values = (JSONArray) command.get("points");
-		if (values == null || values.size() < 2)
-		{
-			throw new IllegalArgumentException("Boundary line requires at least two points");
-		}
-		List<Point> result = new ArrayList<>();
-		for (Object value : values)
-		{
-			if (value instanceof JSONObject)
-			{
-				result.add(readGraphPointRi(settings, (JSONObject) value, sessionCoordinates, sessionBorderPadding));
 			}
 		}
 		if (result.size() < 2)
@@ -3361,36 +2988,6 @@ public class NortantisRestServer
 		return result;
 	}
 
-	private static Set<Edge> findEdgesNearLine(WorldGraph graph, List<Point> line, double radius)
-	{
-		Set<Edge> crossing = new HashSet<>();
-		Set<Edge> nearby = new HashSet<>();
-		double fallbackRadius = Math.max(2.0, Math.min(radius * 0.25, 8.0));
-		for (Edge edge : graph.edges)
-		{
-			if (edge.d0 == null || edge.d1 == null || edge.v0 == null || edge.v1 == null)
-			{
-				continue;
-			}
-			for (int index = 0; index < line.size() - 1; index++)
-			{
-				Point start = line.get(index);
-				Point end = line.get(index + 1);
-				if (linesIntersect(edge.v0.loc, edge.v1.loc, start, end))
-				{
-					crossing.add(edge);
-					break;
-				}
-				if (segmentsClose(edge.v0.loc, edge.v1.loc, start, end, fallbackRadius))
-				{
-					nearby.add(edge);
-					break;
-				}
-			}
-		}
-		return crossing.isEmpty() ? nearby : crossing;
-	}
-
 	private static Set<Edge> findNativeRegionEdgesNearLine(MapSettings settings, WorldGraph graph, List<Point> line, double radius)
 	{
 		Set<Edge> result = new HashSet<>();
@@ -3410,37 +3007,6 @@ public class NortantisRestServer
 			if (lineTouchesSegment(line, edge.v0.loc, edge.v1.loc, hitRadius) || lineTouchesSegment(line, edge.d0.loc, edge.d1.loc, hitRadius))
 			{
 				result.add(edge);
-			}
-		}
-		return result;
-	}
-
-	private static Set<Center> centersOnOneSideOfBoundaryLine(MapSettings settings, Set<Edge> cutEdges, List<Point> line)
-	{
-		Set<Center> result = new HashSet<>();
-		for (Edge edge : cutEdges)
-		{
-			if (edge.d0 == null || edge.d1 == null)
-			{
-				continue;
-			}
-			Integer leftRegion = getCenterRegionId(settings, edge.d0);
-			Integer rightRegion = getCenterRegionId(settings, edge.d1);
-			if (leftRegion == null || !leftRegion.equals(rightRegion))
-			{
-				continue;
-			}
-			double side0 = signedDistanceToNearestLineSegment(edge.d0.loc, line);
-			double side1 = signedDistanceToNearestLineSegment(edge.d1.loc, line);
-			double distance0 = distanceToLine(edge.d0.loc, line);
-			double distance1 = distanceToLine(edge.d1.loc, line);
-			if (Math.signum(side0) == Math.signum(side1))
-			{
-				result.add(distance0 <= distance1 ? edge.d0 : edge.d1);
-			}
-			else
-			{
-				result.add(side0 >= side1 ? edge.d0 : edge.d1);
 			}
 		}
 		return result;
@@ -3854,44 +3420,6 @@ public class NortantisRestServer
 			components++;
 		}
 		return components;
-	}
-
-	private static List<Set<Center>> findSplitSides(MapSettings settings, WorldGraph graph, Set<Edge> cutEdges)
-	{
-		List<Set<Center>> result = new ArrayList<>();
-		Set<Center> visited = new HashSet<>();
-		for (Edge edge : cutEdges)
-		{
-			if (edge.d0 == null || edge.d1 == null)
-			{
-				continue;
-			}
-			Integer regionId = getCenterRegionId(settings, edge.d0);
-			if (regionId == null || !regionId.equals(getCenterRegionId(settings, edge.d1)))
-			{
-				continue;
-			}
-			Set<Center> left = collectRegionComponent(settings, edge.d0, regionId, cutEdges);
-			Set<Center> right = collectRegionComponent(settings, edge.d1, regionId, cutEdges);
-			if (!left.isEmpty() && !right.isEmpty() && !left.equals(right))
-			{
-				result.add(left.size() <= right.size() ? left : right);
-			}
-			visited.addAll(left);
-			visited.addAll(right);
-		}
-		result.sort((left, right) -> Integer.compare(right.size(), left.size()));
-		return result;
-	}
-
-	private static List<Integer> splitSideSizes(List<Set<Center>> splitSides)
-	{
-		List<Integer> result = new ArrayList<>();
-		for (Set<Center> side : splitSides)
-		{
-			result.add(side.size());
-		}
-		return result;
 	}
 
 	private static Set<Center> collectRegionComponent(MapSettings settings, Center start, Integer regionId, Set<Edge> blockedEdges)
@@ -4733,47 +4261,4 @@ public class NortantisRestServer
 		return null;
 	}
 
-	private static class PhaseForwardingOutputStream extends OutputStream
-	{
-		private final PrintStream original;
-		private final SseEmitter emitter;
-		private final StringBuilder line = new StringBuilder();
-
-		PhaseForwardingOutputStream(PrintStream original, SseEmitter emitter)
-		{
-			this.original = original;
-			this.emitter = emitter;
-		}
-
-		@Override
-		public void write(int value) throws IOException
-		{
-			original.write(value);
-			if (value == '\n')
-			{
-				flushLine();
-			}
-			else if (value != '\r')
-			{
-				line.append((char) value);
-			}
-		}
-
-		@Override
-		public void flush() throws IOException
-		{
-			original.flush();
-			flushLine();
-		}
-
-		private void flushLine() throws IOException
-		{
-			String message = line.toString().trim();
-			line.setLength(0);
-			if (!message.isEmpty())
-			{
-				emitter.send("phase", "{\"line\":\"" + escape(message) + "\"}");
-			}
-		}
-	}
 }

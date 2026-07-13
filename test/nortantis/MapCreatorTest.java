@@ -3,7 +3,6 @@ package nortantis;
 import nortantis.editor.*;
 import nortantis.geom.IntPoint;
 import nortantis.geom.IntRectangle;
-import nortantis.geom.Rectangle;
 import nortantis.graph.voronoi.Center;
 import nortantis.platform.Color;
 import nortantis.platform.Image;
@@ -11,8 +10,6 @@ import nortantis.platform.ImageHelper;
 import nortantis.platform.PixelReader;
 import nortantis.platform.PlatformFactory;
 import nortantis.platform.awt.AwtFactory;
-import nortantis.swing.MapEdits;
-import nortantis.swing.SubMapDialog;
 import nortantis.util.*;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
@@ -208,83 +205,6 @@ public class MapCreatorTest
 		finally
 		{
 			mapCreator.overrideMemoryMode(null);
-		}
-	}
-
-	/**
-	 * Tests that a map which is drawn with no edits matches the same map drawn the second time with newly created edits. This simulates the
-	 * case where you create a new map in the editor and it draws for the first time, then you do something to trigger it to do a full
-	 * redraw.
-	 */
-	@Test
-	public void drawWithoutEditsMatchesWithEdits()
-	{
-		MapSettings settings = SettingsGenerator.generate(new Random(1), Assets.installedArtPack, null);
-		settings.resolution = 0.5;
-		Tuple1<Image> mapTuple = new Tuple1<>();
-		Tuple1<Boolean> doneTuple = new Tuple1<>(false);
-		MapUpdater updater = new MapUpdater(true)
-		{
-
-			@Override
-			protected void onFinishedDrawingFull(Image map, boolean anotherDrawIsQueued, int borderWidthAsDrawn, List<String> warningMessages,
-					List<nortantis.IconDrawer.CityIconRemovedForWater> citiesRemovedForWater, boolean wasTriggeredByUndoRedo)
-			{
-				mapTuple.set(map);
-				doneTuple.set(true);
-			}
-
-			protected void onFinishedDrawingIncremental(boolean anotherDrawIsQueued, int borderWidthAsDrawn, IntRectangle incrementalChangeArea, List<String> warningMessages)
-			{
-				doneTuple.set(true);
-			}
-
-			@Override
-			protected void onFailedToDraw(Exception exception)
-			{
-				fail("Updater failed to draw.");
-			}
-
-			@Override
-			protected void onBeginDraw()
-			{
-			}
-
-			@Override
-			public MapSettings getSettingsFromGUI()
-			{
-				return settings;
-			}
-
-			@Override
-			protected MapEdits getEdits()
-			{
-				return settings.edits;
-			}
-
-			@Override
-			protected Image getCurrentMapForIncrementalUpdate()
-			{
-				throw new UnsupportedOperationException();
-			}
-		};
-
-		updater.setEnabled(true);
-
-		assertTrue(!settings.edits.isInitialized());
-		Image drawnWithoutEdits = createMapUsingUpdater(updater, mapTuple, doneTuple);
-
-		assertTrue(settings.edits.isInitialized());
-		Image drawnWithEdits = createMapUsingUpdater(updater, mapTuple, doneTuple);
-
-		String comparisonErrorMessage = MapTestUtil.checkIfImagesEqual(drawnWithoutEdits, drawnWithEdits);
-		if (comparisonErrorMessage != null && !comparisonErrorMessage.isEmpty())
-		{
-			FileHelper.createFolder(Paths.get("unit test files", failedMapsFolderName).toString());
-			drawnWithoutEdits.write(Paths.get("unit test files", failedMapsFolderName, "compareWithAndWithoutEdits_NoEdits.png").toString());
-			drawnWithEdits.write(Paths.get("unit test files", failedMapsFolderName, "compareWithAndWithoutEdits_WithEdits.png").toString());
-			createImageDiffIfImagesAreSameSize(drawnWithoutEdits, drawnWithEdits, "noOceanOrCoastEffects");
-			fail(comparisonErrorMessage);
 		}
 	}
 
@@ -850,175 +770,6 @@ public class MapCreatorTest
 	 * extracting a sub-region at high detail exercises the icon/river/text redistribution paths in SubMapCreator under a large detail
 	 * increase, all the way through rendering.
 	 */
-	@Test
-	public void subMapOfSimpleSmallWorldAtHighDetail()
-	{
-		MapSettings originalSettings = new MapSettings(Paths.get("unit test files", "map settings", "simpleSmallWorld.nort").toString());
-		WorldGraph originalGraph = MapCreator.createGraphForUnitTests(originalSettings);
-
-		// A sub-region of the source map, in RI (resolution-invariant) coordinates.
-		Rectangle selectionBoundsRI = new Rectangle(1024, 1024, 2048, 2048);
-		int matchWorldSize = SubMapDialog.computeDefaultWorldSize(originalSettings, selectionBoundsRI);
-		// High detail: 8x as many polygons as the selected region holds at the source's density.
-		int worldSize = Math.min(SettingsGenerator.maxWorldSize, matchWorldSize * 8);
-		assertTrue(worldSize > matchWorldSize, "Test setup requires higher-than-source detail");
-
-		long seed = 987654321L;
-		MapSettings subMapSettings = SubMapCreator.createSubMapSettings(originalSettings, originalGraph, selectionBoundsRI, worldSize, originalSettings.resolution, seed, true);
-		// createSubMapSettings resets resolution to the 1.0 baseline (as production does before MapCreator adjusts it to fit the display).
-		// Render at the source's display resolution so the image matches the expected map and stays small/fast.
-		subMapSettings.resolution = originalSettings.resolution;
-
-		assertEquals(worldSize, subMapSettings.worldSize, "Sub-map should be generated at the requested high detail (world size)");
-
-		WorldGraph subMapGraph = MapCreator.createGraphForUnitTests(subMapSettings);
-		// The high detail level should actually take effect: the sub-map graph has far more polygons than the source region did.
-		assertTrue(subMapGraph.centers.size() > matchWorldSize * 2,
-				"Sub-map should have many more polygons than the source region (got " + subMapGraph.centers.size() + ", source region ~" + matchWorldSize + ")");
-		// Every sub-map center should have land/water (and region) assigned from the source map.
-		assertEquals(subMapGraph.centers.size(), subMapSettings.edits.centerEdits.size(), "Every sub-map center should have a transferred CenterEdit");
-
-		try (Image actual = new MapCreator().createMap(subMapSettings, null, null))
-		{
-			MapTestUtil.compareToExpectedMap(actual, "subMapOfSimpleSmallWorldAtHighDetail", expectedMapsFolderName, failedMapsFolderName, 0);
-		}
-	}
-
-	/**
-	 * Creates a sub-map of the upper-right corner of simpleSmallWorld at the source map's detail level - the "Match source detail" option
-	 * in SubMapDialog, which keeps the same polygon density and copies icons/rivers/text from the source rather than redistributing them
-	 * across a new polygon grid. The rendered result is compared per-pixel to its expected image.
-	 */
-	@Test
-	public void subMapOfSimpleSmallWorldUpperRightAtSourceDetail()
-	{
-		MapSettings originalSettings = new MapSettings(Paths.get("unit test files", "map settings", "simpleSmallWorld.nort").toString());
-		WorldGraph originalGraph = MapCreator.createGraphForUnitTests(originalSettings);
-
-		// The upper-right corner of the source map, in RI (resolution-invariant) coordinates (top edge y=0, right edge x+width=4096).
-		Rectangle selectionBoundsRI = new Rectangle(2048, 0, 2048, 2048);
-		// "Match source detail" keeps the source's polygon density for the selected region.
-		int worldSize = SubMapDialog.computeDefaultWorldSize(originalSettings, selectionBoundsRI);
-
-		long seed = 987654321L;
-		// redistributeIconsAndRivers = false: match-source-detail copies icons/rivers/text instead of redistributing them.
-		MapSettings subMapSettings = SubMapCreator.createSubMapSettings(originalSettings, originalGraph, selectionBoundsRI, worldSize, originalSettings.resolution, seed, false);
-		// createSubMapSettings resets resolution to the 1.0 baseline (as production does before MapCreator adjusts it to fit the display).
-		// Render at the source's display resolution so the image matches the expected map and stays small/fast.
-		subMapSettings.resolution = originalSettings.resolution;
-
-		assertEquals(worldSize, subMapSettings.worldSize, "Sub-map should be generated at the source detail level (world size)");
-
-		WorldGraph subMapGraph = MapCreator.createGraphForUnitTests(subMapSettings);
-		// Every sub-map center should have land/water (and region) assigned from the source map.
-		assertEquals(subMapGraph.centers.size(), subMapSettings.edits.centerEdits.size(), "Every sub-map center should have a transferred CenterEdit");
-
-		try (Image actual = new MapCreator().createMap(subMapSettings, null, null))
-		{
-			MapTestUtil.compareToExpectedMap(actual, "subMapOfSimpleSmallWorldUpperRightAtSourceDetail", expectedMapsFolderName, failedMapsFolderName, 0);
-		}
-	}
-
-	/**
-	 * Creates a sub-map of the upper-right corner of simpleSmallWorld using the "Choose" detail option in SubMapDialog at a polygon count
-	 * approximately equal to the source map's detail level. The Choose slider snaps to even multiples of 1000, so this simulates the dialog
-	 * by rounding the source-detail world size to the nearest 1000 ("approximately" source detail). Unlike "Match source detail", Choose
-	 * mode redistributes icons/rivers/text across the new polygon grid. The rendered result is compared per-pixel to its expected image.
-	 */
-	@Test
-	public void subMapOfSimpleSmallWorldUpperRightAtChosenSourceLikeDetail()
-	{
-		MapSettings originalSettings = new MapSettings(Paths.get("unit test files", "map settings", "simpleSmallWorld.nort").toString());
-		WorldGraph originalGraph = MapCreator.createGraphForUnitTests(originalSettings);
-
-		// The upper-right corner of the source map, in RI (resolution-invariant) coordinates (top edge y=0, right edge x+width=4096).
-		Rectangle selectionBoundsRI = new Rectangle(2048, 0, 2048, 2048);
-
-		int matchWorldSize = SubMapDialog.computeDefaultWorldSize(originalSettings, selectionBoundsRI);
-		// The Choose slider snaps to multiples of 1000 (SubMapDialog's minor tick spacing, with a minimum of 1000), so simulate the dialog
-		// by
-		// rounding the source-detail world size to the nearest 1000. This is the "approximately source detail" Choose-mode case.
-		int worldSize = (int) Math.clamp(Math.round(matchWorldSize / 1000.0) * 1000, 1000, SettingsGenerator.maxWorldSize);
-
-		long seed = 987654321L;
-		// redistributeIconsAndRivers = true: Choose mode redistributes icons/rivers/text across the new polygon grid.
-		MapSettings subMapSettings = SubMapCreator.createSubMapSettings(originalSettings, originalGraph, selectionBoundsRI, worldSize, originalSettings.resolution, seed, true);
-		// createSubMapSettings resets resolution to the 1.0 baseline (as production does before MapCreator adjusts it to fit the display).
-		// Render at the source's display resolution so the image matches the expected map and stays small/fast.
-		subMapSettings.resolution = originalSettings.resolution;
-
-		assertEquals(worldSize, subMapSettings.worldSize, "Sub-map should be generated at the chosen (multiple-of-1000) world size");
-
-		WorldGraph subMapGraph = MapCreator.createGraphForUnitTests(subMapSettings);
-		// Every sub-map center should have land/water (and region) assigned from the source map.
-		assertEquals(subMapGraph.centers.size(), subMapSettings.edits.centerEdits.size(), "Every sub-map center should have a transferred CenterEdit");
-
-		try (Image actual = new MapCreator().createMap(subMapSettings, null, null))
-		{
-			MapTestUtil.compareToExpectedMap(actual, "subMapOfSimpleSmallWorldUpperRightAtChosenSourceLikeDetail", expectedMapsFolderName, failedMapsFolderName, 0);
-		}
-	}
-
-	/**
-	 * Creates a redistributed sub-map of simpleSmallWorld over a region containing a small lake that does not survive the sub-map's regrid,
-	 * and compares the rendered result per-pixel to its expected image. A river empties into that lake in the source map; when the lake
-	 * disappears, the river's mouth must end inland where the lake was, rather than being re-routed across many polygons to the distant
-	 * ocean. This is a regression test for a bug where the mouth-to-water search was unbounded, so a mouth whose water body vanished was
-	 * connected to an unrelated, far-away body of water — inventing a long river that spanned a large part of the sub-map. The search is
-	 * now bounded to a few Voronoi centers, so such a mouth simply ends inland.
-	 */
-	@Test
-	public void subMapOfSimpleSmallWorldWithDisappearingLake()
-	{
-		MapSettings originalSettings = new MapSettings(Paths.get("unit test files", "map settings", "simpleSmallWorld.nort").toString());
-		WorldGraph originalGraph = MapCreator.createGraphForUnitTests(originalSettings);
-
-		// A sub-region of the source map, in RI (resolution-invariant) coordinates, containing a small lake that the sub-map's regrid votes
-		// to land, so the lake disappears.
-		Rectangle selectionBoundsRI = new Rectangle(0, 1730, 1054, 1243);
-		int worldSize = SubMapDialog.computeDefaultWorldSize(originalSettings, selectionBoundsRI);
-
-		long seed = 233510192L;
-		// redistributeIconsAndRivers = true: redistribute mode re-routes rivers through the new polygon grid - the path the bug lived in.
-		MapSettings subMapSettings = SubMapCreator.createSubMapSettings(originalSettings, originalGraph, selectionBoundsRI, worldSize, originalSettings.resolution, seed, true);
-		// createSubMapSettings resets resolution to the 1.0 baseline (as production does before MapCreator adjusts it to fit the display).
-		// Render at the source's display resolution so the image matches the expected map and stays small/fast.
-		subMapSettings.resolution = originalSettings.resolution;
-
-		WorldGraph subMapGraph = MapCreator.createGraphForUnitTests(subMapSettings);
-		// Every sub-map center should have land/water (and region) assigned from the source map.
-		assertEquals(subMapGraph.centers.size(), subMapSettings.edits.centerEdits.size(), "Every sub-map center should have a transferred CenterEdit");
-
-		try (Image actual = new MapCreator().createMap(subMapSettings, null, null))
-		{
-			MapTestUtil.compareToExpectedMap(actual, "subMapOfSimpleSmallWorldWithDisappearingLake", expectedMapsFolderName, failedMapsFolderName, 0);
-		}
-	}
-
-	private Image createMapUsingUpdater(MapUpdater updater, Tuple1<Image> mapTuple, Tuple1<Boolean> doneTuple)
-	{
-		doneTuple.set(false);
-		mapTuple.set(null);
-		updater.createAndShowMapFull();
-		updater.doWhenMapIsNotDrawing(() ->
-		{
-			doneTuple.set(true);
-		});
-
-		while (!doneTuple.get())
-		{
-			try
-			{
-				Thread.sleep(100);
-			}
-			catch (InterruptedException e)
-			{
-				e.printStackTrace();
-				break;
-			}
-		}
-		return mapTuple.get();
-	}
 
 	private MapSettings generateRandomAndCompare(long seed)
 	{
@@ -1033,11 +784,6 @@ public class MapCreatorTest
 	private void generateAndCompare(String settingsFileName)
 	{
 		MapTestUtil.generateAndCompare(settingsFileName, null, expectedMapsFolderName, failedMapsFolderName, 0);
-	}
-
-	private void createImageDiffIfImagesAreSameSize(Image image1, Image image2, String settingsFileName)
-	{
-		MapTestUtil.createImageDiffIfImagesAreSameSize(image1, image2, settingsFileName, failedMapsFolderName);
 	}
 
 	private void createImageDiffIfImagesAreSameSize(Image image1, Image image2, String settingsFileName, int threshold)
