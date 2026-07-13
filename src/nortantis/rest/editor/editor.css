@@ -179,17 +179,21 @@ svg:not(.map-overlay) {
 	vector-effect: non-scaling-stroke;
 }
 .map-overlay .brush-edge-internal,
-.map-overlay .brush-edge-boundary {
+.map-overlay .brush-edge-boundary,
+.map-overlay .path-edge-internal,
+.map-overlay .path-edge-boundary {
 	fill: none;
 	stroke-linecap: round;
 	stroke-linejoin: round;
 	vector-effect: non-scaling-stroke;
 }
-.map-overlay .brush-edge-internal {
+.map-overlay .brush-edge-internal,
+.map-overlay .path-edge-internal {
 	stroke: rgba(255, 233, 169, 0.42);
 	stroke-width: 1;
 }
-.map-overlay .brush-edge-boundary {
+.map-overlay .brush-edge-boundary,
+.map-overlay .path-edge-boundary {
 	stroke: rgba(255, 233, 169, 0.96);
 	stroke-width: 2.25;
 	filter: drop-shadow(0 0 2px rgba(4, 1, 1, 0.9));
@@ -425,6 +429,27 @@ input[type='color'] {
 	padding: 3px;
 	cursor: pointer;
 }
+.region-palette {
+	display: grid;
+	grid-template-columns: repeat(8, minmax(0, 1fr));
+	gap: 6px;
+}
+.region-color-swatch {
+	position: relative;
+	width: 100%;
+	aspect-ratio: 1;
+	min-height: 24px;
+	padding: 0;
+	border: 1px solid rgba(255, 233, 169, 0.36);
+	border-radius: 5px;
+	background: var(--swatch-color);
+	cursor: pointer;
+}
+.region-color-swatch:hover,
+.region-color-swatch.active {
+	border-color: var(--vellum);
+	box-shadow: 0 0 0 2px rgba(216, 139, 53, 0.42);
+}
 input[type='range'] {
 	min-height: auto;
 	padding: 0;
@@ -470,6 +495,7 @@ input[type='range'] {
 	transform: translateY(2px) scale(0.98);
 }
 .ui-button.primary,
+.ui-button.active,
 .segmented button.active {
 	color: var(--vellum);
 	border-color: var(--gold);

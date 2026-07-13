@@ -107,6 +107,7 @@ public class NortantisRestServer
 		server.createContext("/editor", NortantisRestServer::editor);
 		server.createContext("/health", NortantisRestServer::health);
 		server.createContext("/api/editor/session/open", NortantisRestServer::editorSessionOpen);
+		server.createContext("/api/editor/session/open-stream", NortantisRestServer::editorSessionOpenStream);
 		server.createContext("/api/editor/session/edit", NortantisRestServer::editProject);
 		server.createContext("/api/editor/session/render", NortantisRestServer::editorSessionRender);
 		server.createContext("/api/editor/session/project", NortantisRestServer::editorSessionProject);
@@ -226,6 +227,76 @@ public class NortantisRestServer
 				toolLog(ToolLog.PROJECTS, "session-open:error", "sessionId", sessionId, "durationMs", elapsedMs(startedAt), "error", ex.toString());
 			}
 			send(exchange, 500, "application/json", ("{\"ok\":false,\"error\":\"" + escape(ex.getMessage()) + "\"}").getBytes(StandardCharsets.UTF_8));
+		}
+		finally
+		{
+			Files.deleteIfExists(project);
+		}
+	}
+
+	private static void editorSessionOpenStream(HttpExchange exchange) throws IOException
+	{
+		if (!exchange.getRequestMethod().equals("POST"))
+		{
+			send(exchange, 405, "application/json", "{\"ok\":false}".getBytes(StandardCharsets.UTF_8));
+			return;
+		}
+		JSONObject input;
+		String sessionId;
+		String projectBase64;
+		try
+		{
+			input = readJsonBody(exchange);
+			sessionId = input.get("sessionId") instanceof String ? ((String) input.get("sessionId")).trim() : "";
+			projectBase64 = input.get("projectBase64") instanceof String ? (String) input.get("projectBase64") : "";
+			if (sessionId.isEmpty() || projectBase64.isBlank())
+			{
+				throw new IllegalArgumentException("Missing session");
+			}
+		}
+		catch (Exception ex)
+		{
+			send(exchange, 400, "application/json", ("{\"ok\":false,\"error\":\"" + escape(ex.getMessage()) + "\"}").getBytes(StandardCharsets.UTF_8));
+			return;
+		}
+
+		exchange.getResponseHeaders().set("Content-Type", "text/event-stream; charset=utf-8");
+		exchange.getResponseHeaders().set("Cache-Control", "no-store");
+		exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
+		exchange.sendResponseHeaders(200, 0);
+		Path project = Files.createTempFile("nortantis-editor-open-stream-", MapSettings.fileExtensionWithDot);
+		long startedAt = System.nanoTime();
+		try (OutputStream output = exchange.getResponseBody())
+		{
+			SseEmitter emitter = new SseEmitter(output);
+			try
+			{
+				Files.write(project, Base64.getDecoder().decode(projectBase64));
+				if (isToolLoggingEnabled(ToolLog.PROJECTS))
+				{
+					toolLog(ToolLog.PROJECTS, "session-open-stream:start", "sessionId", sessionId, "projectBytes", Files.size(project));
+				}
+				MapSettings settings = new MapSettings(project.toString());
+				Dimension maxDimensions = readMaxDimensions(input);
+				MapParts mapParts = new MapParts();
+				Image image = new MapCreator(message -> emitGenerationPhase(emitter, message)).createMap(settings, maxDimensions, mapParts);
+				storeEditorSession(sessionId, settings, mapParts, image, maxDimensions);
+				EditorSession session = EDITOR_SESSIONS.get(sessionId);
+				emitter.send("result", "{\"previewBase64\":\"" + imageToBase64(image, ".png") + "\",\"metadata\":" + sessionMetadataJson(session) + "}");
+				emitter.send("done", "{}");
+				if (isToolLoggingEnabled(ToolLog.PROJECTS))
+				{
+					toolLog(ToolLog.PROJECTS, "session-open-stream:success", "sessionId", sessionId, "durationMs", elapsedMs(startedAt), "mapWidth", image.getWidth(), "mapHeight", image.getHeight());
+				}
+			}
+			catch (Exception ex)
+			{
+				if (isToolLoggingEnabled(ToolLog.PROJECTS))
+				{
+					toolLog(ToolLog.PROJECTS, "session-open-stream:error", "sessionId", sessionId, "durationMs", elapsedMs(startedAt), "error", ex.toString());
+				}
+				emitter.send("error", "{\"error\":\"" + escape(ex.getMessage()) + "\"}");
+			}
 		}
 		finally
 		{
@@ -360,7 +431,12 @@ public class NortantisRestServer
 			String result;
 			synchronized (session)
 			{
-				result = brushSelectionJson(new HashSet<>(session.mapParts.graph.centers), session);
+				StringBuilder topology = new StringBuilder("{\"ok\":true,\"sessionReady\":true,\"metadata\":");
+				topology.append(sessionMetadataJson(session));
+				topology.append(",\"polygons\":");
+				appendPolygonsJson(topology, new HashSet<>(session.mapParts.graph.centers), session);
+				topology.append("}");
+				result = topology.toString();
 			}
 			send(exchange, 200, "application/json", result.getBytes(StandardCharsets.UTF_8));
 		}
@@ -391,11 +467,19 @@ public class NortantisRestServer
 			synchronized (session)
 			{
 				List<Point> inputLine = readLineGraphPoints(session.settings, command, true, borderPadding(session));
+				String type = command.get("type") instanceof String ? (String) command.get("type") : "";
+				if ("region.islands.lasso".equals(type))
+				{
+					List<Point> closedLasso = closePolygon(inputLine);
+					Set<Center> selected = selectLandComponentsFullyInsideLasso(session.settings, session.mapParts.graph, closedLasso);
+					result = pathPreviewJson(closedLasso, selected, session);
+				}
+				else
+				{
 				double radius = command.get("radius") instanceof Number
 						? ((Number) command.get("radius")).doubleValue() * (session.settings.resolution == 0.0 ? 1.0 : session.settings.resolution)
 						: Math.max(8.0, averageNeighborDistance(session.mapParts.graph) * 0.5);
 				List<Point> previewLine = inputLine;
-				String type = command.get("type") instanceof String ? (String) command.get("type") : "";
 				if (type.startsWith("region.boundary"))
 				{
 					SnappedBoundary snapped = snapBoundaryToRegionEdges(session.settings, session.mapParts.graph, inputLine, radius);
@@ -414,6 +498,7 @@ public class NortantisRestServer
 				}
 				Set<Center> selected = centersNearBoundaryLine(session.settings, session.mapParts.graph, previewLine, Math.max(radius, averageNeighborDistance(session.mapParts.graph) * 0.65));
 				result = pathPreviewJson(previewLine, selected, session);
+				}
 			}
 			send(exchange, 200, "application/json", result.getBytes(StandardCharsets.UTF_8));
 		}
@@ -1035,7 +1120,7 @@ public class NortantisRestServer
 			{
 				editSession = existingSession != null ? existingSession : getOrCreateEditorSession(sessionId, project, readMaxDimensions(input));
 				MapSettings historyBefore = editSession.prepareHistory(command);
-				if ("region.paint".equals(command.get("type")) && !editSession.settings.drawRegionColors)
+				if (isRegionColorCommand(command) && !editSession.settings.drawRegionColors)
 				{
 					editSession = applyFirstRegionPaint(sessionId, command, editSession);
 					settings = editSession.settings;
@@ -1707,7 +1792,7 @@ public class NortantisRestServer
 			settings.edits.initializeRegionEdits(graph.regions.values());
 		}
 		if ("icon.center.set".equals(type) || "icon.center.clear".equals(type) || "relief.erase".equals(type) || "trees.center.set".equals(type) || "trees.center.clear".equals(type) || "road.add".equals(type) || "road.draw".equals(type) || "road.erase".equals(type)
-				|| "river.draw".equals(type) || "river.erase".equals(type) || "region.paint".equals(type) || "region.boundary.draw".equals(type)
+				|| "river.draw".equals(type) || "river.erase".equals(type) || "region.paint".equals(type) || "region.islands.lasso".equals(type) || "region.boundary.draw".equals(type)
 				|| "region.boundary.erase".equals(type))
 		{
 			applyMapToolCommand(settings, graph, command, false, null);
@@ -1720,8 +1805,18 @@ public class NortantisRestServer
 	{
 		Object type = command.get("type");
 		return "terrain.brush".equals(type) || "text.add".equals(type) || "text.update".equals(type) || "text.delete".equals(type) || "icon.center.set".equals(type) || "icon.center.clear".equals(type) || "relief.erase".equals(type) || "trees.center.set".equals(type) || "trees.center.clear".equals(type) || "road.add".equals(type) || "road.draw".equals(type) || "road.erase".equals(type)
-				|| "river.draw".equals(type) || "river.erase".equals(type) || "region.paint".equals(type)
+				|| "river.draw".equals(type) || "river.erase".equals(type) || "region.paint".equals(type) || "region.islands.lasso".equals(type)
 				|| "region.boundary.draw".equals(type) || "region.boundary.erase".equals(type);
+	}
+
+	private static boolean isRegionColorCommand(JSONObject command)
+	{
+		if (command == null)
+		{
+			return false;
+		}
+		Object type = command.get("type");
+		return "region.paint".equals(type) || "region.islands.lasso".equals(type);
 	}
 
 	private static boolean isTextCommand(JSONObject command)
@@ -2257,6 +2352,39 @@ public class NortantisRestServer
 				{
 					riverLog("path:erased", "touched", touched, "remaining", replacement.size(), "changedCount", changed.size());
 				}
+			}
+			return changed;
+		}
+		if ("region.islands.lasso".equals(type))
+		{
+			long paintStartedAt = System.nanoTime();
+			List<Point> lasso = closePolygon(readLineGraphPoints(settings, command, sessionCoordinates, sessionBorderPadding));
+			Set<Center> selected = selectLandComponentsFullyInsideLasso(settings, graph, lasso);
+			if (selected.isEmpty())
+			{
+				if (isRegionPaintLoggingEnabled())
+				{
+					regionPaintLog("island-lasso:empty", "durationMs", elapsedMs(paintStartedAt), "lassoPoints", lasso.size());
+				}
+				return Set.of();
+			}
+			int targetRegionId = createNewRegionId(settings, graph);
+			for (Center center : selected)
+			{
+				CenterEdit edit = settings.edits.centerEdits.get(center.index);
+				if (edit == null)
+				{
+					edit = new CenterEdit(center.index, center.isWater, center.isLake, center.region != null ? center.region.id : null, null, null);
+				}
+				settings.edits.centerEdits.put(edit.index, new CenterEdit(edit.index, edit.isWater, edit.isLake, targetRegionId, edit.icon, edit.trees));
+			}
+			settings.drawRegionColors = true;
+			settings.edits.regionEdits.put(targetRegionId, new RegionEdit(targetRegionId, parseHexColor((String) command.get("color"))));
+			Set<Integer> changed = new HashSet<>();
+			addCentersAndNeighbors(changed, selected);
+			if (isRegionPaintLoggingEnabled())
+			{
+				regionPaintLog("island-lasso:assigned", "durationMs", elapsedMs(paintStartedAt), "lassoPoints", lasso.size(), "selectedCenters", selected.size(), "targetRegionId", targetRegionId, "changedCount", changed.size());
 			}
 			return changed;
 		}
@@ -3375,6 +3503,140 @@ public class NortantisRestServer
 		return !isWater && getCenterRegionId(settings, center) != null;
 	}
 
+	private static List<Point> closePolygon(List<Point> points)
+	{
+		if (points.size() < 3)
+		{
+			throw new IllegalArgumentException("Lasso requires at least three points");
+		}
+		List<Point> closed = new ArrayList<>(points);
+		if (closed.get(0).distanceTo(closed.get(closed.size() - 1)) > 0.001)
+		{
+			closed.add(closed.get(0));
+		}
+		return closed;
+	}
+
+	private static Set<Center> selectLandComponentsFullyInsideLasso(MapSettings settings, WorldGraph graph, List<Point> closedLasso)
+	{
+		double minX = closedLasso.stream().mapToDouble(point -> point.x).min().orElse(0.0);
+		double maxX = closedLasso.stream().mapToDouble(point -> point.x).max().orElse(0.0);
+		double minY = closedLasso.stream().mapToDouble(point -> point.y).min().orElse(0.0);
+		double maxY = closedLasso.stream().mapToDouble(point -> point.y).max().orElse(0.0);
+		Set<Center> visited = new HashSet<>();
+		Set<Center> selected = new HashSet<>();
+		for (Center center : graph.centers)
+		{
+			if (visited.contains(center) || isCurrentWater(settings, center) || center.loc.x < minX || center.loc.x > maxX || center.loc.y < minY || center.loc.y > maxY)
+			{
+				continue;
+			}
+			Set<Center> component = collectConnectedLand(settings, center);
+			visited.addAll(component);
+			if (isLandComponentFullyInsideLasso(settings, graph, component, closedLasso))
+			{
+				selected.addAll(component);
+			}
+		}
+		return selected;
+	}
+
+	private static Set<Center> collectConnectedLand(MapSettings settings, Center start)
+	{
+		Set<Center> result = new HashSet<>();
+		ArrayDeque<Center> queue = new ArrayDeque<>();
+		queue.add(start);
+		while (!queue.isEmpty())
+		{
+			Center current = queue.removeFirst();
+			if (!result.add(current))
+			{
+				continue;
+			}
+			for (Center neighbor : current.neighbors)
+			{
+				if (!result.contains(neighbor) && !isCurrentWater(settings, neighbor))
+				{
+					queue.addLast(neighbor);
+				}
+			}
+		}
+		return result;
+	}
+
+	private static boolean isLandComponentFullyInsideLasso(MapSettings settings, WorldGraph graph, Set<Center> component, List<Point> closedLasso)
+	{
+		for (Center center : component)
+		{
+			if (!isPointInsidePolygon(center.loc, closedLasso))
+			{
+				return false;
+			}
+		}
+		Set<Integer> checkedCoastEdges = new HashSet<>();
+		int coastEdgeCount = 0;
+		for (Center center : component)
+		{
+			for (Edge edge : center.borders)
+			{
+				if (edge == null || !checkedCoastEdges.add(edge.index))
+				{
+					continue;
+				}
+				Center other = edge.d0 == center ? edge.d1 : edge.d0;
+				if (other != null && !isCurrentWater(settings, other))
+				{
+					continue;
+				}
+				coastEdgeCount++;
+				List<Point> coastline = graph.noisyEdges.getNoisyEdge(edge.index);
+				if ((coastline == null || coastline.size() < 2) && edge.v0 != null && edge.v1 != null)
+				{
+					coastline = List.of(edge.v0.loc, edge.v1.loc);
+				}
+				if (coastline == null || coastline.isEmpty())
+				{
+					return false;
+				}
+				for (Point point : coastline)
+				{
+					if (!isPointInsidePolygon(point, closedLasso))
+					{
+						return false;
+					}
+				}
+			}
+		}
+		return coastEdgeCount > 0;
+	}
+
+	private static boolean isCurrentWater(MapSettings settings, Center center)
+	{
+		CenterEdit edit = settings.edits.centerEdits.get(center.index);
+		return edit != null ? edit.isWater : center.isWater;
+	}
+
+	private static boolean isPointInsidePolygon(Point point, List<Point> closedPolygon)
+	{
+		boolean inside = false;
+		for (int index = 0; index < closedPolygon.size() - 1; index++)
+		{
+			Point start = closedPolygon.get(index);
+			Point end = closedPolygon.get(index + 1);
+			if (GeometryHelper.distanceFromPointToSegment(point, start, end) <= 0.75)
+			{
+				return true;
+			}
+			boolean crosses = (start.y > point.y) != (end.y > point.y)
+					&& point.x < (end.x - start.x) * (point.y - start.y) / (end.y - start.y) + start.x;
+			if (crosses)
+			{
+				inside = !inside;
+			}
+		}
+		return inside;
+	}
+
 	private static double signedDistanceToNearestLineSegment(Point point, List<Point> line)
 	{
 		double bestDistance = Double.MAX_VALUE;
@@ -3907,6 +4169,8 @@ public class NortantisRestServer
 		}
 		result.append("],\"polygons\":");
 		appendPolygonsJson(result, selected, session);
+		result.append(",\"edges\":");
+		appendSelectionEdgesJson(result, selected, session);
 		result.append("}");
 		return result.toString();
 	}
@@ -4366,7 +4630,7 @@ public class NortantisRestServer
 		{
 			case "terrain.brush" -> ToolLog.BRUSH;
 			case "region.boundary.draw", "region.boundary.erase" -> ToolLog.BORDERS;
-			case "region.paint" -> ToolLog.REGION_PAINT;
+			case "region.paint", "region.islands.lasso" -> ToolLog.REGION_PAINT;
 			case "text.add", "text.update", "text.delete" -> ToolLog.TEXT;
 			case "icon.center.set", "icon.center.clear", "relief.erase" -> ToolLog.ICONS;
 			case "trees.center.set", "trees.center.clear" -> ToolLog.FORESTS;
