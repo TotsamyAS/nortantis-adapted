@@ -1,0 +1,899 @@
+(() => {
+	'use strict';
+
+	const FALLBACK_LOCALE = 'ru';
+	const EMPTY_LABELS = { phases: {}, textTypes: {}, statuses: {}, errors: {} };
+	const dictionaryCache = new Map();
+	let localeRequestId = 0;
+
+	const state = {
+		labels: EMPTY_LABELS,
+		locale: '',
+		host: { projects: [], selectedProjectId: null, storage: null, loading: false, saving: false, exporting: false, statusCode: '', errorCode: '', sourceCodeURL: '', backUrl: '/hub' },
+		sessionId: null,
+		projectName: '',
+		metadata: null,
+		activeTool: 'projects',
+		scale: 1,
+		panX: 0,
+		panY: 0,
+		hasFit: false,
+		space: false,
+		panning: false,
+		drawing: false,
+		lastX: 0,
+		lastY: 0,
+		terrainMode: 'land',
+		terrainRadius: 48,
+		boundaryMode: 'draw',
+		boundaryRadius: 36,
+		boundaryPoints: [],
+		regionMode: 'paint',
+		regionColor: '#b9945d',
+		selectedText: null,
+		draggingText: false,
+		textDragPoint: null,
+		iconMode: 'place',
+		iconAssets: null,
+		iconsLoading: false,
+		selectedAsset: null,
+		treeDensity: 5,
+		treeRadius: 48,
+		cursorPoint: null,
+		brushPolygons: [],
+		editPending: false,
+		queuedEdit: null,
+		dirty: false,
+		generationBlank: false,
+		previewVersion: 0
+	};
+	let brushSelectionTimer = 0;
+	let brushSelectionVersion = 0;
+	let brushSelectionPending = false;
+	let queuedBrushSelection = null;
+
+	const byId = (id) => document.getElementById(id);
+	const canvas = byId('canvas');
+	const mapSurface = byId('mapSurface');
+	const map = byId('map');
+	const overlay = byId('mapOverlay');
+	const loading = byId('loading');
+	const emptyWorkspace = byId('emptyWorkspace');
+	const inlineText = byId('inlineText');
+
+	function iconUse(id) {
+		return `<svg aria-hidden="true"><use href="#icon-${id}"></use></svg>`;
+	}
+
+	function label(key, params = {}) {
+		const value = typeof state.labels[key] === 'string' ? state.labels[key] : '';
+		return Object.entries(params).reduce((text, [name, replacement]) => text.replaceAll(`{${name}}`, String(replacement)), value);
+	}
+
+	function setLabels(labels) {
+		state.labels = {
+			...EMPTY_LABELS,
+			...(labels || {}),
+			phases: { ...(labels?.phases || {}) },
+			textTypes: { ...(labels?.textTypes || {}) },
+			statuses: { ...(labels?.statuses || {}) },
+			errors: { ...(labels?.errors || {}) }
+		};
+		document.title = label('documentTitle');
+		document.querySelectorAll('[data-label]').forEach((element) => { element.textContent = label(element.dataset.label); });
+		document.querySelectorAll('[data-label-placeholder]').forEach((element) => { element.placeholder = label(element.dataset.labelPlaceholder); });
+		document.querySelectorAll('[data-label-aria]').forEach((element) => { element.setAttribute('aria-label', label(element.dataset.labelAria)); });
+		const toolLabels = { projects: 'projects', generation: 'generation', terrain: 'terrain', boundaries: 'boundaries', regions: 'regions', text: 'text', icons: 'icons', about: 'about' };
+		document.querySelectorAll('[data-tool-button]').forEach((button) => {
+			const text = label(toolLabels[button.dataset.toolButton]);
+			button.dataset.tooltip = text;
+			button.setAttribute('aria-label', text);
+		});
+		byId('saveProject').dataset.tooltip = label('save');
+		byId('saveProject').setAttribute('aria-label', label('save'));
+		byId('exportProject').dataset.tooltip = label('export');
+		byId('exportProject').setAttribute('aria-label', label('export'));
+		byId('backLink').dataset.tooltip = label('back');
+		byId('backLink').setAttribute('aria-label', label('back'));
+		const createButton = byId('createProjectForm').querySelector('button');
+		createButton.dataset.tooltip = label('create');
+		createButton.setAttribute('aria-label', label('create'));
+		fillTextTypes();
+		renderHostState();
+	}
+
+	function normalizeLocale(value) {
+		const locale = String(value || FALLBACK_LOCALE).trim().toLowerCase();
+		return /^[a-z]{2}(?:-[a-z0-9]{2,8})*$/.test(locale) ? locale : FALLBACK_LOCALE;
+	}
+
+	async function loadDictionary(locale) {
+		if (dictionaryCache.has(locale)) return dictionaryCache.get(locale);
+		const request = fetch(`/editor/i18n/${encodeURIComponent(locale)}.json`, { cache: 'no-store' }).then((response) => {
+			if (!response.ok) throw new Error('dictionaryUnavailable');
+			return response.json();
+		});
+		dictionaryCache.set(locale, request);
+		try {
+			return await request;
+		} catch (error) {
+			dictionaryCache.delete(locale);
+			throw error;
+		}
+	}
+
+	async function applyLocale(requestedLocale) {
+		const requestId = ++localeRequestId;
+		let resolvedLocale = normalizeLocale(requestedLocale);
+		let dictionary;
+		try {
+			dictionary = await loadDictionary(resolvedLocale);
+		} catch {
+			resolvedLocale = FALLBACK_LOCALE;
+			dictionary = await loadDictionary(FALLBACK_LOCALE);
+		}
+		if (requestId !== localeRequestId) return;
+		state.locale = resolvedLocale;
+		document.documentElement.lang = resolvedLocale;
+		setLabels(dictionary);
+		document.documentElement.dataset.i18nReady = 'true';
+	}
+
+	function fillTextTypes() {
+		const select = byId('textType');
+		const current = select.value || 'Other_mountains';
+		select.replaceChildren();
+		Object.entries(state.labels.textTypes).forEach(([value, text]) => {
+			const option = document.createElement('option');
+			option.value = value;
+			option.textContent = text;
+			select.append(option);
+		});
+		select.value = state.labels.textTypes[current] ? current : 'Other_mountains';
+	}
+
+	function setStatus(text) {
+		byId('statusText').textContent = text || '';
+	}
+
+	function showLoading(title, text, progress = 0) {
+		byId('loadingTitle').textContent = title;
+		byId('loadingText').textContent = text || '';
+		setLoadingProgress(progress);
+		loading.hidden = false;
+	}
+
+	function hideLoading() {
+		loading.hidden = true;
+	}
+
+	function setLoadingProgress(percent) {
+		const value = Math.max(0, Math.min(100, Math.round(percent)));
+		const progress = byId('loadingProgress');
+		progress.setAttribute('aria-valuenow', String(value));
+		progress.querySelector('span').style.width = `${value}%`;
+	}
+
+	function formatBytes(bytes) {
+		const value = Number(bytes) || 0;
+		const formatter = new Intl.NumberFormat(state.locale || FALLBACK_LOCALE, { maximumFractionDigits: 2 });
+		if (value >= 1024 ** 3) return `${formatter.format(value / 1024 ** 3)} ${label('gigabytes')}`;
+		return `${formatter.format(value / 1024 ** 2)} ${label('megabytes')}`;
+	}
+
+	function renderHostState() {
+		const host = state.host;
+		byId('projectTitle').textContent = state.projectName || host.projects.find((project) => project.id === host.selectedProjectId)?.name || label('editorTitle');
+		const hostError = host.errorCode ? state.labels.errors[host.errorCode] || label('genericError') : '';
+		const hostStatus = host.statusCode ? state.labels.statuses[host.statusCode] || '' : '';
+		setStatus(hostError || hostStatus || (host.saving ? label('save') : host.exporting ? label('export') : state.dirty ? label('unsaved') : state.sessionId ? label('ready') : ''));
+		byId('saveProject').disabled = !state.sessionId || host.saving;
+		byId('exportProject').disabled = !state.sessionId || host.exporting;
+		const storage = host.storage;
+		const meter = byId('storageMeter');
+		meter.hidden = !storage;
+		if (storage) {
+			byId('storageUsed').textContent = `${formatBytes(storage.usedBytes)} / ${formatBytes(storage.limitBytes)}`;
+			byId('storageAvailable').textContent = `${label('storageAvailable')}: ${formatBytes(storage.availableBytes)}`;
+			const percent = storage.limitBytes > 0 ? Math.min(100, storage.usedBytes / storage.limitBytes * 100) : 0;
+			const progress = meter.querySelector('.storage-progress');
+			progress.setAttribute('aria-valuemin', '0');
+			progress.setAttribute('aria-valuemax', String(storage.limitBytes));
+			progress.setAttribute('aria-valuenow', String(Math.min(storage.usedBytes, storage.limitBytes)));
+			progress.querySelector('span').style.width = `${percent}%`;
+		}
+		renderProjects();
+		if (host.sourceCodeURL) byId('forkLink').href = host.sourceCodeURL;
+		byId('backLink').href = validBackUrl(host.backUrl);
+	}
+
+	function validBackUrl(value) {
+		const path = String(value || '');
+		return path === '/hub' || /^\/campaigns\/[0-9a-f-]{36}$/i.test(path) ? path : '/hub';
+	}
+
+	function renderProjects() {
+		const container = byId('projectList');
+		container.replaceChildren();
+		if (!state.host.projects.length) {
+			const empty = document.createElement('p');
+			empty.className = 'project-empty';
+			empty.textContent = label('noProjects');
+			container.append(empty);
+			return;
+		}
+		state.host.projects.forEach((project) => {
+			const card = document.createElement('article');
+			card.className = `project-card${project.id === state.host.selectedProjectId ? ' active' : ''}`;
+			const main = document.createElement('button');
+			main.type = 'button';
+			main.className = 'project-main';
+			const name = document.createElement('strong');
+			name.textContent = project.name;
+			const size = document.createElement('span');
+			size.textContent = formatBytes(project.size);
+			main.append(name, size);
+			main.onclick = () => postParent('nortantis:project-open', { projectId: project.id });
+			const remove = document.createElement('button');
+			remove.type = 'button';
+			remove.className = 'ui-button danger icon-only project-delete';
+			remove.innerHTML = iconUse('trash');
+			remove.setAttribute('aria-label', `${label('deleteProject')}: ${project.name}`);
+			remove.onclick = () => postParent('nortantis:project-delete', { projectId: project.id });
+			card.append(main, remove);
+			container.append(card);
+		});
+	}
+
+	function postParent(type, payload = {}) {
+		parent.postMessage({ type, ...payload }, '*');
+	}
+
+	async function postJson(url, body) {
+		const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+		const json = await response.json().catch(() => null);
+		if (!response.ok || !json?.ok) throw new Error(json?.error || `HTTP ${response.status}`);
+		return json;
+	}
+
+	function fit() {
+		if (!map.naturalWidth || !map.naturalHeight) return;
+		const bounds = canvas.getBoundingClientRect();
+		state.scale = Math.min(bounds.width / map.naturalWidth, bounds.height / map.naturalHeight) * 0.92;
+		state.panX = -map.naturalWidth * state.scale / 2;
+		state.panY = -map.naturalHeight * state.scale / 2;
+		state.hasFit = true;
+		applyTransform();
+	}
+
+	function applyTransform() {
+		mapSurface.style.transform = `translate(${state.panX}px, ${state.panY}px) scale(${state.scale})`;
+	}
+
+	function setPreview(base64, resetView) {
+		const version = ++state.previewVersion;
+		map.onload = () => {
+			if (version !== state.previewVersion) return;
+			mapSurface.style.width = `${map.naturalWidth}px`;
+			mapSurface.style.height = `${map.naturalHeight}px`;
+			overlay.setAttribute('width', String(map.naturalWidth));
+			overlay.setAttribute('height', String(map.naturalHeight));
+			overlay.setAttribute('viewBox', `0 0 ${map.naturalWidth} ${map.naturalHeight}`);
+			if (resetView || !state.hasFit) fit(); else applyTransform();
+			renderOverlay();
+		};
+		map.src = `data:image/png;base64,${base64}`;
+	}
+
+	function clearWorkspace() {
+		state.sessionId = null;
+		state.projectName = '';
+		state.metadata = null;
+		state.selectedText = null;
+		state.selectedAsset = null;
+		state.iconAssets = null;
+		state.dirty = false;
+		state.hasFit = false;
+		state.previewVersion += 1;
+		map.removeAttribute('src');
+		mapSurface.removeAttribute('style');
+		overlay.replaceChildren();
+		emptyWorkspace.hidden = false;
+		renderHostState();
+	}
+
+	function mapPoint(event) {
+		if (!state.metadata || !map.naturalWidth) return null;
+		const bounds = map.getBoundingClientRect();
+		return {
+			x: (event.clientX - bounds.left) / bounds.width * state.metadata.width,
+			y: (event.clientY - bounds.top) / bounds.height * state.metadata.height
+		};
+	}
+
+	function projectToPreview(point) {
+		if (!state.metadata) return { x: 0, y: 0 };
+		return { x: point.x / state.metadata.width * map.naturalWidth, y: point.y / state.metadata.height * map.naturalHeight };
+	}
+
+	function projectToClient(point) {
+		const bounds = map.getBoundingClientRect();
+		return { x: bounds.left + point.x / state.metadata.width * bounds.width, y: bounds.top + point.y / state.metadata.height * bounds.height };
+	}
+
+	function renderOverlay() {
+		overlay.replaceChildren();
+		state.brushPolygons.forEach((polygon) => {
+			if (!Array.isArray(polygon.points) || polygon.points.length < 3) return;
+			const cell = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+			cell.setAttribute('class', 'brush-cell');
+			cell.setAttribute('points', polygon.points.map(([x, y]) => { const p = projectToPreview({ x, y }); return `${p.x},${p.y}`; }).join(' '));
+			overlay.append(cell);
+		});
+		const brush = brushFeedback();
+		if (brush && state.cursorPoint) {
+			const point = projectToPreview(state.cursorPoint);
+			const radius = brush.radius / state.metadata.width * map.naturalWidth;
+			const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+			circle.setAttribute('class', 'brush-radius');
+			circle.setAttribute('cx', String(point.x));
+			circle.setAttribute('cy', String(point.y));
+			circle.setAttribute('r', String(radius));
+			overlay.append(circle);
+		}
+		if (state.boundaryPoints.length > 1) {
+			const path = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+			path.setAttribute('class', 'stroke-preview');
+			path.setAttribute('points', state.boundaryPoints.map((point) => { const p = projectToPreview(point); return `${p.x},${p.y}`; }).join(' '));
+			overlay.append(path);
+		}
+		if (state.selectedText) {
+			const point = projectToPreview(state.textDragPoint || state.selectedText);
+			const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+			rect.setAttribute('class', 'text-selection');
+			rect.setAttribute('x', String(point.x - 70));
+			rect.setAttribute('y', String(point.y - 18));
+			rect.setAttribute('width', '140');
+			rect.setAttribute('height', '36');
+			rect.setAttribute('rx', '4');
+			overlay.append(rect);
+		}
+	}
+
+	function brushFeedback() {
+		if (state.activeTool === 'terrain') return { radius: state.terrainRadius, exact: true };
+		if (state.activeTool === 'boundaries') return { radius: state.boundaryRadius, exact: false };
+		if (state.activeTool === 'icons' && state.selectedAsset?.type === 'trees') return { radius: state.treeRadius, exact: true };
+		return null;
+	}
+
+	function updateBrushFeedback(point) {
+		state.cursorPoint = point;
+		const brush = brushFeedback();
+		if (!brush?.exact || !state.sessionId) {
+			state.brushPolygons = [];
+			renderOverlay();
+			return;
+		}
+		state.brushPolygons = [];
+		renderOverlay();
+		window.clearTimeout(brushSelectionTimer);
+		const version = ++brushSelectionVersion;
+		const type = state.activeTool === 'icons' ? 'trees.brush' : 'terrain.brush';
+		brushSelectionTimer = window.setTimeout(() => requestBrushSelection({ point, radius: brush.radius, type, version }), 45);
+	}
+
+	async function requestBrushSelection(request) {
+		if (brushSelectionPending) {
+			queuedBrushSelection = request;
+			return;
+		}
+		brushSelectionPending = true;
+		try {
+			try {
+				const json = await postJson('/api/editor/session/brush-selection', {
+					sessionId: state.sessionId,
+					command: { type: request.type, x: request.point.x, y: request.point.y, radius: request.radius }
+				});
+				if (request.version !== brushSelectionVersion) return;
+				state.brushPolygons = Array.isArray(json.polygons) ? json.polygons : [];
+				renderOverlay();
+			} catch {
+				if (request.version !== brushSelectionVersion) return;
+				state.brushPolygons = [];
+				renderOverlay();
+			}
+		} finally {
+			brushSelectionPending = false;
+			if (queuedBrushSelection) {
+				const next = queuedBrushSelection;
+				queuedBrushSelection = null;
+				void requestBrushSelection(next);
+			}
+		}
+	}
+
+	async function openProject(data) {
+		if (!data?.projectId || !data?.projectBase64) return;
+		state.sessionId = data.projectId;
+		state.projectName = data.name || label('editorTitle');
+		state.hasFit = false;
+		state.dirty = false;
+		state.selectedText = null;
+		state.iconAssets = null;
+		state.selectedAsset = null;
+		emptyWorkspace.hidden = true;
+		renderHostState();
+		showLoading(label('loadingProject'), label('opening'), 8);
+		try {
+			const json = await postJson('/api/editor/session/open', { sessionId: state.sessionId, projectBase64: data.projectBase64, previewMaxDimensionPixels: data.previewMaxDimensionPixels || 1536 });
+			state.metadata = json.metadata;
+			setPreview(json.previewBase64, true);
+			setStatus(label('ready'));
+		} catch {
+			setStatus(label('genericError'));
+		} finally {
+			hideLoading();
+		}
+	}
+
+	async function currentProject() {
+		if (!state.sessionId) throw new Error('Missing editor session');
+		const json = await postJson('/api/editor/session/project', { sessionId: state.sessionId });
+		return json.projectBase64;
+	}
+
+	async function saveProject() {
+		if (!state.sessionId) return;
+		setStatus(label('save'));
+		try {
+			const projectBase64 = await currentProject();
+			postParent('nortantis:save', { projectId: state.sessionId, projectBase64 });
+			state.dirty = false;
+		} catch {
+			setStatus(label('genericError'));
+		}
+	}
+
+	async function exportProject() {
+		if (!state.sessionId) return;
+		setStatus(label('export'));
+		try {
+			const projectBase64 = await currentProject();
+			postParent('nortantis:export', { projectId: state.sessionId, projectBase64, format: 'jpg' });
+		} catch {
+			setStatus(label('genericError'));
+		}
+	}
+
+	function setTool(tool) {
+		state.activeTool = tool;
+		state.boundaryPoints = [];
+		state.drawing = false;
+		state.cursorPoint = null;
+		state.brushPolygons = [];
+		brushSelectionVersion += 1;
+		queuedBrushSelection = null;
+		document.querySelectorAll('[data-tool-button]').forEach((button) => button.classList.toggle('active', button.dataset.toolButton === tool));
+		document.querySelectorAll('[data-tool-panel]').forEach((panel) => panel.classList.toggle('active', panel.dataset.toolPanel === tool));
+		if (tool === 'icons') void loadIconAssets();
+		renderOverlay();
+	}
+
+	async function sendEdit(command, coalesce = false) {
+		if (!state.sessionId) return null;
+		if (state.editPending && coalesce) {
+			state.queuedEdit = command;
+			return null;
+		}
+		state.editPending = true;
+		try {
+			const json = await postJson('/api/editor/session/edit', { sessionId: state.sessionId, command, returnPreview: true, omitProjectBytes: true });
+			if (json.metadata) state.metadata = json.metadata;
+			if (json.previewBase64) setPreview(json.previewBase64, false);
+			state.dirty = true;
+			setStatus(label('unsaved'));
+			return json;
+		} catch {
+			setStatus(label('genericError'));
+			return null;
+		} finally {
+			state.editPending = false;
+			if (state.queuedEdit) {
+				const next = state.queuedEdit;
+				state.queuedEdit = null;
+				void sendEdit(next, true);
+			}
+		}
+	}
+
+	function terrainAt(point) {
+		return sendEdit({ type: 'terrain.brush', mode: state.terrainMode, x: point.x, y: point.y, radius: state.terrainRadius }, true);
+	}
+
+	async function finishBoundary() {
+		if (state.boundaryPoints.length < 2) { state.boundaryPoints = []; renderOverlay(); return; }
+		const points = state.boundaryPoints;
+		state.boundaryPoints = [];
+		renderOverlay();
+		await sendEdit({ type: `region.boundary.${state.boundaryMode}`, points, radius: state.boundaryRadius, color: state.regionColor });
+	}
+
+	async function regionAt(point) {
+		if (state.regionMode === 'pick') {
+			try {
+				const json = await postJson('/api/editor/session/region-color', { sessionId: state.sessionId, command: { x: point.x, y: point.y } });
+				state.regionColor = json.color;
+				byId('regionColor').value = json.color;
+				byId('regionStatus').textContent = label('selectedRegion', { id: json.regionId });
+			} catch {
+				setStatus(label('genericError'));
+			}
+			return;
+		}
+		await sendEdit({ type: 'region.paint', x: point.x, y: point.y, color: state.regionColor });
+	}
+
+	async function pickText(point) {
+		try {
+			const json = await postJson('/api/editor/session/text-pick', { sessionId: state.sessionId, command: { x: point.x, y: point.y } });
+			state.selectedText = json.text;
+			state.textDragPoint = null;
+			if (json.text) {
+				byId('textValue').value = json.text.text;
+				byId('textType').value = json.text.textType;
+				byId('deleteText').disabled = false;
+				renderOverlay();
+				return;
+			}
+			byId('deleteText').disabled = true;
+			beginInlineText(point);
+		} catch {
+			setStatus(label('genericError'));
+		}
+	}
+
+	function beginInlineText(point) {
+		const client = projectToClient(point);
+		inlineText.hidden = false;
+		inlineText.value = '';
+		inlineText.dataset.x = String(point.x);
+		inlineText.dataset.y = String(point.y);
+		inlineText.style.left = `${Math.min(window.innerWidth - 240, Math.max(12, client.x))}px`;
+		inlineText.style.top = `${Math.min(window.innerHeight - 52, Math.max(12, client.y))}px`;
+		inlineText.placeholder = label('textPlaceholder');
+		inlineText.focus();
+	}
+
+	async function commitInlineText() {
+		if (inlineText.hidden) return;
+		const value = inlineText.value.trim();
+		const x = Number(inlineText.dataset.x);
+		const y = Number(inlineText.dataset.y);
+		inlineText.hidden = true;
+		if (!value) return;
+		const json = await sendEdit({ type: 'text.add', x, y, text: value, textType: byId('textType').value || 'Other_mountains' });
+		if (json?.text) state.selectedText = json.text;
+	}
+
+	async function updateSelectedText(patch = {}) {
+		if (!state.selectedText) return;
+		const command = {
+			type: 'text.update',
+			index: state.selectedText.index,
+			x: patch.x ?? state.selectedText.x,
+			y: patch.y ?? state.selectedText.y,
+			text: patch.text ?? (byId('textValue').value.trim() || state.selectedText.text),
+			textType: patch.textType ?? byId('textType').value
+		};
+		state.selectedText = { ...state.selectedText, ...command };
+		await sendEdit(command, Boolean(patch.x !== undefined));
+		renderOverlay();
+	}
+
+	async function deleteSelectedText() {
+		if (!state.selectedText) return;
+		await sendEdit({ type: 'text.delete', index: state.selectedText.index });
+		state.selectedText = null;
+		state.textDragPoint = null;
+		byId('deleteText').disabled = true;
+		byId('textValue').value = '';
+		renderOverlay();
+	}
+
+	async function loadIconAssets() {
+		if (!state.sessionId || state.iconAssets || state.iconsLoading) return;
+		state.iconsLoading = true;
+		byId('iconLibrary').textContent = label('opening');
+		try {
+			state.iconAssets = await postJson('/api/editor/assets/icons', { sessionId: state.sessionId });
+			renderIconLibrary();
+		} catch {
+			byId('iconLibrary').textContent = label('genericError');
+		} finally {
+			state.iconsLoading = false;
+		}
+	}
+
+	function renderIconLibrary() {
+		const library = byId('iconLibrary');
+		library.replaceChildren();
+		const allowed = ['mountains', 'sand', 'trees'];
+		allowed.forEach((type) => {
+			const data = state.iconAssets?.types?.find((entry) => entry.type === type);
+			if (!data) return;
+			const section = document.createElement('section');
+			section.className = 'icon-category';
+			const heading = document.createElement('h3');
+			heading.textContent = label(type);
+			const grid = document.createElement('div');
+			grid.className = 'icon-grid';
+			const assets = type === 'trees'
+				? data.groups.flatMap((group) => group.icons.slice(0, 1).map((name) => ({ type, group: group.id, name })))
+				: data.groups.flatMap((group) => group.icons.map((name) => ({ type, group: group.id, name })));
+			assets.forEach((asset) => {
+				const button = document.createElement('button');
+				button.type = 'button';
+				button.className = 'icon-tile';
+				button.setAttribute('aria-label', `${label(type)}: ${asset.name}`);
+				const image = document.createElement('img');
+				image.alt = '';
+				image.loading = 'lazy';
+				image.dataset.asset = JSON.stringify(asset);
+				button.append(image);
+				button.onclick = () => {
+					state.selectedAsset = { ...asset, artPack: state.iconAssets.artPack };
+					library.querySelectorAll('.icon-tile').forEach((tile) => tile.classList.toggle('active', tile === button));
+					byId('treeDensityField').hidden = type !== 'trees';
+					byId('treeRadiusField').hidden = type !== 'trees';
+					if (state.cursorPoint) updateBrushFeedback(state.cursorPoint);
+				};
+				grid.append(button);
+				void loadIconPreview(image, asset);
+			});
+			section.append(heading, grid);
+			library.append(section);
+		});
+		if (!library.children.length) library.textContent = label('emptyIcons');
+	}
+
+	async function loadIconPreview(image, asset) {
+		try {
+			const response = await fetch('/api/editor/assets/icon-preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: state.sessionId, type: asset.type, group: asset.group, name: asset.name }) });
+			if (!response.ok) return;
+			const url = URL.createObjectURL(await response.blob());
+			image.onload = () => URL.revokeObjectURL(url);
+			image.src = url;
+		} catch {
+			// Missing preview leaves a neutral tile; placement data remains valid.
+		}
+	}
+
+	function iconAt(point) {
+		if (!state.selectedAsset && state.iconMode === 'place') return Promise.resolve();
+		const asset = state.selectedAsset;
+		if (asset?.type === 'trees') {
+			return sendEdit({ type: state.iconMode === 'place' ? 'trees.center.set' : 'trees.center.clear', x: point.x, y: point.y, radius: state.treeRadius, artPack: asset.artPack, treeType: asset.group, density: state.treeDensity / 10 }, true);
+		}
+		if (state.iconMode === 'erase') return sendEdit({ type: 'icon.center.clear', x: point.x, y: point.y }, true);
+		return sendEdit({ type: 'icon.center.set', x: point.x, y: point.y, iconKind: asset.type, artPack: asset.artPack, groupId: asset.group, iconName: asset.name }, true);
+	}
+
+	function openGenerationDialog(blank) {
+		if (!state.sessionId) return;
+		state.generationBlank = blank;
+		byId('generationDialogTitle').textContent = label(blank ? 'blankTitle' : 'generateTitle');
+		byId('generationDialog').showModal();
+	}
+
+	const PHASE_PROGRESS = {
+		creatingMap: 3, lowMemory: 6, backgroundImage: 12, graph: 20, icons: 30, mountains: 36, dunes: 41, trees: 46, cities: 50,
+		land: 56, shores: 61, rivers: 66, ocean: 70, waves: 74, roads: 78, drawIcons: 82, text: 87, border: 91, grunge: 94, frayedEdgesJob: 96, frayedEdges: 98, done: 100
+	};
+
+	async function generateMap(size) {
+		byId('generationDialog').close();
+		showLoading(label('generating'), label('phaseStarting'), 1);
+		try {
+			const response = await fetch('/api/editor/session/generate-stream', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ sessionId: state.sessionId, name: state.projectName, size, blank: state.generationBlank })
+			});
+			if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`);
+			await readSse(response.body, (event, data) => {
+				if (event === 'phase') {
+					const phase = JSON.parse(data);
+					byId('loadingText').textContent = state.labels.phases[phase.key] || label('phaseStarting');
+					setLoadingProgress(PHASE_PROGRESS[phase.key] ?? phase.progress ?? 10);
+				}
+				if (event === 'result') {
+					const result = JSON.parse(data);
+					state.metadata = result.metadata;
+					state.hasFit = false;
+					setPreview(result.previewBase64, true);
+					state.dirty = true;
+					setStatus(label('unsaved'));
+				}
+				if (event === 'error') throw new Error('generationFailed');
+			});
+		} catch {
+			setStatus(label('genericError'));
+		} finally {
+			hideLoading();
+		}
+	}
+
+	async function readSse(stream, onEvent) {
+		const reader = stream.getReader();
+		const decoder = new TextDecoder();
+		let buffer = '';
+		while (true) {
+			const { done, value } = await reader.read();
+			buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+			let boundary;
+			while ((boundary = buffer.indexOf('\n\n')) >= 0) {
+				const block = buffer.slice(0, boundary);
+				buffer = buffer.slice(boundary + 2);
+				let event = 'message';
+				const data = [];
+				block.split(/\r?\n/).forEach((line) => {
+					if (line.startsWith('event:')) event = line.slice(6).trim();
+					if (line.startsWith('data:')) data.push(line.slice(5).trimStart());
+				});
+				if (data.length) onEvent(event, data.join('\n'));
+			}
+			if (done) break;
+		}
+	}
+
+	function panBy(dx, dy) {
+		if (!state.hasFit) return;
+		state.panX += dx;
+		state.panY += dy;
+		applyTransform();
+	}
+
+	document.querySelectorAll('[data-tool-button]').forEach((button) => { button.onclick = () => setTool(button.dataset.toolButton); });
+	byId('createProjectForm').onsubmit = (event) => {
+		event.preventDefault();
+		const name = byId('newProjectName').value.trim();
+		if (!name) return;
+		postParent('nortantis:project-create', { name });
+		byId('newProjectName').value = '';
+	};
+	byId('saveProject').onclick = () => void saveProject();
+	byId('exportProject').onclick = () => void exportProject();
+	byId('generateMap').onclick = () => openGenerationDialog(false);
+	byId('generateBlank').onclick = () => openGenerationDialog(true);
+	document.querySelectorAll('[data-generation-size]').forEach((button) => { button.onclick = () => void generateMap(Number(button.dataset.generationSize)); });
+	byId('landMode').onclick = () => { state.terrainMode = 'land'; byId('landMode').classList.add('active'); byId('waterMode').classList.remove('active'); };
+	byId('waterMode').onclick = () => { state.terrainMode = 'water'; byId('waterMode').classList.add('active'); byId('landMode').classList.remove('active'); };
+	byId('terrainRadius').oninput = (event) => { state.terrainRadius = Number(event.target.value); byId('terrainRadiusValue').value = String(state.terrainRadius); if (state.cursorPoint) updateBrushFeedback(state.cursorPoint); };
+	byId('boundaryDraw').onclick = () => { state.boundaryMode = 'draw'; byId('boundaryDraw').classList.add('active'); byId('boundaryErase').classList.remove('active'); };
+	byId('boundaryErase').onclick = () => { state.boundaryMode = 'erase'; byId('boundaryErase').classList.add('active'); byId('boundaryDraw').classList.remove('active'); };
+	byId('boundaryRadius').oninput = (event) => { state.boundaryRadius = Number(event.target.value); byId('boundaryRadiusValue').value = String(state.boundaryRadius); if (state.cursorPoint) updateBrushFeedback(state.cursorPoint); };
+	byId('regionPaint').onclick = () => { state.regionMode = 'paint'; byId('regionPaint').classList.add('active'); byId('regionPick').classList.remove('active'); };
+	byId('regionPick').onclick = () => { state.regionMode = 'pick'; byId('regionPick').classList.add('active'); byId('regionPaint').classList.remove('active'); };
+	byId('regionColor').oninput = (event) => { state.regionColor = event.target.value; };
+	byId('textValue').onchange = () => void updateSelectedText({ text: byId('textValue').value.trim() });
+	byId('textType').onchange = () => void updateSelectedText({ textType: byId('textType').value });
+	byId('deleteText').onclick = () => void deleteSelectedText();
+	inlineText.onkeydown = (event) => { if (event.key === 'Enter' || event.key === 'Escape') { event.preventDefault(); void commitInlineText(); } };
+	inlineText.onblur = () => void commitInlineText();
+	byId('iconPlace').onclick = () => { state.iconMode = 'place'; byId('iconPlace').classList.add('active'); byId('iconErase').classList.remove('active'); };
+	byId('iconErase').onclick = () => { state.iconMode = 'erase'; byId('iconErase').classList.add('active'); byId('iconPlace').classList.remove('active'); };
+	byId('treeDensity').oninput = (event) => { state.treeDensity = Number(event.target.value); byId('treeDensityValue').value = String(state.treeDensity); };
+	byId('treeRadius').oninput = (event) => { state.treeRadius = Number(event.target.value); byId('treeRadiusValue').value = String(state.treeRadius); if (state.cursorPoint) updateBrushFeedback(state.cursorPoint); };
+
+	canvas.addEventListener('pointerdown', (event) => {
+		if (!state.metadata || !state.sessionId) return;
+		canvas.setPointerCapture(event.pointerId);
+		if (event.button === 1 || state.space) {
+			state.panning = true;
+			state.lastX = event.clientX;
+			state.lastY = event.clientY;
+			canvas.classList.add('is-panning');
+			return;
+		}
+		if (event.button !== 0) return;
+		const point = mapPoint(event);
+		if (!point) return;
+		updateBrushFeedback(point);
+		if (state.activeTool === 'terrain') { state.drawing = true; void terrainAt(point); }
+		if (state.activeTool === 'boundaries') { state.drawing = true; state.boundaryPoints = [point]; renderOverlay(); }
+		if (state.activeTool === 'regions') void regionAt(point);
+		if (state.activeTool === 'text') {
+			if (state.selectedText) {
+				const distance = Math.hypot(point.x - state.selectedText.x, point.y - state.selectedText.y);
+				if (distance < 100) { state.draggingText = true; state.textDragPoint = point; renderOverlay(); return; }
+			}
+			void pickText(point);
+		}
+		if (state.activeTool === 'icons') { state.drawing = state.selectedAsset?.type === 'trees'; void iconAt(point); }
+	});
+
+	canvas.addEventListener('pointermove', (event) => {
+		if (state.panning) {
+			panBy(event.clientX - state.lastX, event.clientY - state.lastY);
+			state.lastX = event.clientX;
+			state.lastY = event.clientY;
+			return;
+		}
+		const point = mapPoint(event);
+		if (!point) return;
+		updateBrushFeedback(point);
+		if (state.activeTool === 'terrain' && state.drawing) void terrainAt(point);
+		if (state.activeTool === 'boundaries' && state.drawing) {
+			const previous = state.boundaryPoints.at(-1);
+			if (!previous || Math.hypot(point.x - previous.x, point.y - previous.y) >= 8) { state.boundaryPoints.push(point); renderOverlay(); }
+		}
+		if (state.activeTool === 'text' && state.draggingText) { state.textDragPoint = point; renderOverlay(); }
+		if (state.activeTool === 'icons' && state.drawing && state.selectedAsset?.type === 'trees') void iconAt(point);
+	});
+
+	async function finishPointer() {
+		if (state.activeTool === 'boundaries' && state.drawing) await finishBoundary();
+		if (state.activeTool === 'text' && state.draggingText && state.textDragPoint) {
+			const point = state.textDragPoint;
+			state.selectedText = { ...state.selectedText, x: point.x, y: point.y };
+			state.textDragPoint = null;
+			await updateSelectedText({ x: point.x, y: point.y });
+		}
+		state.drawing = false;
+		state.draggingText = false;
+		state.panning = false;
+		canvas.classList.remove('is-panning');
+	}
+	canvas.addEventListener('pointerup', () => void finishPointer());
+	canvas.addEventListener('pointercancel', () => void finishPointer());
+	canvas.addEventListener('pointerleave', () => {
+		if (state.drawing || state.panning) return;
+		state.cursorPoint = null;
+		state.brushPolygons = [];
+		brushSelectionVersion += 1;
+		queuedBrushSelection = null;
+		renderOverlay();
+	});
+	canvas.addEventListener('contextmenu', (event) => event.preventDefault());
+	canvas.addEventListener('wheel', (event) => {
+		if (!state.metadata || !map.naturalWidth) return;
+		event.preventDefault();
+		const before = mapPoint(event);
+		const previousScale = state.scale;
+		state.scale = Math.max(0.08, Math.min(8, state.scale * (event.deltaY < 0 ? 1.1 : 0.9)));
+		const ratio = state.scale / previousScale;
+		const originX = event.clientX - canvas.getBoundingClientRect().left;
+		const originY = event.clientY - canvas.getBoundingClientRect().top;
+		state.panX = originX - (originX - state.panX) * ratio;
+		state.panY = originY - (originY - state.panY) * ratio;
+		applyTransform();
+		if (before) renderOverlay();
+	}, { passive: false });
+
+	window.addEventListener('keydown', (event) => {
+		if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return;
+		if (event.code === 'Space') { state.space = true; event.preventDefault(); }
+		if ((event.ctrlKey || event.metaKey) && event.code === 'KeyS') { event.preventDefault(); void saveProject(); return; }
+		const step = event.shiftKey ? 72 : 32;
+		if (event.code === 'ArrowUp' || event.code === 'KeyW') panBy(0, step);
+		if (event.code === 'ArrowDown' || event.code === 'KeyS') panBy(0, -step);
+		if (event.code === 'ArrowLeft' || event.code === 'KeyA') panBy(step, 0);
+		if (event.code === 'ArrowRight' || event.code === 'KeyD') panBy(-step, 0);
+	});
+	window.addEventListener('keyup', (event) => { if (event.code === 'Space') state.space = false; });
+	window.addEventListener('resize', () => { if (!state.hasFit) fit(); else applyTransform(); });
+	window.addEventListener('message', (event) => {
+		if (event.source !== parent || !event.data || typeof event.data !== 'object') return;
+		if (event.data.type === 'nortantis:host-state') {
+			state.host = { ...state.host, ...event.data.state };
+			void applyLocale(event.data.locale).then(() => {
+				if (!state.host.projects.length && state.sessionId) clearWorkspace();
+				else if (!state.host.projects.length) emptyWorkspace.hidden = false;
+			});
+		}
+		if (event.data.type === 'nortantis:open') void openProject(event.data);
+	});
+
+	void applyLocale(FALLBACK_LOCALE).finally(() => postParent('nortantis:ready'));
+})();

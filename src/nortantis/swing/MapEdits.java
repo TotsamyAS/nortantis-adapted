@@ -45,6 +45,7 @@ public class MapEdits implements Serializable
 	public Map<Integer, EdgeEdit> edgeEdits;
 	public FreeIconCollection freeIcons;
 	public CopyOnWriteArrayList<Road> roads;
+	public CopyOnWriteArrayList<Road> regionBoundaryLines;
 	/** All rivers (both generated from the graph and user-drawn). */
 	public CopyOnWriteArrayList<River> rivers;
 	/**
@@ -80,6 +81,7 @@ public class MapEdits implements Serializable
 		edgeEdits = new TreeMap<>();
 		freeIcons = new FreeIconCollection();
 		roads = new CopyOnWriteArrayList<Road>();
+		regionBoundaryLines = new CopyOnWriteArrayList<Road>();
 		rivers = new CopyOnWriteArrayList<River>();
 		hasInitializedRivers = false;
 		textBoundsNeedRefresh = true;
@@ -260,6 +262,10 @@ public class MapEdits implements Serializable
 		copy.roads = new CopyOnWriteArrayList<Road>();
 		copy.roads.addAll(deepCopyOfRoads);
 
+		List<Road> deepCopyOfRegionBoundaryLines = regionBoundaryLines == null ? List.of() : regionBoundaryLines.stream().map(road -> new Road(road)).toList();
+		copy.regionBoundaryLines = new CopyOnWriteArrayList<Road>();
+		copy.regionBoundaryLines.addAll(deepCopyOfRegionBoundaryLines);
+
 		List<River> deepCopyOfRivers = rivers.stream().map(river -> new River(river)).toList();
 		copy.rivers = new CopyOnWriteArrayList<River>();
 		copy.rivers.addAll(deepCopyOfRivers);
@@ -290,7 +296,7 @@ public class MapEdits implements Serializable
 		MapEdits other = (MapEdits) obj;
 		return bakeGeneratedTextAsEdits == other.bakeGeneratedTextAsEdits && Objects.equals(centerEdits, other.centerEdits) && Objects.equals(freeIcons, other.freeIcons)
 				&& hasIconEdits == other.hasIconEdits && Objects.equals(regionEdits, other.regionEdits) && Objects.equals(text, other.text) && Objects.equals(roads, other.roads)
-				&& Objects.equals(rivers, other.rivers) && hasInitializedRivers == other.hasInitializedRivers;
+				&& Objects.equals(regionBoundaryLines, other.regionBoundaryLines) && Objects.equals(rivers, other.rivers) && hasInitializedRivers == other.hasInitializedRivers;
 	}
 
 }

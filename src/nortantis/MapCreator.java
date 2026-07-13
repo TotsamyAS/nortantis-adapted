@@ -18,6 +18,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Future;
 import java.util.function.BiFunction;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 public class MapCreator implements WarningLogger
@@ -42,6 +43,7 @@ public class MapCreator implements WarningLogger
 	private List<IconDrawer.CityIconRemovedForWater> citiesRemovedForTouchingWater = new ArrayList<>();
 	public ConcurrentHashMap<Integer, Center> centersToRedrawLowPriority;
 	private Boolean memoryModeOverride;
+	private final Consumer<String> progressListener;
 
 	/**
 	 * Override the memory mode for testing. Pass null to clear the override and resume normal behavior.
@@ -53,8 +55,52 @@ public class MapCreator implements WarningLogger
 
 	public MapCreator()
 	{
+		this(null);
+	}
+
+	public MapCreator(Consumer<String> progressListener)
+	{
 		warningMessages = new ArrayList<>();
 		centersToRedrawLowPriority = new ConcurrentHashMap<>();
+		this.progressListener = progressListener;
+	}
+
+	private void logPhase(String message)
+	{
+		Logger.println(message);
+		if (progressListener != null)
+		{
+			progressListener.accept(message);
+		}
+	}
+
+	private void drawCustomRegionBoundaryLines(final MapSettings settings, Image map, Rectangle drawBounds)
+	{
+		if (settings.edits == null || settings.edits.regionBoundaryLines == null || settings.edits.regionBoundaryLines.isEmpty())
+		{
+			return;
+		}
+
+		try (Painter p = map.createPainter(DrawQuality.High))
+		{
+			if (drawBounds != null)
+			{
+				p.translate(-drawBounds.x, -drawBounds.y);
+			}
+			p.setColor(settings.regionBoundaryColor);
+			p.setStroke(settings.regionBoundaryStyle, settings.resolution);
+			for (Road line : settings.edits.regionBoundaryLines)
+			{
+				if (line.nodes == null || line.nodes.size() < 2)
+				{
+					continue;
+				}
+				List<Point> locations = PathOperations.toLocationList(line.nodes);
+				List<Point> path = CurveCreator.createCurve(locations);
+				List<IntPoint> pathScaled = path.stream().map(point -> point.mult(settings.resolution).toIntPoint()).toList();
+				p.drawPolyline(pathScaled);
+			}
+		}
 	}
 
 	public IntRectangle incrementalUpdateText(final MapSettings settings, MapParts mapParts, Image fullSizeMap, List<MapText> textChanged)
@@ -381,6 +427,7 @@ public class MapCreator implements WarningLogger
 					mapParts.graph.drawRegionBoundaries(p, settings.regionBoundaryStyle, centersToDraw, drawBounds);
 				}
 			}
+			drawCustomRegionBoundaryLines(settings, mapSnippet, drawBounds);
 
 			checkForCancel();
 
@@ -607,7 +654,7 @@ public class MapCreator implements WarningLogger
 	 */
 	public Image createMap(final MapSettings settings, Dimension maxDimensions, MapParts mapParts) throws CancelledException
 	{
-		Logger.println("Creating the map");
+		logPhase("Creating the map");
 
 		double startTime = System.currentTimeMillis();
 
@@ -615,7 +662,7 @@ public class MapCreator implements WarningLogger
 		// My tests showed that running frayed edge and grunge calculation inline with other stuff gave a 22% speedup.
 		final double resolutionBuffer = 0.5;
 		boolean isLowMemoryMode = memoryModeOverride != null ? memoryModeOverride : settings.resolution >= calcMaxResolutionScale() - resolutionBuffer;
-		Logger.println("Using " + (isLowMemoryMode ? "low" : "high") + " memory mode.");
+		logPhase("Using " + (isLowMemoryMode ? "low" : "high") + " memory mode.");
 
 		if (StringUtils.isNotEmpty(settings.customImagesPath))
 		{
@@ -641,7 +688,7 @@ public class MapCreator implements WarningLogger
 		{
 			if (mapParts == null || mapParts.graph == null)
 			{
-				Logger.println("Creating the graph.");
+				logPhase("Creating the graph.");
 				WorldGraph graphCreated = createGraph(settings, mapBounds.width, mapBounds.height, r, settings.resolution, !settings.edits.isInitialized());
 
 				if (mapParts != null)
@@ -664,10 +711,10 @@ public class MapCreator implements WarningLogger
 		}
 		else
 		{
-			Logger.println("Generating the background image.");
+			logPhase("Generating the background image.");
 			background = new Background(settings, mapBounds, this);
 		}
-		Logger.println("[PHASE timing] background: " + (System.currentTimeMillis() - phaseStart) + "ms");
+		logPhase("[PHASE timing] background: " + (System.currentTimeMillis() - phaseStart) + "ms");
 
 		if (mapParts != null)
 		{
@@ -721,7 +768,7 @@ public class MapCreator implements WarningLogger
 			mountainGroups = null;
 			cities = null;
 		}
-		Logger.println("[PHASE timing] terrain+icons: " + (System.currentTimeMillis() - terrainStart) + "ms");
+		logPhase("[PHASE timing] terrain+icons: " + (System.currentTimeMillis() - terrainStart) + "ms");
 
 		if (mapParts == null)
 		{
@@ -744,11 +791,11 @@ public class MapCreator implements WarningLogger
 		long textStart = System.currentTimeMillis();
 		if (settings.drawText)
 		{
-			Logger.println("Adding text.");
+			logPhase("Adding text.");
 		}
 		else
 		{
-			Logger.println("Creating text but not drawing it.");
+			logPhase("Creating text but not drawing it.");
 		}
 
 		TextDrawer textDrawer = new TextDrawer(settings);
@@ -793,7 +840,7 @@ public class MapCreator implements WarningLogger
 			textDrawer.generateText(graph, map, nameCreator, textBackground, mountainGroups, cities, graph.getGeneratedLakes(), rivers);
 		}
 
-		Logger.println("[PHASE timing] text: " + (System.currentTimeMillis() - textStart) + "ms");
+		logPhase("[PHASE timing] text: " + (System.currentTimeMillis() - textStart) + "ms");
 		if (mapParts == null && textBackground != null)
 		{
 			textBackground.close();
@@ -903,7 +950,7 @@ public class MapCreator implements WarningLogger
 
 		if (settings.drawBorder)
 		{
-			Logger.println("Adding border.");
+			logPhase("Adding border.");
 			Image mapOld = map;
 			map = background.addBorder(map);
 			if (map != mapOld)
@@ -921,13 +968,13 @@ public class MapCreator implements WarningLogger
 		}
 		background = null;
 
-		Logger.println("Map dimensions: " + map.getWidth() + "x" + map.getHeight() + ", resolution scale: " + settings.resolution);
+		logPhase("Map dimensions: " + map.getWidth() + "x" + map.getHeight() + ", resolution scale: " + settings.resolution);
 
 		checkForCancel();
 
 		if (settings.drawGrunge && settings.grungeWidth > 0)
 		{
-			Logger.println("Adding grunge.");
+			logPhase("Adding grunge.");
 			Image grunge;
 
 			if (isLowMemoryMode && grungeTask == null)
@@ -976,7 +1023,7 @@ public class MapCreator implements WarningLogger
 				Tuple2<Image, Image> tuple;
 				tuple = ThreadHelper.getInstance().getResult(frayedBorderTask);
 
-				Logger.println("Adding frayed edges.");
+				logPhase("Adding frayed edges.");
 				frayedBorderMask = tuple.getFirst();
 				frayedBorderBlur = tuple.getSecond();
 			}
@@ -1015,9 +1062,9 @@ public class MapCreator implements WarningLogger
 		checkForCancel();
 
 		double elapsedTime = System.currentTimeMillis() - startTime;
-		Logger.println("Total time to generate map (in seconds): " + elapsedTime / 1000.0);
+		logPhase("Total time to generate map (in seconds): " + elapsedTime / 1000.0);
 
-		Logger.println("Done creating map.");
+		logPhase("Done creating map.");
 
 		System.gc();
 		return map;
@@ -1033,7 +1080,7 @@ public class MapCreator implements WarningLogger
 				return null;
 			}
 
-			Logger.println("Starting job to create frayed edges.");
+			logPhase("Starting job to create frayed edges.");
 			return ThreadHelper.getInstance().submit(() ->
 			{
 				int blurLevel = (int) (settings.frayedBorderBlurLevel * sizeMultiplier);
@@ -1091,7 +1138,7 @@ public class MapCreator implements WarningLogger
 				return null;
 			}
 
-			Logger.println("Starting job to create grunge.");
+			logPhase("Starting job to create grunge.");
 			return ThreadHelper.getInstance().submit(() ->
 			{
 				Image grunge;
@@ -1136,7 +1183,7 @@ public class MapCreator implements WarningLogger
 		List<IconDrawTask> cities = null;
 		if (needToAddIcons)
 		{
-			Logger.println("Adding icons.");
+			logPhase("Adding icons.");
 			iconDrawer.markMountains();
 			iconDrawer.markHills();
 			iconDrawer.markCities(settings.cityProbability);
@@ -1147,7 +1194,7 @@ public class MapCreator implements WarningLogger
 		}
 		else
 		{
-			Logger.println("Adding icons from edits.");
+			logPhase("Adding icons from edits.");
 			iconDrawer.addOrUpdateIconsFromEdits(settings.edits, graph.centers, null, this);
 		}
 
@@ -1171,7 +1218,7 @@ public class MapCreator implements WarningLogger
 		checkForCancel();
 
 		// Draw mask for land vs ocean.
-		Logger.println("Adding land.");
+		logPhase("Adding land.");
 		Image landMask = Image.create(graph.getWidth(), graph.getHeight(), ImageType.Binary);
 		{
 			try (Painter g = landMask.createPainter())
@@ -1210,11 +1257,12 @@ public class MapCreator implements WarningLogger
 				graph.drawRegionBoundaries(g, settings.regionBoundaryStyle, null, null);
 			}
 		}
+		drawCustomRegionBoundaryLines(settings, map, null);
 
 		checkForCancel();
 
 		// Add rivers.
-		Logger.println("Adding rivers.");
+		logPhase("Adding rivers.");
 		if (!settings.edits.hasInitializedRivers)
 		{
 			settings.edits.initializeRiversFromGraph(graph, settings.resolution);
@@ -1223,7 +1271,7 @@ public class MapCreator implements WarningLogger
 
 		checkForCancel();
 
-		Logger.println("Drawing ocean.");
+		logPhase("Drawing ocean.");
 		{
 			if (background.ocean.getWidth() != graph.getWidth() || background.ocean.getHeight() != graph.getHeight())
 			{
@@ -1241,14 +1289,14 @@ public class MapCreator implements WarningLogger
 		Image oceanWithWavesAndShading = background.ocean;
 		if (oceanShading != null)
 		{
-			Logger.println("Adding shading to ocean along coastlines.");
+			logPhase("Adding shading to ocean along coastlines.");
 			map = ImageHelper.getInstance().maskWithColor(map, settings.oceanShadingColor, oceanShading, true);
 			oceanWithWavesAndShading = ImageHelper.getInstance().maskWithColor(oceanWithWavesAndShading, settings.oceanShadingColor, oceanShading, true);
 		}
 
 		if (oceanWaves != null)
 		{
-			Logger.println("Adding waves to ocean along coastlines.");
+			logPhase("Adding waves to ocean along coastlines.");
 			map = ImageHelper.getInstance().maskWithColor(map, settings.oceanWavesColor, oceanWaves, true);
 			oceanWithWavesAndShading = ImageHelper.getInstance().maskWithColor(oceanWithWavesAndShading, settings.oceanWavesColor, oceanWaves, true);
 		}
@@ -1271,12 +1319,12 @@ public class MapCreator implements WarningLogger
 			RoadDrawer roadDrawer = new RoadDrawer(r, settings, graph);
 			if (settings.edits == null || !settings.edits.isInitialized())
 			{
-				Logger.println("Adding roads.");
+				logPhase("Adding roads.");
 				roadDrawer.createRoads();
 			}
 			else
 			{
-				Logger.println("Drawing roads.");
+				logPhase("Drawing roads.");
 			}
 
 			roadDrawer.drawRoads(map, null);
@@ -1296,7 +1344,7 @@ public class MapCreator implements WarningLogger
 
 		checkForCancel();
 
-		Logger.println("Drawing all icons.");
+		logPhase("Drawing all icons.");
 		iconDrawer.drawIcons(iconsToDraw, map, landBackground, background.land, oceanWithWavesAndShading, null);
 		landBackground = null;
 
@@ -1387,7 +1435,7 @@ public class MapCreator implements WarningLogger
 		{
 			if (addLoggingEntry)
 			{
-				Logger.println("Darkening land near shores.");
+				logPhase("Darkening land near shores.");
 			}
 
 			boolean drawRegionColorShading = settings.drawRegionBoundaries && settings.drawRegionColors;

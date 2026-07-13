@@ -580,6 +580,7 @@ public class MapSettings implements Serializable
 			editsJson.put("regionEdits", regionEditsToJson());
 			editsJson.put("hasIconEdits", edits.hasIconEdits);
 			editsJson.put("roads", roadsToJson());
+			editsJson.put("regionBoundaryLines", regionBoundaryLinesToJson());
 			editsJson.put("rivers", riversToJson());
 			editsJson.put("hasInitializedRivers", edits.hasInitializedRivers);
 			// Only write edgeEdits when migration hasn't happened yet (old file being converted). New files have hasInitializedRivers=true
@@ -802,6 +803,34 @@ public class MapSettings implements Serializable
 		}
 
 		return roadsJson;
+	}
+
+	@SuppressWarnings("unchecked")
+	private JSONArray regionBoundaryLinesToJson()
+	{
+		JSONArray linesJson = new JSONArray();
+		if (edits.regionBoundaryLines == null || edits.regionBoundaryLines.isEmpty())
+		{
+			return linesJson;
+		}
+
+		for (Road line : edits.regionBoundaryLines)
+		{
+			JSONObject lineObj = new JSONObject();
+
+			JSONArray pathJson = new JSONArray();
+			if (line.nodes != null)
+			{
+				for (RoadPathNode node : line.nodes)
+				{
+					pathJson.add(node.getLoc().toJson());
+				}
+			}
+			lineObj.put("path", pathJson);
+			linesJson.add(lineObj);
+		}
+
+		return linesJson;
 	}
 
 	@SuppressWarnings("unchecked")
@@ -1474,6 +1503,7 @@ public class MapSettings implements Serializable
 		edits.edgeEdits = parseEdgeEdits(editsJson);
 		edits.hasIconEdits = (boolean) editsJson.get("hasIconEdits");
 		edits.roads = parseRoads(editsJson);
+		edits.regionBoundaryLines = parseRegionBoundaryLines(editsJson);
 		edits.rivers = parseRivers(editsJson);
 		edits.hasInitializedRivers = editsJson.containsKey("hasInitializedRivers") && (boolean) editsJson.get("hasInitializedRivers");
 
@@ -2112,6 +2142,33 @@ public class MapSettings implements Serializable
 			roads.add(Road.fromLocations(path));
 		}
 		return roads;
+	}
+
+	private CopyOnWriteArrayList<Road> parseRegionBoundaryLines(JSONObject editsJson)
+	{
+		CopyOnWriteArrayList<Road> lines = new CopyOnWriteArrayList<>();
+
+		if (!editsJson.containsKey("regionBoundaryLines"))
+		{
+			return lines;
+		}
+
+		JSONArray list = (JSONArray) editsJson.get("regionBoundaryLines");
+		for (Object obj : list)
+		{
+			JSONObject lineJson = (JSONObject) obj;
+			List<Point> path = new ArrayList<Point>();
+			if (lineJson.containsKey("path"))
+			{
+				for (Object obj2 : (JSONArray) lineJson.get("path"))
+				{
+					String pointString = (String) obj2;
+					path.add(Point.fromJSonValue(pointString));
+				}
+			}
+			lines.add(Road.fromLocations(path));
+		}
+		return lines;
 	}
 
 	private CopyOnWriteArrayList<River> parseRivers(JSONObject editsJson)

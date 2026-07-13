@@ -154,7 +154,7 @@ sourceSets {
         }
         resources {
             setSrcDirs(listOf("src"))
-            include("**/*.properties", "**/manifest.txt")
+            include("**/*.properties", "**/manifest.txt", "nortantis/rest/editor/**")
         }
     }
     test {

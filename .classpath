@@ -7,7 +7,13 @@
 			<attribute name="test" value="true"/>
 		</attributes>
 	</classpathentry>
-	<classpathentry including="**/*.properties|**/manifest.txt|**/*.java" kind="src" output="bin/main" path="src">
+	<classpathentry including="**/*.properties|**/manifest.txt|nortantis/rest/editor/**|**/*.java" kind="src" output="bin/main" path="src">
+		<attributes>
+			<attribute name="gradle_scope" value="main"/>
+			<attribute name="gradle_used_by_scope" value="main,test"/>
+		</attributes>
+	</classpathentry>
+	<classpathentry including="**/*.properties|**/manifest.txt|nortantis/rest/editor/**" kind="src" output="bin/main" path="build/generated-resources">
 		<attributes>
 			<attribute name="gradle_scope" value="main"/>
 			<attribute name="gradle_used_by_scope" value="main,test"/>

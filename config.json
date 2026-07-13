@@ -1,0 +1,14 @@
+{
+	"logging": {
+		"BRUSH_LOGGING": false,
+		"BORDERS_LOGGING": false,
+		"REGION_PAINT_LOGGING": false,
+		"TEXT_FIELD_LOGGING": false,
+		"ICONS_LOGGING": false,
+		"FORESTS_LOGGING": false,
+		"ROADS_LOGGING": false,
+		"GENERATION_LOGGING": false,
+		"PROJECTS_LOGGING": false,
+		"ASSETS_LOGGING": false
+	}
+}

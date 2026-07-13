@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="und">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title></title>
+		<link rel="stylesheet" href="/editor/editor.css" />
+	</head>
+	<body>
+		<svg class="icon-symbols" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+			<symbol id="icon-arrow-left" viewBox="0 0 24 24">
+				<path d="m12 19-7-7 7-7" />
+				<path d="M19 12H5" />
+			</symbol>
+			<symbol id="icon-folder-open" viewBox="0 0 24 24">
+				<path
+					d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"
+				/>
+			</symbol>
+			<symbol id="icon-paintbrush" viewBox="0 0 24 24">
+				<path d="m14.622 17.897-10.68-2.913" />
+				<path
+					d="M18.376 2.622a1 1 0 1 1 3.002 3.002L17.36 9.643a.5.5 0 0 0 0 .707l.944.944a2.41 2.41 0 0 1 0 3.408l-.944.944a.5.5 0 0 1-.707 0L8.354 7.348a.5.5 0 0 1 0-.707l.944-.944a2.41 2.41 0 0 1 3.408 0l.944.944a.5.5 0 0 0 .707 0z"
+				/>
+				<path
+					d="M9 8c-1.804 2.71-3.97 3.46-6.583 3.948a.507.507 0 0 0-.302.819l7.32 8.883a1 1 0 0 0 1.185.204C12.735 20.405 16 16.792 16 15"
+				/>
+			</symbol>
+			<symbol id="icon-split" viewBox="0 0 24 24">
+				<path d="M16 3h5v5" />
+				<path d="M8 3H3v5" />
+				<path d="M12 22v-8.3a4 4 0 0 0-1.172-2.872L3 3" />
+				<path d="m15 9 6-6" />
+			</symbol>
+			<symbol id="icon-palette" viewBox="0 0 24 24">
+				<path
+					d="M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z"
+				/>
+				<circle cx="13.5" cy="6.5" r=".5" fill="currentColor" />
+				<circle cx="17.5" cy="10.5" r=".5" fill="currentColor" />
+				<circle cx="6.5" cy="12.5" r=".5" fill="currentColor" />
+				<circle cx="8.5" cy="7.5" r=".5" fill="currentColor" />
+			</symbol>
+			<symbol id="icon-type" viewBox="0 0 24 24">
+				<path d="M12 4v16" />
+				<path d="M4 7V5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v2" />
+				<path d="M9 20h6" />
+			</symbol>
+			<symbol id="icon-mountain" viewBox="0 0 24 24"><path d="m8 3 4 8 5-5 5 15H2L8 3z" /></symbol>
+			<symbol id="icon-sparkles" viewBox="0 0 24 24">
+				<path
+					d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z"
+				/>
+				<path d="M20 2v4" />
+				<path d="M22 4h-4" />
+				<circle cx="4" cy="20" r="2" />
+			</symbol>
+			<symbol id="icon-info" viewBox="0 0 24 24">
+				<circle cx="12" cy="12" r="10" />
+				<path d="M12 16v-4" />
+				<path d="M12 8h.01" />
+			</symbol>
+			<symbol id="icon-save" viewBox="0 0 24 24">
+				<path
+					d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"
+				/>
+				<path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7" />
+				<path d="M7 3v4a1 1 0 0 0 1 1h7" />
+			</symbol>
+			<symbol id="icon-download" viewBox="0 0 24 24">
+				<path d="M12 15V3" />
+				<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+				<path d="m7 10 5 5 5-5" />
+			</symbol>
+			<symbol id="icon-plus" viewBox="0 0 24 24">
+				<path d="M5 12h14" />
+				<path d="M12 5v14" />
+			</symbol>
+			<symbol id="icon-trash" viewBox="0 0 24 24">
+				<path d="M10 11v6" />
+				<path d="M14 11v6" />
+				<path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+				<path d="M3 6h18" />
+				<path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+			</symbol>
+		</svg>
+
+		<div class="editor-shell">
+			<main class="editor-stage">
+				<div id="canvas" class="editor-canvas" tabindex="0">
+					<div id="mapSurface" class="map-surface">
+						<img id="map" class="map-image" alt="" />
+						<svg id="mapOverlay" class="map-overlay" aria-hidden="true"></svg>
+					</div>
+					<input id="inlineText" class="inline-text-input" type="text" hidden />
+				</div>
+				<div id="emptyWorkspace" class="workspace-empty">
+					<strong data-label="emptyWorkspaceTitle"></strong
+					><span data-label="emptyWorkspaceText"></span>
+				</div>
+				<div id="loading" class="canvas-loading" hidden>
+					<div class="loading-card">
+						<strong id="loadingTitle"></strong>
+						<p id="loadingText" class="muted"></p>
+						<div
+							id="loadingProgress"
+							class="generation-progress"
+							role="progressbar"
+							aria-valuemin="0"
+							aria-valuemax="100"
+							aria-valuenow="0"
+						>
+							<span></span>
+						</div>
+					</div>
+				</div>
+			</main>
+
+			<nav class="tool-rail" data-label-aria="toolsAria" aria-label="">
+				<button class="tool-icon active" data-tool-button="projects" data-tooltip="" aria-label="">
+					<svg><use href="#icon-folder-open" /></svg>
+				</button>
+				<button class="tool-icon" data-tool-button="generation" data-tooltip="" aria-label="">
+					<svg><use href="#icon-sparkles" /></svg>
+				</button>
+				<button class="tool-icon" data-tool-button="terrain" data-tooltip="" aria-label="">
+					<svg><use href="#icon-paintbrush" /></svg>
+				</button>
+				<button class="tool-icon" data-tool-button="boundaries" data-tooltip="" aria-label="">
+					<svg><use href="#icon-split" /></svg>
+				</button>
+				<button class="tool-icon" data-tool-button="regions" data-tooltip="" aria-label="">
+					<svg><use href="#icon-palette" /></svg>
+				</button>
+				<button class="tool-icon" data-tool-button="text" data-tooltip="" aria-label="">
+					<svg><use href="#icon-type" /></svg>
+				</button>
+				<button class="tool-icon" data-tool-button="icons" data-tooltip="" aria-label="">
+					<svg><use href="#icon-mountain" /></svg>
+				</button>
+				<button class="tool-icon" data-tool-button="about" data-tooltip="" aria-label="">
+					<svg><use href="#icon-info" /></svg>
+				</button>
+			</nav>
+
+			<aside class="tool-panel">
+				<header class="session-bar">
+					<a id="backLink" class="back-button" href="/hub" data-tooltip="" aria-label="">
+						<svg><use href="#icon-arrow-left" /></svg>
+					</a>
+					<div class="session-title">
+						<strong id="projectTitle"></strong><span id="statusText"></span>
+					</div>
+					<button id="saveProject" class="session-action" data-tooltip="" aria-label="">
+						<svg><use href="#icon-save" /></svg>
+					</button>
+					<button id="exportProject" class="session-action" data-tooltip="" aria-label="">
+						<svg><use href="#icon-download" /></svg>
+					</button>
+				</header>
+
+				<div class="tool-panel-scroll">
+					<section class="tool-view active" data-tool-panel="projects">
+						<h2 data-label="projects"></h2>
+						<div id="storageMeter" class="storage-meter" hidden>
+							<div class="storage-meter-heading">
+								<strong id="storageUsed"></strong><span id="storageAvailable"></span>
+							</div>
+							<div class="storage-progress" role="progressbar"><span></span></div>
+						</div>
+						<form id="createProjectForm" class="create-row">
+							<input
+								id="newProjectName"
+								type="text"
+								data-label-placeholder="createPlaceholder"
+								autocomplete="off"
+							/>
+							<button
+								class="ui-button primary icon-only"
+								type="submit"
+								data-tooltip=""
+								aria-label=""
+							>
+								<svg><use href="#icon-plus" /></svg>
+							</button>
+						</form>
+						<div id="projectList" class="project-list"></div>
+					</section>
+
+					<section class="tool-view" data-tool-panel="generation">
+						<h2 data-label="generation"></h2>
+						<p class="muted" data-label="generationHint"></p>
+						<div class="button-stack">
+							<button
+								id="generateMap"
+								class="ui-button primary"
+								type="button"
+								data-label="generateMap"
+							></button>
+							<button
+								id="generateBlank"
+								class="ui-button"
+								type="button"
+								data-label="generateBlank"
+							></button>
+						</div>
+					</section>
+
+					<section class="tool-view" data-tool-panel="terrain">
+						<h2 data-label="terrain"></h2>
+						<div class="segmented">
+							<button
+								id="landMode"
+								class="terrain-land active"
+								type="button"
+								data-label="land"
+							></button
+							><button
+								id="waterMode"
+								class="terrain-water"
+								type="button"
+								data-label="water"
+							></button>
+						</div>
+						<label class="field"
+							><span
+								><span data-label="brushSize"></span>:
+								<output id="terrainRadiusValue">48</output></span
+							><input id="terrainRadius" type="range" min="8" max="140" value="48"
+						/></label>
+						<p class="muted" data-label="terrainHint"></p>
+					</section>
+
+					<section class="tool-view" data-tool-panel="boundaries">
+						<h2 data-label="boundaries"></h2>
+						<div class="segmented">
+							<button
+								id="boundaryDraw"
+								class="active"
+								type="button"
+								data-label="boundaryDraw"
+							></button
+							><button id="boundaryErase" type="button" data-label="boundaryErase"></button>
+						</div>
+						<label class="field"
+							><span
+								><span data-label="boundaryRadius"></span>:
+								<output id="boundaryRadiusValue">36</output></span
+							><input id="boundaryRadius" type="range" min="8" max="90" value="36"
+						/></label>
+						<p class="muted" data-label="boundaryHint"></p>
+					</section>
+
+					<section class="tool-view" data-tool-panel="regions">
+						<h2 data-label="regions"></h2>
+						<div class="segmented">
+							<button
+								id="regionPaint"
+								class="active"
+								type="button"
+								data-label="regionPaint"
+							></button
+							><button id="regionPick" type="button" data-label="regionPick"></button>
+						</div>
+						<label class="field"
+							><span data-label="regionColor"></span
+							><input id="regionColor" type="color" value="#b9945d"
+						/></label>
+						<p id="regionStatus" class="muted" data-label="regionHint"></p>
+					</section>
+
+					<section class="tool-view" data-tool-panel="text">
+						<h2 data-label="text"></h2>
+						<label class="field"
+							><span data-label="textValue"></span
+							><input id="textValue" type="text" data-label-placeholder="textPlaceholder"
+						/></label>
+						<label class="field"
+							><span data-label="textType"></span
+							><select id="textType"></select
+						></label>
+						<button
+							id="deleteText"
+							class="ui-button danger"
+							type="button"
+							data-label="deleteText"
+							disabled
+						></button>
+						<p class="muted" data-label="textHint"></p>
+					</section>
+
+					<section class="tool-view" data-tool-panel="icons">
+						<h2 data-label="icons"></h2>
+						<div class="segmented">
+							<button id="iconPlace" class="active" type="button" data-label="iconPlace"></button
+							><button id="iconErase" type="button" data-label="iconErase"></button>
+						</div>
+						<label id="treeDensityField" class="field" hidden
+							><span
+								><span data-label="treeDensity"></span>:
+								<output id="treeDensityValue">5</output></span
+							><input id="treeDensity" type="range" min="1" max="10" value="5"
+						/></label>
+						<label id="treeRadiusField" class="field" hidden
+							><span
+								><span data-label="brushSize"></span>:
+								<output id="treeRadiusValue">48</output></span
+							><input id="treeRadius" type="range" min="8" max="140" value="48"
+						/></label>
+						<div id="iconLibrary" class="icon-library"></div>
+						<p class="muted" data-label="iconsHint"></p>
+					</section>
+
+					<section class="tool-view" data-tool-panel="about">
+						<h2 data-label="aboutTitle"></h2>
+						<p class="muted" data-label="aboutDescription"></p>
+						<div class="button-stack">
+							<a
+								id="upstreamLink"
+								class="ui-button"
+								href="https://github.com/jeheydorn/nortantis"
+								target="_blank"
+								rel="noreferrer"
+								data-label="upstream"
+							></a
+							><a
+								id="forkLink"
+								class="ui-button"
+								href="#"
+								target="_blank"
+								rel="noreferrer"
+								data-label="fork"
+							></a>
+						</div>
+					</section>
+				</div>
+			</aside>
+		</div>
+
+		<dialog id="generationDialog" class="editor-dialog">
+			<form method="dialog" class="dialog-card">
+				<header>
+					<h2 id="generationDialogTitle"></h2>
+					<button class="dialog-close" value="cancel" data-label-aria="close" aria-label="">
+						×
+					</button>
+				</header>
+				<p class="muted" data-label="generationModalHint"></p>
+				<div class="size-grid">
+					<button type="button" data-generation-size="1024">
+						<strong>1024 × 1024</strong><span data-label="smallMap"></span>
+					</button>
+					<button type="button" data-generation-size="2048">
+						<strong>2048 × 2048</strong><span data-label="mediumMap"></span>
+					</button>
+					<button type="button" data-generation-size="4096">
+						<strong>4096 × 4096</strong><span data-label="largeMap"></span>
+					</button>
+				</div>
+			</form>
+		</dialog>
+
+		<script src="/editor/editor.js" defer></script>
+	</body>
+</html>
