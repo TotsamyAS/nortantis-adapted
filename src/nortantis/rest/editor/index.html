@@ -398,6 +398,16 @@
 					</button>
 				</header>
 				<p class="muted" data-label="generationModalHint"></p>
+				<div id="regionCountOptions" class="generation-options">
+					<label class="toggle-row">
+						<input id="customRegionCount" type="checkbox" />
+						<span data-label="customRegionCount"></span>
+					</label>
+					<label id="regionCountField" class="field" hidden>
+						<span data-label="regionCount"></span>
+						<input id="regionCount" type="number" min="2" max="20" step="1" value="3" inputmode="numeric" />
+					</label>
+				</div>
 				<div class="size-grid">
 					<button type="button" data-generation-size="1024">
 						<strong>1024 × 1024</strong><span data-label="smallMap"></span>

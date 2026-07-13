@@ -178,6 +178,22 @@ svg:not(.map-overlay) {
 	stroke-width: 1;
 	vector-effect: non-scaling-stroke;
 }
+.map-overlay .brush-edge-internal,
+.map-overlay .brush-edge-boundary {
+	fill: none;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+	vector-effect: non-scaling-stroke;
+}
+.map-overlay .brush-edge-internal {
+	stroke: rgba(255, 233, 169, 0.42);
+	stroke-width: 1;
+}
+.map-overlay .brush-edge-boundary {
+	stroke: rgba(255, 233, 169, 0.96);
+	stroke-width: 2.25;
+	filter: drop-shadow(0 0 2px rgba(4, 1, 1, 0.9));
+}
 .map-overlay .tile-cell {
 	fill: none;
 	stroke: rgba(255, 233, 169, 0.2);
@@ -713,7 +729,16 @@ input[type='range'] {
 	color: var(--text);
 	cursor: pointer;
 }
-.toggle-row input { accent-color: var(--gold); }
+.toggle-row input[type='checkbox'] {
+	flex: 0 0 14px;
+	width: 14px;
+	height: 14px;
+	min-width: 14px;
+	min-height: 14px;
+	margin: 0;
+	padding: 0;
+	accent-color: var(--gold);
+}
 
 .inline-text-input {
 	position: fixed;
@@ -773,6 +798,14 @@ input[type='range'] {
 	display: grid;
 	grid-template-columns: repeat(3, minmax(0, 1fr));
 	gap: 8px;
+}
+.generation-options {
+	display: grid;
+	gap: 10px;
+	padding: 10px;
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	background: var(--card);
 }
 .size-grid button {
 	display: grid;

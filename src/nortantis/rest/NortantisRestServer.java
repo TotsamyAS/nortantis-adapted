@@ -33,6 +33,7 @@ import nortantis.editor.Road;
 import nortantis.editor.RoadPathNode;
 import nortantis.geom.Dimension;
 import nortantis.geom.Point;
+import nortantis.geom.RotatedRectangle;
 import nortantis.graph.voronoi.Center;
 import nortantis.graph.voronoi.Corner;
 import nortantis.graph.voronoi.Edge;
@@ -725,7 +726,7 @@ public class NortantisRestServer
 		settings.generatedWidth = size;
 		settings.generatedHeight = size;
 		settings.worldSize = worldSizeForMapSize(size);
-		settings.regionCount = SettingsGenerator.maxGeneratedRegionCount(settings.worldSize);
+		settings.regionCount = readRegionCount(input, settings.worldSize, blank);
 		settings.resolution = MapSettings.defaultResolution;
 		if (blank)
 		{
@@ -745,6 +746,30 @@ public class NortantisRestServer
 				settings.edits.centerEdits.put(center.index, new CenterEdit(center.index, true, false, null, null, null));
 			}
 		}
+	}
+
+	private static int readRegionCount(JSONObject input, int worldSize, boolean blank)
+	{
+		Object value = input.get("regionCount");
+		if (blank || value == null)
+		{
+			return SettingsGenerator.maxGeneratedRegionCount(worldSize);
+		}
+		if (!(value instanceof Number))
+		{
+			throw new IllegalArgumentException("regionCount must be a number");
+		}
+		double rawRegionCount = ((Number) value).doubleValue();
+		if (!Double.isFinite(rawRegionCount) || rawRegionCount != Math.rint(rawRegionCount))
+		{
+			throw new IllegalArgumentException("regionCount must be an integer");
+		}
+		int regionCount = (int) rawRegionCount;
+		if (regionCount < SettingsGenerator.minRegionCount || regionCount > SettingsGenerator.maxRegionCount)
+		{
+			throw new IllegalArgumentException("regionCount must be between " + SettingsGenerator.minRegionCount + " and " + SettingsGenerator.maxRegionCount);
+		}
+		return regionCount;
 	}
 
 	private static Font fontWithCyrillicFallback(Font font)
@@ -3769,23 +3794,21 @@ public class NortantisRestServer
 	private static Set<Center> selectCentersForBrush(WorldGraph graph, Point point, double radius)
 	{
 		Set<Center> selected = new HashSet<>();
-		Center closest = graph.findClosestCenter(point, true);
+		if (!new RotatedRectangle(graph.bounds).overlapsCircle(point, radius))
+		{
+			return selected;
+		}
+		Center closest = graph.findClosestCenter(point);
 		if (closest == null)
 		{
 			return selected;
 		}
-		for (Center center : graph.centers)
+		selected.add(closest);
+		if (radius <= 0.5)
 		{
-			if (isCenterOverlappingCircle(center, point, radius))
-			{
-				selected.add(center);
-			}
+			return selected;
 		}
-		if (selected.isEmpty())
-		{
-			selected.add(closest);
-		}
-		return selected;
+		return graph.breadthFirstSearch(center -> isCenterOverlappingCircle(center, point, radius), closest);
 	}
 
 	private static boolean isCenterOverlappingCircle(Center center, Point point, double radius)
@@ -3810,8 +3833,62 @@ public class NortantisRestServer
 		result.append(sessionMetadataJson(session));
 		result.append(",\"polygons\":");
 		appendPolygonsJson(result, selected, session);
+		result.append(",\"edges\":");
+		appendSelectionEdgesJson(result, selected, session);
 		result.append("}");
 		return result.toString();
+	}
+
+	private static void appendSelectionEdgesJson(StringBuilder result, Set<Center> selected, EditorSession session)
+	{
+		double resolution = session.settings.resolution == 0.0 ? 1.0 : session.settings.resolution;
+		int borderPadding = borderPadding(session);
+		Set<Integer> appendedEdges = new HashSet<>();
+		result.append("[");
+		boolean firstEdge = true;
+		for (Center center : selected)
+		{
+			for (Edge edge : center.borders)
+			{
+				if (edge == null || !appendedEdges.add(edge.index))
+				{
+					continue;
+				}
+				List<Point> points = session.mapParts.graph.noisyEdges.getNoisyEdge(edge.index);
+				if ((points == null || points.size() < 2) && edge.v0 != null && edge.v1 != null)
+				{
+					points = List.of(edge.v0.loc, edge.v1.loc);
+				}
+				if (points == null || points.size() < 2)
+				{
+					continue;
+				}
+				boolean internal = edge.d0 != null && edge.d1 != null && selected.contains(edge.d0) && selected.contains(edge.d1);
+				if (!firstEdge)
+				{
+					result.append(",");
+				}
+				firstEdge = false;
+				result.append("{\"index\":").append(edge.index)
+						.append(",\"internal\":").append(internal)
+						.append(",\"points\":[");
+				for (int pointIndex = 0; pointIndex < points.size(); pointIndex++)
+				{
+					if (pointIndex > 0)
+					{
+						result.append(",");
+					}
+					Point point = points.get(pointIndex);
+					result.append("[")
+							.append((point.x + borderPadding) / resolution)
+							.append(",")
+							.append((point.y + borderPadding) / resolution)
+							.append("]");
+				}
+				result.append("]}");
+			}
+		}
+		result.append("]");
 	}
 
 	private static String pathPreviewJson(List<Point> points, Set<Center> selected, EditorSession session)

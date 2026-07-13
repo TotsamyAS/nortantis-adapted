@@ -446,7 +446,7 @@ public class NameCreator
 				case City, Town -> throw new IllegalStateException("City and town labels use proper names without a structure prefix");
 			};
 			String format = ProbabilityHelper.sampleCategorical(r,
-					Arrays.asList(new Tuple2<>(0.45, structure + " %s"), new Tuple2<>(0.4, "%s"), new Tuple2<>(0.15, "%s — " + structure.toLowerCase(Locale.ROOT))));
+					Arrays.asList(new Tuple2<>(0.45, structure + " %s"), new Tuple2<>(0.4, "%s"), new Tuple2<>(0.15, "%s - " + structure.toLowerCase(Locale.ROOT))));
 			return generatePlaceName(format, requireUnique);
 		}
 		if (type == TextType.River)

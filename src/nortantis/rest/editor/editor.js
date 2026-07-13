@@ -50,6 +50,7 @@
 		treeRadius: 48,
 		cursorPoint: null,
 		brushPolygons: [],
+		brushEdges: [],
 		editPending: false,
 		queuedEdit: null,
 		queuedHistory: null,
@@ -426,6 +427,9 @@
 		state.topologySessionId = null;
 		state.pathPreviewPoints = [];
 		state.pathPreviewPolygons = [];
+		state.cursorPoint = null;
+		state.brushPolygons = [];
+		state.brushEdges = [];
 		state.historyGroup = null;
 		state.queuedHistory = null;
 		state.queuedEdit = null;
@@ -462,9 +466,12 @@
 		overlay.replaceChildren();
 		if (state.showTiles) state.tilePolygons.forEach((polygon) => appendOverlayPolygon(polygon, 'tile-cell'));
 		state.pathPreviewPolygons.forEach((polygon) => appendOverlayPolygon(polygon, 'path-cell'));
-		state.brushPolygons.forEach((polygon) => {
-			appendOverlayPolygon(polygon, 'brush-cell');
-		});
+		if (state.brushEdges.length) {
+			state.brushEdges.filter((edge) => edge.internal).forEach((edge) => appendOverlayPath(edge.points, 'brush-edge-internal'));
+			state.brushEdges.filter((edge) => !edge.internal).forEach((edge) => appendOverlayPath(edge.points, 'brush-edge-boundary'));
+		} else {
+			state.brushPolygons.forEach((polygon) => appendOverlayPolygon(polygon, 'brush-cell'));
+		}
 		const brush = brushFeedback();
 		if (brush && state.cursorPoint) {
 			const point = projectToPreview(state.cursorPoint);
@@ -505,11 +512,19 @@
 		overlay.append(cell);
 	}
 
+	function appendOverlayPath(points, className) {
+		if (!Array.isArray(points) || points.length < 2) return;
+		const path = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+		path.setAttribute('class', className);
+		path.setAttribute('points', points.map(([x, y]) => { const point = projectToPreview({ x, y }); return `${point.x},${point.y}`; }).join(' '));
+		overlay.append(path);
+	}
+
 	function brushFeedback() {
-		if (state.activeTool === 'terrain') return { radius: state.terrainRadius, exact: true };
+		if (state.activeTool === 'terrain') return { radius: state.terrainRadius / 2, exact: true };
 		if (state.activeTool === 'provinces' && (state.provinceMode === 'boundaryDraw' || state.provinceMode === 'boundaryErase')) return { radius: state.boundaryRadius, exact: false };
 		if (state.activeTool === 'lines') return { radius: state.lineRadius, exact: false };
-		if (state.activeTool === 'icons' && (state.iconMode === 'erase' || state.selectedAsset?.type === 'trees')) return { radius: state.treeRadius, exact: true };
+		if (state.activeTool === 'icons' && (state.iconMode === 'erase' || state.selectedAsset?.type === 'trees')) return { radius: state.treeRadius / 2, exact: true };
 		return null;
 	}
 
@@ -518,10 +533,12 @@
 		const brush = brushFeedback();
 		if (!brush?.exact || !state.sessionId) {
 			state.brushPolygons = [];
+			state.brushEdges = [];
 			renderOverlay();
 			return;
 		}
 		state.brushPolygons = [];
+		state.brushEdges = [];
 		renderOverlay();
 		window.clearTimeout(brushSelectionTimer);
 		const version = ++brushSelectionVersion;
@@ -543,10 +560,12 @@
 				});
 				if (request.version !== brushSelectionVersion) return;
 				state.brushPolygons = Array.isArray(json.polygons) ? json.polygons : [];
+				state.brushEdges = Array.isArray(json.edges) ? json.edges : [];
 				renderOverlay();
 			} catch {
 				if (request.version !== brushSelectionVersion) return;
 				state.brushPolygons = [];
+				state.brushEdges = [];
 				renderOverlay();
 			}
 		} finally {
@@ -669,6 +688,7 @@
 		state.drawing = false;
 		state.cursorPoint = null;
 		state.brushPolygons = [];
+		state.brushEdges = [];
 		brushSelectionVersion += 1;
 		queuedBrushSelection = null;
 		document.querySelectorAll('[data-tool-button]').forEach((button) => button.classList.toggle('active', button.dataset.toolButton === tool));
@@ -752,7 +772,7 @@
 	}
 
 	function terrainAt(point) {
-		return sendEdit({ type: 'terrain.brush', mode: state.terrainMode, x: point.x, y: point.y, radius: state.terrainRadius }, true);
+		return sendEdit({ type: 'terrain.brush', mode: state.terrainMode, x: point.x, y: point.y, radius: state.terrainRadius / 2 }, true);
 	}
 
 	async function finishBoundary() {
@@ -927,11 +947,11 @@
 	}
 
 	function iconAt(point) {
-		if (state.iconMode === 'erase') return sendEdit({ type: 'relief.erase', x: point.x, y: point.y, radius: state.treeRadius }, true);
+		if (state.iconMode === 'erase') return sendEdit({ type: 'relief.erase', x: point.x, y: point.y, radius: state.treeRadius / 2 }, true);
 		if (!state.selectedAsset) return Promise.resolve();
 		const asset = state.selectedAsset;
 		if (asset?.type === 'trees') {
-			return sendEdit({ type: state.iconMode === 'place' ? 'trees.center.set' : 'trees.center.clear', x: point.x, y: point.y, radius: state.treeRadius, artPack: asset.artPack, treeType: asset.group, density: state.treeDensity / 10 }, true);
+			return sendEdit({ type: state.iconMode === 'place' ? 'trees.center.set' : 'trees.center.clear', x: point.x, y: point.y, radius: state.treeRadius / 2, artPack: asset.artPack, treeType: asset.group, density: state.treeDensity / 10 }, true);
 		}
 		return sendEdit({ type: 'icon.center.set', x: point.x, y: point.y, iconKind: asset.type, artPack: asset.artPack, groupId: asset.group, iconName: asset.name }, true);
 	}
@@ -940,6 +960,8 @@
 		if (!state.sessionId) return;
 		state.generationBlank = blank;
 		byId('generationDialogTitle').textContent = label(blank ? 'blankTitle' : 'generateTitle');
+		byId('regionCountOptions').hidden = blank;
+		byId('regionCountField').hidden = blank || !byId('customRegionCount').checked;
 		byId('generationDialog').showModal();
 	}
 
@@ -949,13 +971,17 @@
 	};
 
 	async function generateMap(size) {
+		const useCustomRegionCount = !state.generationBlank && byId('customRegionCount').checked;
+		const regionCountInput = byId('regionCount');
+		if (useCustomRegionCount && !regionCountInput.reportValidity()) return;
+		const regionCount = useCustomRegionCount ? Number(regionCountInput.value) : null;
 		byId('generationDialog').close();
 		showLoading(label('generating'), label('phaseStarting'), 1);
 		try {
 			const response = await fetch('/api/editor/session/generate-stream', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ sessionId: state.sessionId, name: state.projectName, size, blank: state.generationBlank, locale: state.locale || FALLBACK_LOCALE })
+				body: JSON.stringify({ sessionId: state.sessionId, name: state.projectName, size, blank: state.generationBlank, regionCount, locale: state.locale || FALLBACK_LOCALE })
 			});
 			if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`);
 			await readSse(response.body, (event, data) => {
@@ -1056,6 +1082,9 @@
 	byId('exportProject').onclick = () => void exportProject();
 	byId('generateMap').onclick = () => openGenerationDialog(false);
 	byId('generateBlank').onclick = () => openGenerationDialog(true);
+	byId('customRegionCount').onchange = () => {
+		byId('regionCountField').hidden = !byId('customRegionCount').checked;
+	};
 	document.querySelectorAll('[data-generation-size]').forEach((button) => { button.onclick = () => void generateMap(Number(button.dataset.generationSize)); });
 	byId('landMode').onclick = () => { state.terrainMode = 'land'; byId('landMode').classList.add('active'); byId('waterMode').classList.remove('active'); };
 	byId('waterMode').onclick = () => { state.terrainMode = 'water'; byId('waterMode').classList.add('active'); byId('landMode').classList.remove('active'); };
@@ -1165,6 +1194,7 @@
 		if (state.drawing || state.panning) return;
 		state.cursorPoint = null;
 		state.brushPolygons = [];
+		state.brushEdges = [];
 		state.pathPreviewPoints = [];
 		state.pathPreviewPolygons = [];
 		brushSelectionVersion += 1;
