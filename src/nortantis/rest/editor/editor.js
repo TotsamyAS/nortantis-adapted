@@ -95,6 +95,38 @@
 		return `<svg aria-hidden="true"><use href="#icon-${id}"></use></svg>`;
 	}
 
+	function renderSideFire() {
+		const fire = byId('editorSideFire');
+		if (!fire || fire.childElementCount) return;
+
+		const fragment = document.createDocumentFragment();
+		Array.from({ length: 78 }, (_, index) => ({
+			x: `${4 + ((index * 47) % 93)}%`,
+			y: `${(index * 11) % 19}%`,
+			size: `${2 + ((index * 5) % 6)}px`,
+			rotation: `${-34 + ((index * 29) % 69)}deg`,
+			duration: `${3.4 + ((index * 13) % 47) / 10}s`,
+			delay: `${-((index * 17) % 83) / 10}s`,
+			drift: `${-34 + ((index * 31) % 69)}px`,
+			rise: `${150 + ((index * 37) % 361)}px`
+		})).forEach((spark) => {
+			const element = document.createElement('i');
+			element.className = 'game-side-spark';
+			element.style.setProperty('--spark-x', spark.x);
+			element.style.setProperty('--spark-y', spark.y);
+			element.style.setProperty('--spark-size', spark.size);
+			element.style.setProperty('--spark-rotation', spark.rotation);
+			element.style.setProperty('--spark-duration', spark.duration);
+			element.style.setProperty('--spark-delay', spark.delay);
+			element.style.setProperty('--spark-drift', spark.drift);
+			element.style.setProperty('--spark-rise', spark.rise);
+			fragment.append(element);
+		});
+		fire.append(fragment);
+	}
+
+	renderSideFire();
+
 	function label(key, params = {}) {
 		const value = typeof state.labels[key] === 'string' ? state.labels[key] : '';
 		return Object.entries(params).reduce((text, [name, replacement]) => text.replaceAll(`{${name}}`, String(replacement)), value);
