@@ -9,6 +9,15 @@
 		'#3f6f8f', '#4d5e91', '#65558f', '#80558a',
 		'#99586e', '#7a5a48', '#6e6e62', '#a88b72'
 	];
+	const FALLBACK_TEXT_STYLES = {
+		Title: { fontFamily: 'Georgia', size: 54, weight: 700, italic: false, boldBackground: true },
+		Region: { fontFamily: 'Georgia', size: 38, weight: 700, italic: false, boldBackground: true },
+		Mountain_range: { fontFamily: 'Georgia', size: 32, weight: 400, italic: true, boldBackground: false },
+		Other_mountains: { fontFamily: 'Georgia', size: 24, weight: 400, italic: true, boldBackground: false },
+		City: { fontFamily: 'Georgia', size: 22, weight: 700, italic: false, boldBackground: false },
+		Lake: { fontFamily: 'Georgia', size: 22, weight: 400, italic: true, boldBackground: false },
+		River: { fontFamily: 'Georgia', size: 22, weight: 400, italic: true, boldBackground: false }
+	};
 	const dictionaryCache = new Map();
 	let localeRequestId = 0;
 
@@ -232,17 +241,222 @@
 		document.documentElement.dataset.i18nReady = 'true';
 	}
 
+	function textStyleFor(type) {
+		return {
+			...(FALLBACK_TEXT_STYLES[type] || FALLBACK_TEXT_STYLES.Other_mountains),
+			...(state.metadata?.textStyles?.[type] || {})
+		};
+	}
+
+	function cssFontFamily(name) {
+		const family = String(name || 'Georgia').replace(/["\\]/g, '').trim() || 'Georgia';
+		return `"${family}", "Palatino Linotype", "Book Antiqua", Georgia, serif`;
+	}
+
+	function previewFontSize(type) {
+		const entries = Object.keys(state.labels.textTypes || {});
+		const sizes = entries.map((entry) => Number(textStyleFor(entry).size)).filter(Number.isFinite);
+		const size = Number(textStyleFor(type).size);
+		if (!Number.isFinite(size) || !sizes.length) return 17;
+		const minimum = Math.min(...sizes);
+		const maximum = Math.max(...sizes);
+		if (maximum <= minimum) return 17;
+		return Math.round(14 + ((size - minimum) / (maximum - minimum)) * 10);
+	}
+
+	function rgbaWithAlpha(color, alpha = 0.9) {
+		const value = String(color || '').trim();
+		const rgb = value.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
+		if (rgb) return `rgba(${rgb[1]}, ${rgb[2]}, ${rgb[3]}, ${alpha})`;
+		const hex = value.match(/^#([0-9a-f]{6})$/i);
+		if (hex) {
+			const number = Number.parseInt(hex[1], 16);
+			return `rgba(${(number >> 16) & 255}, ${(number >> 8) & 255}, ${number & 255}, ${alpha})`;
+		}
+		return `rgba(4, 1, 1, ${alpha})`;
+	}
+
+	function applyTextStylePreview(element, type) {
+		if (!element) return;
+		const style = textStyleFor(type);
+		const outline = rgbaWithAlpha(style.boldBackgroundColor, 0.92);
+		element.style.setProperty('--text-style-family', cssFontFamily(style.fontName || style.fontFamily));
+		element.style.setProperty('--text-style-size', `${previewFontSize(type)}px`);
+		element.style.setProperty('--text-style-weight', String(Number(style.weight) >= 600 ? 700 : 400));
+		element.style.setProperty('--text-style-font-style', style.italic ? 'italic' : 'normal');
+		element.style.setProperty('--text-style-color', style.color || 'var(--text)');
+		element.style.setProperty('--text-style-spacing', type === 'Title' ? '0.035em' : type === 'Region' ? '0.02em' : 'normal');
+		element.style.setProperty('--text-style-shadow', style.boldBackground
+			? `-1px -1px 0 ${outline}, 1px -1px 0 ${outline}, -1px 1px 0 ${outline}, 1px 1px 0 ${outline}, 0 2px 5px rgba(0, 0, 0, 0.38)`
+			: '0 1px 3px rgba(0, 0, 0, 0.5)');
+	}
+
+	function textStyleMeta(type) {
+		const style = textStyleFor(type);
+		const family = String(style.fontName || style.fontFamily || 'Serif');
+		const size = Number(style.size);
+		return Number.isFinite(size) ? `${family} · ${Math.round(size)}` : family;
+	}
+
+	function textTypeDropdownIsOpen() {
+		return byId('textTypeDropdown')?.dataset.open === 'true';
+	}
+
+	function positionTextTypeMenu() {
+		const dropdown = byId('textTypeDropdown');
+		const menu = byId('textTypeMenu');
+		const trigger = byId('textTypeTrigger');
+		const panel = document.querySelector('.tool-panel');
+		if (!dropdown || !menu || !trigger || !panel || menu.hidden) return;
+
+		if (menu.parentElement !== panel) panel.append(menu);
+
+		const panelBounds = panel.getBoundingClientRect();
+		const triggerBounds = trigger.getBoundingClientRect();
+		const edge = 12;
+		const gap = 7;
+		const availableBelow = Math.max(0, panelBounds.bottom - triggerBounds.bottom - edge - gap);
+		const availableAbove = Math.max(0, triggerBounds.top - panelBounds.top - edge - gap);
+		const desiredHeight = Math.min(430, menu.scrollHeight || 430);
+		const placeTop = availableBelow < Math.min(300, desiredHeight) && availableAbove > availableBelow;
+		const availableHeight = placeTop ? availableAbove : availableBelow;
+		const left = Math.max(edge, triggerBounds.left - panelBounds.left);
+		const width = Math.max(0, Math.min(triggerBounds.width, panelBounds.width - left - edge));
+
+		dropdown.dataset.placement = placeTop ? 'top' : 'bottom';
+		menu.style.left = `${left}px`;
+		menu.style.right = 'auto';
+		menu.style.width = `${width}px`;
+		menu.style.maxHeight = `${Math.max(96, Math.min(desiredHeight, availableHeight))}px`;
+		menu.style.top = placeTop ? 'auto' : `${triggerBounds.bottom - panelBounds.top + gap}px`;
+		menu.style.bottom = placeTop ? `${panelBounds.bottom - triggerBounds.top + gap}px` : 'auto';
+	}
+
+	function closeTextTypeDropdown({ restoreFocus = false } = {}) {
+		const dropdown = byId('textTypeDropdown');
+		const menu = byId('textTypeMenu');
+		const trigger = byId('textTypeTrigger');
+		if (!dropdown || !menu || !trigger) return;
+		dropdown.dataset.open = 'false';
+		menu.hidden = true;
+		menu.style.removeProperty('left');
+		menu.style.removeProperty('right');
+		menu.style.removeProperty('top');
+		menu.style.removeProperty('bottom');
+		menu.style.removeProperty('width');
+		menu.style.removeProperty('max-height');
+		trigger.setAttribute('aria-expanded', 'false');
+		if (restoreFocus) trigger.focus();
+	}
+
+	function openTextTypeDropdown({ focusSelected = false } = {}) {
+		const dropdown = byId('textTypeDropdown');
+		const menu = byId('textTypeMenu');
+		const trigger = byId('textTypeTrigger');
+		const panel = document.querySelector('.tool-panel');
+		if (!dropdown || !menu || !trigger || !panel || !menu.children.length) return;
+		if (menu.parentElement !== panel) panel.append(menu);
+		dropdown.dataset.open = 'true';
+		menu.hidden = false;
+		trigger.setAttribute('aria-expanded', 'true');
+		positionTextTypeMenu();
+		if (focusSelected) {
+			(menu.querySelector('[aria-selected="true"]') || menu.querySelector('.text-style-option'))?.focus();
+		}
+	}
+
+	function setTextTypeValue(value, { notify = false } = {}) {
+		const select = byId('textType');
+		const trigger = byId('textTypeTrigger');
+		const menu = byId('textTypeMenu');
+		if (!select || !trigger || !menu) return;
+		const next = state.labels.textTypes?.[value] ? value : 'Other_mountains';
+		select.value = next;
+		const text = state.labels.textTypes?.[next] || next;
+		const sample = trigger.querySelector('.text-style-sample');
+		const meta = trigger.querySelector('.text-style-meta');
+		if (sample) {
+			sample.textContent = text;
+			applyTextStylePreview(sample, next);
+		}
+		if (meta) meta.textContent = textStyleMeta(next);
+		menu.querySelectorAll('.text-style-option').forEach((option) => {
+			option.setAttribute('aria-selected', String(option.dataset.value === next));
+		});
+		if (notify) select.dispatchEvent(new Event('change', { bubbles: true }));
+	}
+
+	function moveTextTypeFocus(current, direction) {
+		const options = [...byId('textTypeMenu').querySelectorAll('.text-style-option')];
+		if (!options.length) return;
+		const index = Math.max(0, options.indexOf(current));
+		options[(index + direction + options.length) % options.length].focus();
+	}
+
 	function fillTextTypes() {
 		const select = byId('textType');
-		const current = select.value || 'Other_mountains';
+		const menu = byId('textTypeMenu');
+		const current = select?.value || 'Other_mountains';
+		if (!select || !menu) return;
 		select.replaceChildren();
+		menu.replaceChildren();
 		Object.entries(state.labels.textTypes).forEach(([value, text]) => {
 			const option = document.createElement('option');
 			option.value = value;
 			option.textContent = text;
 			select.append(option);
+
+			const button = document.createElement('button');
+			button.type = 'button';
+			button.className = 'text-style-option';
+			button.dataset.value = value;
+			button.setAttribute('role', 'option');
+			button.setAttribute('aria-selected', 'false');
+
+			const copy = document.createElement('span');
+			copy.className = 'text-style-option-copy';
+			const sample = document.createElement('span');
+			sample.className = 'text-style-sample';
+			sample.textContent = text;
+			applyTextStylePreview(sample, value);
+			const meta = document.createElement('small');
+			meta.className = 'text-style-meta';
+			meta.textContent = textStyleMeta(value);
+			copy.append(sample, meta);
+
+			const check = document.createElement('span');
+			check.className = 'text-style-option-check';
+			check.setAttribute('aria-hidden', 'true');
+			check.textContent = '✓';
+			button.append(copy, check);
+			button.onclick = () => {
+				setTextTypeValue(value, { notify: true });
+				closeTextTypeDropdown({ restoreFocus: true });
+			};
+			button.onkeydown = (event) => {
+				if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+					event.preventDefault();
+					moveTextTypeFocus(button, event.key === 'ArrowDown' ? 1 : -1);
+				}
+				if (event.key === 'Home' || event.key === 'End') {
+					event.preventDefault();
+					const options = menu.querySelectorAll('.text-style-option');
+					options[event.key === 'Home' ? 0 : options.length - 1]?.focus();
+				}
+				if (event.key === 'Escape' || event.key === 'Tab') {
+					if (event.key === 'Escape') event.preventDefault();
+					closeTextTypeDropdown({ restoreFocus: event.key === 'Escape' });
+				}
+			};
+			menu.append(button);
 		});
-		select.value = state.labels.textTypes[current] ? current : 'Other_mountains';
+		setTextTypeValue(state.labels.textTypes[current] ? current : 'Other_mountains');
+	}
+
+	function setSessionMetadata(metadata) {
+		state.metadata = metadata || null;
+		closeTextTypeDropdown();
+		fillTextTypes();
 	}
 
 	function setStatus(text) {
@@ -486,7 +700,7 @@
 	function clearWorkspace() {
 		state.sessionId = null;
 		state.projectName = '';
-		state.metadata = null;
+		setSessionMetadata(null);
 		state.selectedText = null;
 		state.selectedAsset = null;
 		state.iconAssets = null;
@@ -751,7 +965,7 @@
 				}
 				if (event === 'result') {
 					const result = JSON.parse(payload);
-					state.metadata = result.metadata;
+					setSessionMetadata(result.metadata);
 					setPreview(result.previewBase64, true, () => publishProjectThumbnail(false));
 					void loadTopology();
 					setStatus(label('ready'));
@@ -832,7 +1046,7 @@
 		state.editPending = true;
 		try {
 			const json = await postJson('/api/editor/session/edit', { sessionId: state.sessionId, command: nextCommand, returnPreview: true, omitProjectBytes: true });
-			if (json.metadata) state.metadata = json.metadata;
+			if (json.metadata) setSessionMetadata(json.metadata);
 			if (json.previewBase64) setPreview(json.previewBase64, false);
 			state.dirty = true;
 			setStatus(label('unsaved'));
@@ -863,7 +1077,7 @@
 		state.editPending = true;
 		try {
 			const json = await postJson('/api/editor/session/history', { sessionId: state.sessionId, action });
-			if (json.metadata) state.metadata = json.metadata;
+			if (json.metadata) setSessionMetadata(json.metadata);
 			if (json.previewBase64) setPreview(json.previewBase64, false);
 			if (json.changed) {
 				state.dirty = true;
@@ -969,7 +1183,7 @@
 			state.textDragPoint = null;
 			if (json.text) {
 				byId('textValue').value = json.text.text;
-				byId('textType').value = json.text.textType;
+				setTextTypeValue(json.text.textType);
 				byId('deleteText').disabled = false;
 				renderOverlay();
 				return;
@@ -1144,7 +1358,7 @@
 				}
 				if (event === 'result') {
 					const result = JSON.parse(data);
-					state.metadata = result.metadata;
+					setSessionMetadata(result.metadata);
 					state.historyGroup = null;
 					state.queuedHistory = null;
 					state.queuedEdit = null;
@@ -1273,6 +1487,29 @@
 	byId('showTiles').checked = state.showTiles;
 	byId('showTiles').onchange = (event) => { state.showTiles = event.target.checked; localStorage.setItem('regionsEditor.showTiles', String(state.showTiles)); if (state.showTiles) void loadTopology(); renderOverlay(); };
 	byId('textValue').onchange = () => void updateSelectedText({ text: byId('textValue').value.trim() });
+	byId('textTypeTrigger').onclick = () => {
+		const isOpen = byId('textTypeDropdown').dataset.open === 'true';
+		if (isOpen) closeTextTypeDropdown();
+		else openTextTypeDropdown();
+	};
+	byId('textTypeTrigger').onkeydown = (event) => {
+		if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+			event.preventDefault();
+			openTextTypeDropdown({ focusSelected: true });
+		}
+		if (event.key === 'Escape') closeTextTypeDropdown();
+	};
+	document.addEventListener('pointerdown', (event) => {
+		const dropdown = byId('textTypeDropdown');
+		const menu = byId('textTypeMenu');
+		if (!dropdown?.contains(event.target) && !menu?.contains(event.target)) closeTextTypeDropdown();
+	});
+	document.querySelector('.tool-panel-scroll')?.addEventListener('scroll', () => {
+		if (textTypeDropdownIsOpen()) positionTextTypeMenu();
+	}, { passive: true });
+	window.addEventListener('resize', () => {
+		if (textTypeDropdownIsOpen()) positionTextTypeMenu();
+	});
 	byId('textType').onchange = () => void updateSelectedText({ textType: byId('textType').value });
 	byId('deleteText').onclick = () => void deleteSelectedText();
 	inlineText.onkeydown = (event) => { if (event.key === 'Enter' || event.key === 'Escape') { event.preventDefault(); void commitInlineText(); } };

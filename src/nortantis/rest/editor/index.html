@@ -93,6 +93,9 @@
 				<path d="M12 20h9" />
 				<path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
 			</symbol>
+			<symbol id="icon-chevron-down" viewBox="0 0 24 24">
+				<path d="m6 9 6 6 6-6" />
+			</symbol>
 		</svg>
 
 		<div class="editor-shell">
@@ -292,10 +295,28 @@
 							><span data-label="textValue"></span
 							><input id="textValue" type="text" data-label-placeholder="textPlaceholder"
 						/></label>
-						<label class="field"
-							><span data-label="textType"></span
-							><select id="textType"></select
-						></label>
+						<div class="field text-type-field">
+							<span id="textTypeLabel" data-label="textType"></span>
+							<div id="textTypeDropdown" class="text-style-select" data-open="false">
+								<button
+									id="textTypeTrigger"
+									class="text-style-trigger"
+									type="button"
+									aria-haspopup="listbox"
+									aria-expanded="false"
+									aria-controls="textTypeMenu"
+									aria-labelledby="textTypeLabel"
+								>
+									<span class="text-style-trigger-copy">
+										<span class="text-style-sample"></span>
+										<small class="text-style-meta"></small>
+									</span>
+									<svg class="text-style-chevron" aria-hidden="true"><use href="#icon-chevron-down" /></svg>
+								</button>
+								<div id="textTypeMenu" class="text-style-menu" role="listbox" aria-labelledby="textTypeLabel" hidden></div>
+								<select id="textType" class="text-style-native" tabindex="-1" aria-hidden="true" aria-labelledby="textTypeLabel"></select>
+							</div>
+						</div>
 						<button
 							id="deleteText"
 							class="ui-button danger"

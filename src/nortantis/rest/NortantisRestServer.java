@@ -39,6 +39,8 @@ import nortantis.graph.voronoi.Corner;
 import nortantis.graph.voronoi.Edge;
 import nortantis.platform.Image;
 import nortantis.platform.Font;
+import nortantis.platform.FontStyle;
+import nortantis.platform.Color;
 import nortantis.platform.ImageHelper;
 import nortantis.platform.PlatformFactory;
 import nortantis.platform.awt.AwtFactory;
@@ -1283,7 +1285,50 @@ public class NortantisRestServer
 		int borderPadding = borderPadding(session);
 		return "\"width\":" + width + ",\"height\":" + height + ",\"resolution\":" + resolution + ",\"previewWidth\":" + session.map.getWidth() + ",\"previewHeight\":"
 				+ session.map.getHeight() + ",\"borderPadding\":" + (borderPadding / resolution) + ",\"previewBorderPadding\":" + borderPadding
+				+ ",\"textStyles\":" + textStylesJson(session.settings)
 				+ ",\"capabilities\":{\"text\":true,\"landWaterBrush\":true,\"jpgExport\":true,\"icons\":true,\"roads\":true,\"regions\":true}";
+	}
+
+	private static String textStylesJson(MapSettings settings)
+	{
+		StringBuilder result = new StringBuilder("{");
+		appendTextStyleJson(result, "Title", settings.titleFont, settings.drawBoldBackground, settings.textColor, settings.boldBackgroundColor);
+		appendTextStyleJson(result, "Region", settings.regionFont, settings.drawBoldBackground, settings.textColor, settings.boldBackgroundColor);
+		appendTextStyleJson(result, "Mountain_range", settings.mountainRangeFont, false, settings.textColor, settings.boldBackgroundColor);
+		appendTextStyleJson(result, "Other_mountains", settings.otherMountainsFont, false, settings.textColor, settings.boldBackgroundColor);
+		appendTextStyleJson(result, "City", settings.citiesFont, false, settings.textColor, settings.boldBackgroundColor);
+		appendTextStyleJson(result, "Lake", settings.riverFont, false, settings.textColor, settings.boldBackgroundColor);
+		appendTextStyleJson(result, "River", settings.riverFont, false, settings.textColor, settings.boldBackgroundColor);
+		return result.append("}").toString();
+	}
+
+	private static void appendTextStyleJson(StringBuilder result, String type, Font font, boolean boldBackground, Color textColor, Color boldBackgroundColor)
+	{
+		if (result.length() > 1)
+		{
+			result.append(',');
+		}
+		FontStyle fontStyle = font == null ? FontStyle.Plain : font.getStyle();
+		boolean bold = fontStyle == FontStyle.Bold || fontStyle == FontStyle.BoldItalic;
+		boolean italic = fontStyle == FontStyle.Italic || fontStyle == FontStyle.BoldItalic;
+		result.append('"').append(type).append("\":{")
+				.append("\"fontFamily\":\"").append(escape(font == null ? "Serif" : font.getFamily())).append("\",")
+				.append("\"fontName\":\"").append(escape(font == null ? "Serif" : font.getName())).append("\",")
+				.append("\"size\":").append(font == null ? 16.0f : font.getSize()).append(',')
+				.append("\"weight\":").append(bold ? 700 : 400).append(',')
+				.append("\"italic\":").append(italic).append(',')
+				.append("\"boldBackground\":").append(boldBackground).append(',')
+				.append("\"color\":\"").append(cssColor(textColor)).append("\",")
+				.append("\"boldBackgroundColor\":\"").append(cssColor(boldBackgroundColor)).append("\"}");
+	}
+
+	private static String cssColor(Color color)
+	{
+		if (color == null)
+		{
+			return "rgba(250, 249, 217, 1)";
+		}
+		return "rgba(" + color.getRed() + ", " + color.getGreen() + ", " + color.getBlue() + ", " + (color.getAlpha() / 255.0) + ")";
 	}
 
 	private static String iconAssetsJson(MapSettings settings)
