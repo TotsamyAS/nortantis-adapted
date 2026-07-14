@@ -4,10 +4,27 @@
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<title></title>
+		<script>
+			try {
+				const storedTheme = localStorage.getItem('dungeon-overlord-theme');
+				document.documentElement.dataset.theme = storedTheme === 'light' ? 'light' : 'dark';
+			} catch {
+				document.documentElement.dataset.theme = 'dark';
+			}
+		</script>
 		<link rel="stylesheet" href="/editor/editor.css" />
 	</head>
 	<body>
 		<svg class="icon-symbols" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+			<symbol id="icon-sun" viewBox="0 0 24 24">
+				<circle cx="12" cy="12" r="4" />
+				<path d="M12 2v2" /><path d="M12 20v2" /><path d="m4.93 4.93 1.41 1.41" />
+				<path d="m17.66 17.66 1.41 1.41" /><path d="M2 12h2" /><path d="M20 12h2" />
+				<path d="m6.34 17.66-1.41 1.41" /><path d="m19.07 4.93-1.41 1.41" />
+			</symbol>
+			<symbol id="icon-moon" viewBox="0 0 24 24">
+				<path d="M20.985 12.486A9 9 0 1 1 11.514 3.015c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.4Z" />
+			</symbol>
 			<symbol id="icon-arrow-left" viewBox="0 0 24 24">
 				<path d="m12 19-7-7 7-7" />
 				<path d="M19 12H5" />
@@ -173,6 +190,12 @@
 					</button>
 					<button id="exportProject" class="session-action" data-tooltip="" aria-label="">
 						<svg><use href="#icon-download" /></svg>
+					</button>
+					<button id="themeToggle" class="theme-toggle compact" type="button" data-tooltip="" aria-label="" aria-pressed="false">
+						<span class="theme-toggle-orb" aria-hidden="true">
+							<svg class="theme-icon theme-icon-sun"><use href="#icon-sun" /></svg>
+							<svg class="theme-icon theme-icon-moon"><use href="#icon-moon" /></svg>
+						</span>
 					</button>
 				</header>
 

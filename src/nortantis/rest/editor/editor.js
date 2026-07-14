@@ -2,6 +2,7 @@
 	'use strict';
 
 	const FALLBACK_LOCALE = 'ru';
+	const THEME_STORAGE_KEY = 'dungeon-overlord-theme';
 	const EMPTY_LABELS = { phases: {}, textTypes: {}, statuses: {}, errors: {} };
 	const REGION_COLORS = [
 		'#8f3b3b', '#b85c4a', '#c47a3a', '#b9945d',
@@ -92,6 +93,46 @@
 	let toastTimer = 0;
 
 	const byId = (id) => document.getElementById(id);
+
+	function normalizeTheme(value) {
+		return value === 'light' ? 'light' : 'dark';
+	}
+
+	function readStoredTheme() {
+		try {
+			return normalizeTheme(localStorage.getItem(THEME_STORAGE_KEY));
+		} catch {
+			return normalizeTheme(document.documentElement.dataset.theme);
+		}
+	}
+
+	function renderThemeToggle() {
+		const toggle = byId('themeToggle');
+		if (!toggle) return;
+		const isLight = document.documentElement.dataset.theme === 'light';
+		const actionLabel = label(isLight ? 'switchToDark' : 'switchToLight');
+		toggle.classList.toggle('light-active', isLight);
+		toggle.setAttribute('aria-pressed', String(isLight));
+		toggle.setAttribute('aria-label', actionLabel);
+		toggle.dataset.tooltip = actionLabel;
+	}
+
+	function applyTheme(theme, { persist = true } = {}) {
+		const normalized = normalizeTheme(theme);
+		document.documentElement.dataset.theme = normalized;
+		if (persist) {
+			try {
+				localStorage.setItem(THEME_STORAGE_KEY, normalized);
+			} catch {
+				// Storage can be unavailable in private or restricted browsing contexts.
+			}
+		}
+		renderThemeToggle();
+	}
+
+	function toggleTheme() {
+		applyTheme(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light');
+	}
 	const canvas = byId('canvas');
 	const mapSurface = byId('mapSurface');
 	const map = byId('map');
@@ -166,6 +207,7 @@
 		byId('exportProject').setAttribute('aria-label', label('export'));
 		byId('backLink').dataset.tooltip = label('back');
 		byId('backLink').setAttribute('aria-label', label('back'));
+		renderThemeToggle();
 		const createButton = byId('createProjectForm').querySelector('button');
 		createButton.dataset.tooltip = label('create');
 		createButton.setAttribute('aria-label', label('create'));
@@ -1510,6 +1552,7 @@
 	window.addEventListener('resize', () => {
 		if (textTypeDropdownIsOpen()) positionTextTypeMenu();
 	});
+	byId('themeToggle').onclick = toggleTheme;
 	byId('textType').onchange = () => void updateSelectedText({ textType: byId('textType').value });
 	byId('deleteText').onclick = () => void deleteSelectedText();
 	inlineText.onkeydown = (event) => { if (event.key === 'Enter' || event.key === 'Escape') { event.preventDefault(); void commitInlineText(); } };
@@ -1665,6 +1708,9 @@
 	});
 	window.addEventListener('keyup', (event) => { if (event.code === 'Space') state.space = false; });
 	window.addEventListener('resize', () => { if (!state.hasFit) fit(); else applyTransform(); });
+	window.addEventListener('storage', (event) => {
+		if (event.key === THEME_STORAGE_KEY) applyTheme(event.newValue, { persist: false });
+	});
 	window.addEventListener('message', (event) => {
 		if (event.source !== parent || !event.data || typeof event.data !== 'object') return;
 		if (event.data.type === 'nortantis:host-state') {
@@ -1680,5 +1726,6 @@
 		if (event.data.type === 'nortantis:open') void openProject(event.data);
 	});
 
+	applyTheme(readStoredTheme(), { persist: false });
 	void applyLocale(FALLBACK_LOCALE).finally(() => postParent('nortantis:ready'));
 })();

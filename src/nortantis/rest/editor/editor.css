@@ -1291,3 +1291,283 @@ input[type='range']::-moz-range-thumb {
 		transition-duration: 0.01ms !important;
 	}
 }
+
+
+/* Theme toggle matches the compact session-bar control from the main application. */
+.theme-toggle,
+.theme-toggle.compact {
+	position: relative;
+	width: 30px;
+	min-width: 30px;
+	height: 30px;
+	min-height: 30px;
+	padding: 0;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	flex: none;
+	border: 1px solid var(--line);
+	border-radius: 10px;
+	color: var(--text);
+	background: rgba(0, 0, 0, 0.2);
+	box-shadow: none;
+	cursor: pointer;
+	transition:
+		transform 0.14s,
+		border-color 0.14s,
+		background 0.14s,
+		box-shadow 0.14s;
+}
+
+.theme-toggle:hover,
+.theme-toggle.compact:hover {
+	transform: translateY(0);
+	border-color: var(--gold);
+	background-color: rgba(216, 139, 53, 0.2);
+	box-shadow: none;
+}
+
+.theme-toggle-orb,
+.theme-toggle.compact .theme-toggle-orb {
+	width: auto;
+	height: auto;
+	display: grid;
+	place-items: center;
+	flex: none;
+	border: 0;
+	border-radius: 0;
+	color: currentColor;
+	background: transparent;
+	box-shadow: none;
+}
+
+.theme-icon {
+	grid-area: 1 / 1;
+	width: 16px;
+	height: 16px;
+}
+
+.theme-icon-moon,
+:root[data-theme='light'] .theme-icon-sun {
+	display: none;
+}
+
+:root[data-theme='light'] .theme-icon-moon {
+	display: block;
+}
+
+:root[data-theme='light'] {
+	color-scheme: light;
+	--wine: #9a4635;
+	--wine-dark: #6b241f;
+	--gold: #a86c20;
+	--copper: #b46b2c;
+	--parchment: #fff7d7;
+	--vellum: #6c2d21;
+	--ink: #2b130d;
+	--good: #4f7f35;
+	--bad: #a54233;
+	--text: #2b130d;
+	--muted: #7c5635;
+	--line: rgba(139, 86, 36, 0.36);
+	--panel: rgba(255, 247, 216, 0.9);
+	--panel-strong: rgba(243, 218, 170, 0.97);
+	--card: rgba(255, 250, 229, 0.7);
+	--field: rgba(104, 54, 31, 0.08);
+	--shadow: rgba(105, 60, 29, 0.2);
+	--scrollbar-thumb: rgba(154, 96, 42, 0.58);
+	--scrollbar-thumb-hover: rgba(108, 45, 33, 0.78);
+	--color-quinary: #f4dca6;
+	--color-sexagenary: #2b130d;
+}
+
+:root[data-theme='light'] body,
+:root[data-theme='light'] .editor-shell {
+	background: #f4dca6;
+}
+
+:root[data-theme='light'] .editor-stage {
+	background:
+		radial-gradient(circle at 20% 10%, rgba(216, 139, 53, 0.13), transparent 34%),
+		linear-gradient(180deg, #fff4cb, #e8c487);
+}
+
+:root[data-theme='light'] .workspace-empty,
+:root[data-theme='light'] .canvas-loading {
+	background: radial-gradient(circle at center, rgba(255, 249, 222, 0.88), rgba(222, 184, 119, 0.96));
+}
+
+:root[data-theme='light'] .loading-card,
+:root[data-theme='light'] .tool-panel,
+:root[data-theme='light'] .dialog-card {
+	color: var(--text);
+	background: linear-gradient(180deg, var(--panel), var(--panel-strong));
+	box-shadow:
+		0 20px 54px var(--shadow),
+		inset 0 0 0 1px rgba(255, 255, 255, 0.34);
+}
+
+:root[data-theme='light'] .tool-rail {
+	background: rgba(255, 248, 220, 0.68);
+}
+
+:root[data-theme='light'] .session-bar {
+	border-bottom-color: var(--line);
+	background: rgba(255, 250, 229, 0.36);
+}
+
+:root[data-theme='light'] .tool-icon,
+:root[data-theme='light'] .session-action,
+:root[data-theme='light'] .back-button,
+:root[data-theme='light'] .ui-button,
+:root[data-theme='light'] .segmented button,
+:root[data-theme='light'] .size-grid button,
+:root[data-theme='light'] .project-card,
+:root[data-theme='light'] .icon-option,
+:root[data-theme='light'] .text-style-trigger,
+:root[data-theme='light'] .text-style-option,
+:root[data-theme='light'] .toggle-row,
+:root[data-theme='light'] .storage-meter,
+:root[data-theme='light'] .generation-progress {
+	color: var(--text);
+	border-color: var(--line);
+	background: rgba(255, 252, 232, 0.66);
+}
+
+:root[data-theme='light'] .tool-icon:hover,
+:root[data-theme='light'] .tool-icon.active,
+:root[data-theme='light'] .session-action:hover,
+:root[data-theme='light'] .back-button:hover,
+:root[data-theme='light'] .ui-button:hover,
+:root[data-theme='light'] .segmented button:hover,
+:root[data-theme='light'] .segmented button.active,
+:root[data-theme='light'] .size-grid button:hover,
+:root[data-theme='light'] .size-grid button.active,
+:root[data-theme='light'] .project-card:hover,
+:root[data-theme='light'] .project-card.active,
+:root[data-theme='light'] .icon-option:hover,
+:root[data-theme='light'] .icon-option.active,
+:root[data-theme='light'] .text-style-option:hover,
+:root[data-theme='light'] .text-style-option.active {
+	color: var(--wine-dark);
+	border-color: var(--gold);
+	background: rgba(255, 238, 191, 0.92);
+}
+
+:root[data-theme='light'] .ui-button.primary,
+:root[data-theme='light'] .segmented button.active {
+	color: #fff7d7;
+	border-color: var(--wine);
+	background: linear-gradient(180deg, #a6533e, #7b2d24 58%, #5a1b17);
+}
+
+:root[data-theme='light'] input,
+:root[data-theme='light'] select,
+:root[data-theme='light'] .inline-text-input,
+:root[data-theme='light'] .text-style-menu {
+	color: var(--text);
+	border-color: var(--line);
+	background: rgba(255, 252, 232, 0.92);
+	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.32);
+}
+
+:root[data-theme='light'] input::placeholder {
+	color: rgba(124, 86, 53, 0.72);
+}
+
+:root[data-theme='light'] [data-tooltip]::after,
+:root[data-theme='light'] .app-toast {
+	color: var(--text);
+	border-color: var(--line);
+	background: rgba(255, 247, 216, 0.97);
+	box-shadow: 0 12px 30px rgba(105, 60, 29, 0.2);
+}
+
+:root[data-theme='light'] .theme-toggle,
+:root[data-theme='light'] .theme-toggle.compact {
+	color: var(--text);
+	background: rgba(255, 252, 232, 0.56);
+	box-shadow: none;
+}
+
+:root[data-theme='light'] .theme-toggle:hover,
+:root[data-theme='light'] .theme-toggle.compact:hover {
+	color: var(--wine-dark);
+	border-color: var(--gold);
+	background: rgba(255, 238, 191, 0.9);
+}
+
+:root[data-theme='light'] .theme-toggle-orb {
+	color: currentColor;
+	background: transparent;
+	box-shadow: none;
+}
+
+:root[data-theme='light'] .tool-panel > .game-side-fire::before {
+	opacity: 0.2;
+	background:
+		radial-gradient(ellipse at 18% 100%, rgba(190, 122, 42, 0.3), transparent 68%),
+		radial-gradient(ellipse at 52% 100%, rgba(140, 73, 39, 0.26), transparent 76%);
+}
+
+:root[data-theme='light'] .game-side-spark {
+	opacity: 0.28;
+	filter: saturate(0.78);
+}
+
+:root[data-theme='light'] .map-image {
+	border-color: rgba(139, 86, 36, 0.3);
+	box-shadow: 0 20px 54px rgba(105, 60, 29, 0.2);
+}
+
+:root[data-theme='light'] dialog::backdrop {
+	background: rgba(62, 31, 17, 0.28);
+}
+
+/* Additional light-theme states for editor cards, dialogs, and selectors. */
+:root[data-theme='light'] .editor-dialog,
+:root[data-theme='light'] .dialog-close,
+:root[data-theme='light'] .project-preview,
+:root[data-theme='light'] .icon-tile,
+:root[data-theme='light'] .text-style-option-check,
+:root[data-theme='light'] .storage-progress {
+	color: var(--text);
+	border-color: var(--line);
+	background: rgba(255, 252, 232, 0.76);
+	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22);
+}
+
+:root[data-theme='light'] .editor-dialog {
+	background: linear-gradient(180deg, var(--panel), var(--panel-strong));
+	box-shadow: 0 20px 54px var(--shadow);
+}
+
+:root[data-theme='light'] .icon-tile:hover,
+:root[data-theme='light'] .icon-tile.active,
+:root[data-theme='light'] .text-style-option[aria-selected='true'] {
+	color: var(--wine-dark);
+	border-color: var(--gold);
+	background: rgba(255, 238, 191, 0.94);
+	box-shadow: inset 3px 0 var(--gold);
+}
+
+:root[data-theme='light'] .text-style-trigger:hover,
+:root[data-theme='light'] .text-style-select[data-open='true'] .text-style-trigger {
+	background:
+		radial-gradient(circle at 100% 0, rgba(168, 108, 32, 0.18), transparent 50%),
+		linear-gradient(180deg, rgba(255, 250, 229, 0.96), rgba(232, 199, 139, 0.72));
+	box-shadow:
+		0 0 0 3px rgba(168, 108, 32, 0.12),
+		0 10px 26px rgba(105, 60, 29, 0.14);
+}
+
+:root[data-theme='light'] .storage-progress > span,
+:root[data-theme='light'] .generation-progress > span {
+	background: linear-gradient(90deg, var(--copper), var(--gold));
+}
+
+:root[data-theme='light'] .ui-button.danger {
+	color: var(--wine-dark);
+	border-color: rgba(159, 49, 40, 0.54);
+	background: rgba(159, 49, 40, 0.08);
+}
