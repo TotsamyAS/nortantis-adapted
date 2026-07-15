@@ -32,6 +32,7 @@ import nortantis.editor.RiverPathNode;
 import nortantis.editor.Road;
 import nortantis.editor.RoadPathNode;
 import nortantis.geom.Dimension;
+import nortantis.geom.IntRectangle;
 import nortantis.geom.Point;
 import nortantis.geom.RotatedRectangle;
 import nortantis.graph.voronoi.Center;
@@ -763,7 +764,7 @@ public class NortantisRestServer
 			send(exchange, 405, "application/json", "{\"ok\":false}".getBytes());
 			return;
 		}
-		Path project = Files.createTempFile("nortantis-edit-", MapSettings.fileExtensionWithDot);
+		Path project = null;
 		long startedAt = System.nanoTime();
 		ToolLog commandLog = null;
 		try
@@ -782,6 +783,7 @@ public class NortantisRestServer
 			MapSettings settings;
 			if (projectBase64 != null && !projectBase64.isBlank())
 			{
+				project = Files.createTempFile("nortantis-edit-", MapSettings.fileExtensionWithDot);
 				Files.write(project, Base64.getDecoder().decode(projectBase64));
 				settings = new MapSettings(project.toString());
 			}
@@ -794,6 +796,7 @@ public class NortantisRestServer
 				throw new IllegalStateException("Missing project data and editor session");
 			}
 			String previewBase64 = null;
+			IncrementalPreview previewPatch = null;
 			EditorSession editSession = null;
 			if (sessionId != null && !sessionId.isBlank() && command != null && isIncrementalCommand(command))
 			{
@@ -807,7 +810,7 @@ public class NortantisRestServer
 				}
 				else
 				{
-					previewBase64 = applyIncrementalEdit(settings, command, editSession, readReturnPreview(input));
+					previewPatch = applyIncrementalEdit(settings, command, editSession, readReturnPreview(input));
 				}
 				editSession.commitHistory(historyBefore, command);
 			}
@@ -815,14 +818,26 @@ public class NortantisRestServer
 			{
 				applyEditCommand(settings, command);
 			}
-			settings.writeToFile(project.toString());
+
+			String serializedProjectBase64 = null;
+			if (!omitProjectBytes)
+			{
+				if (project == null)
+				{
+					project = Files.createTempFile("nortantis-edit-", MapSettings.fileExtensionWithDot);
+				}
+				settings.writeToFile(project.toString());
+				serializedProjectBase64 = Base64.getEncoder().encodeToString(Files.readAllBytes(project));
+			}
+
 			String result = "{\"ok\":true"
-					+ (omitProjectBytes ? "" : ",\"projectBase64\":\"" + Base64.getEncoder().encodeToString(Files.readAllBytes(project)) + "\"")
+					+ (serializedProjectBase64 == null ? "" : ",\"projectBase64\":\"" + serializedProjectBase64 + "\"")
 					+ (previewBase64 == null ? "" : ",\"previewBase64\":\"" + previewBase64 + "\"")
+					+ (previewPatch == null ? "" : ",\"previewPatchBase64\":\"" + previewPatch.base64() + "\",\"previewPatch\":" + rectangleJson(previewPatch.bounds()))
 					+ (editSession == null ? "" : ",\"metadata\":" + sessionMetadataJson(editSession)) + "}";
 			if (isToolLoggingEnabled(commandLog))
 			{
-				toolLog(commandLog, "edit:success", "durationMs", elapsedMs(startedAt), "resultBase64Length", result.length(), "hasPreview", previewBase64 != null);
+				toolLog(commandLog, "edit:success", "durationMs", elapsedMs(startedAt), "resultBase64Length", result.length(), "hasPreview", previewBase64 != null || previewPatch != null);
 			}
 			send(exchange, 200, "application/json", result.getBytes(StandardCharsets.UTF_8));
 		}
@@ -836,7 +851,10 @@ public class NortantisRestServer
 		}
 		finally
 		{
-			Files.deleteIfExists(project);
+			if (project != null)
+			{
+				Files.deleteIfExists(project);
+			}
 		}
 	}
 
@@ -1600,7 +1618,7 @@ public class NortantisRestServer
 		}
 	}
 
-	private static String applyIncrementalEdit(MapSettings persistedSettings, JSONObject command, EditorSession session, boolean returnPreview) throws IOException
+	private static IncrementalPreview applyIncrementalEdit(MapSettings persistedSettings, JSONObject command, EditorSession session, boolean returnPreview) throws IOException
 	{
 		long startedAt = System.nanoTime();
 		synchronized (session)
@@ -1659,15 +1677,16 @@ public class NortantisRestServer
 						changedText.add(session.settings.edits.text.get(index));
 					}
 				}
+				IntRectangle updateBounds = null;
 				if (returnPreview && !changedText.isEmpty())
 				{
-					new MapCreator().incrementalUpdateText(session.settings, session.mapParts, session.map, changedText);
+					updateBounds = new MapCreator().incrementalUpdateText(session.settings, session.mapParts, session.map, changedText);
 				}
 				if (isTextFieldLoggingEnabled())
 				{
 					textLog("incremental:redraw", "durationMs", elapsedMs(startedAt), "changedCount", changedIds.size(), "textBounds", changedText.size(), "command", command);
 				}
-				return returnPreview ? imageToBase64(session.map, ".png") : null;
+				return returnPreview ? createIncrementalPreview(session.map, updateBounds) : null;
 			}
 			else
 			{
@@ -1689,15 +1708,37 @@ public class NortantisRestServer
 			}
 
 			long redrawStartedAt = System.nanoTime();
-			new MapCreator().incrementalUpdateForCentersAndEdges(session.settings, session.mapParts, session.map, changedIds, null, false);
-			String previewBase64 = imageToBase64(session.map, ".png");
+			IntRectangle updateBounds = new MapCreator().incrementalUpdateForCentersAndEdges(session.settings, session.mapParts, session.map, changedIds, null, false);
+			IncrementalPreview preview = createIncrementalPreview(session.map, updateBounds);
 			if (isBrushLoggingEnabled())
 			{
 				brushLog("incremental:success", "durationMs", elapsedMs(startedAt), "redrawAndEncodeMs", elapsedMs(redrawStartedAt), "selectedCount", changedIds.size(), "mapWidth", session.map.getWidth(),
-						"mapHeight", session.map.getHeight());
+						"mapHeight", session.map.getHeight(), "patchWidth", updateBounds == null ? 0 : updateBounds.width, "patchHeight", updateBounds == null ? 0 : updateBounds.height);
 			}
-			return previewBase64;
+			return preview;
 		}
+	}
+
+	private static IncrementalPreview createIncrementalPreview(Image map, IntRectangle bounds) throws IOException
+	{
+		if (bounds == null)
+		{
+			return null;
+		}
+		IntRectangle clipped = bounds.findIntersection(new IntRectangle(0, 0, map.getWidth(), map.getHeight()));
+		if (clipped == null || clipped.isEmpty())
+		{
+			return null;
+		}
+		try (Image patch = map.copySubImage(clipped))
+		{
+			return new IncrementalPreview(imageToBase64(patch, ".png"), clipped);
+		}
+	}
+
+	private static String rectangleJson(IntRectangle bounds)
+	{
+		return "{\"x\":" + bounds.x + ",\"y\":" + bounds.y + ",\"width\":" + bounds.width + ",\"height\":" + bounds.height + "}";
 	}
 
 	private static EditorSession applyFirstRegionPaint(String sessionId, JSONObject command, EditorSession previous) throws IOException
@@ -3919,6 +3960,10 @@ public class NortantisRestServer
 		{
 			settings.edits.regionBoundaryLines = new CopyOnWriteArrayList<>();
 		}
+	}
+
+	private record IncrementalPreview(String base64, IntRectangle bounds)
+	{
 	}
 
 	private record ExportFormat(String extension, String contentType)

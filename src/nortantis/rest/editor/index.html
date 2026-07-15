@@ -80,9 +80,7 @@
 			<symbol id="icon-route" viewBox="0 0 24 24">
 				<circle cx="6" cy="19" r="3" /><path d="M9 19h5.5a3.5 3.5 0 0 0 0-7h-5a3.5 3.5 0 0 1 0-7H15" /><circle cx="18" cy="5" r="3" />
 			</symbol>
-			<symbol id="icon-settings" viewBox="0 0 24 24">
-				<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.51a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" /><circle cx="12" cy="12" r="3" />
-			</symbol>
+
 			<symbol id="icon-save" viewBox="0 0 24 24">
 				<path
 					d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"
@@ -119,7 +117,7 @@
 			<main class="editor-stage">
 				<div id="canvas" class="editor-canvas" tabindex="0">
 					<div id="mapSurface" class="map-surface">
-						<img id="map" class="map-image" alt="" />
+						<canvas id="map" class="map-image" width="0" height="0" aria-label=""></canvas>
 						<svg id="mapOverlay" class="map-overlay" aria-hidden="true"></svg>
 					</div>
 					<input id="inlineText" class="inline-text-input" type="text" hidden />
@@ -167,9 +165,6 @@
 				</button>
 				<button class="tool-icon" data-tool-button="icons" data-tooltip="" aria-label="">
 					<svg><use href="#icon-mountain" /></svg>
-				</button>
-				<button class="tool-icon" data-tool-button="settings" data-tooltip="" aria-label="">
-					<svg><use href="#icon-settings" /></svg>
 				</button>
 				<button class="tool-icon" data-tool-button="about" data-tooltip="" aria-label="">
 					<svg><use href="#icon-info" /></svg>
@@ -372,11 +367,6 @@
 						<p class="muted" data-label="iconsHint"></p>
 					</section>
 
-					<section class="tool-view" data-tool-panel="settings">
-						<h2 data-label="settings"></h2>
-						<label class="toggle-row"><input id="showTiles" type="checkbox" checked /><span data-label="showTiles"></span></label>
-						<p class="muted" data-label="showTilesHint"></p>
-					</section>
 
 					<section class="tool-view" data-tool-panel="about">
 						<h2 data-label="aboutTitle"></h2>

@@ -53,9 +53,6 @@
 		pathPreviewPoints: [],
 		pathPreviewPolygons: [],
 		pathPreviewEdges: [],
-		showTiles: localStorage.getItem('regionsEditor.showTiles') !== 'false',
-		tilePolygons: [],
-		topologySessionId: null,
 		selectedText: null,
 		draggingText: false,
 		textDragPoint: null,
@@ -91,6 +88,7 @@
 	let pathPreviewPending = false;
 	let queuedPathPreview = null;
 	let toastTimer = 0;
+	let previewPatchQueue = Promise.resolve();
 
 	const byId = (id) => document.getElementById(id);
 
@@ -131,7 +129,9 @@
 	}
 
 	function toggleTheme() {
-		applyTheme(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light');
+		const theme = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
+		applyTheme(theme, { persist: false });
+		postParent('nortantis:theme-change', { theme });
 	}
 	const canvas = byId('canvas');
 	const mapSurface = byId('mapSurface');
@@ -195,7 +195,7 @@
 		document.querySelectorAll('[data-label]').forEach((element) => { element.textContent = label(element.dataset.label); });
 		document.querySelectorAll('[data-label-placeholder]').forEach((element) => { element.placeholder = label(element.dataset.labelPlaceholder); });
 		document.querySelectorAll('[data-label-aria]').forEach((element) => { element.setAttribute('aria-label', label(element.dataset.labelAria)); });
-		const toolLabels = { projects: 'projects', generation: 'generation', terrain: 'terrain', provinces: 'provinces', lines: 'lines', text: 'text', icons: 'icons', settings: 'settings', about: 'about' };
+		const toolLabels = { projects: 'projects', generation: 'generation', terrain: 'terrain', provinces: 'provinces', lines: 'lines', text: 'text', icons: 'icons', about: 'about' };
 		document.querySelectorAll('[data-tool-button]').forEach((button) => {
 			const text = label(toolLabels[button.dataset.toolButton]);
 			button.dataset.tooltip = text;
@@ -676,11 +676,11 @@
 	}
 
 	function fit() {
-		if (!map.naturalWidth || !map.naturalHeight) return;
+		if (!map.width || !map.height) return;
 		const bounds = canvas.getBoundingClientRect();
-		state.scale = Math.min(bounds.width / map.naturalWidth, bounds.height / map.naturalHeight) * 0.92;
-		state.panX = -map.naturalWidth * state.scale / 2;
-		state.panY = -map.naturalHeight * state.scale / 2;
+		state.scale = Math.min(bounds.width / map.width, bounds.height / map.height) * 0.92;
+		state.panX = -map.width * state.scale / 2;
+		state.panY = -map.height * state.scale / 2;
 		state.hasFit = true;
 		applyTransform();
 	}
@@ -691,22 +691,53 @@
 
 	function setPreview(base64, resetView, onReady) {
 		const version = ++state.previewVersion;
-		map.onload = () => {
-			if (version !== state.previewVersion) return;
-			mapSurface.style.width = `${map.naturalWidth}px`;
-			mapSurface.style.height = `${map.naturalHeight}px`;
-			overlay.setAttribute('width', String(map.naturalWidth));
-			overlay.setAttribute('height', String(map.naturalHeight));
-			overlay.setAttribute('viewBox', `0 0 ${map.naturalWidth} ${map.naturalHeight}`);
-			if (resetView || !state.hasFit) fit(); else applyTransform();
-			renderOverlay();
-			onReady?.();
-		};
-		map.src = `data:image/png;base64,${base64}`;
+		previewPatchQueue = new Promise((resolve) => {
+			const image = new Image();
+			image.onload = () => {
+				if (version !== state.previewVersion) {
+					resolve();
+					return;
+				}
+				map.width = image.naturalWidth;
+				map.height = image.naturalHeight;
+				const context = map.getContext('2d');
+				if (context) {
+					context.clearRect(0, 0, map.width, map.height);
+					context.drawImage(image, 0, 0);
+					mapSurface.style.width = `${map.width}px`;
+					mapSurface.style.height = `${map.height}px`;
+					overlay.setAttribute('width', String(map.width));
+					overlay.setAttribute('height', String(map.height));
+					overlay.setAttribute('viewBox', `0 0 ${map.width} ${map.height}`);
+					if (resetView || !state.hasFit) fit(); else applyTransform();
+					renderOverlay();
+					onReady?.();
+				}
+				resolve();
+			};
+			image.onerror = () => resolve();
+			image.src = `data:image/png;base64,${base64}`;
+		});
+	}
+
+	function applyPreviewPatch(base64, bounds) {
+		if (!base64 || !bounds || !map.width || !map.height) return;
+		const version = state.previewVersion;
+		previewPatchQueue = previewPatchQueue.then(() => new Promise((resolve) => {
+			const image = new Image();
+			image.onload = () => {
+				if (version === state.previewVersion) {
+					map.getContext('2d')?.drawImage(image, Number(bounds.x), Number(bounds.y));
+				}
+				resolve();
+			};
+			image.onerror = () => resolve();
+			image.src = `data:image/png;base64,${base64}`;
+		}));
 	}
 
 	function createProjectThumbnailBase64() {
-		if (!map.naturalWidth || !map.naturalHeight) return '';
+		if (!map.width || !map.height) return '';
 		const thumbnail = document.createElement('canvas');
 		thumbnail.width = 32;
 		thumbnail.height = 32;
@@ -716,9 +747,9 @@
 		context.fillRect(0, 0, 32, 32);
 		context.imageSmoothingEnabled = true;
 		context.imageSmoothingQuality = 'high';
-		const scale = Math.min(32 / map.naturalWidth, 32 / map.naturalHeight);
-		const width = map.naturalWidth * scale;
-		const height = map.naturalHeight * scale;
+		const scale = Math.min(32 / map.width, 32 / map.height);
+		const width = map.width * scale;
+		const height = map.height * scale;
 		context.drawImage(map, (32 - width) / 2, (32 - height) / 2, width, height);
 		return thumbnail.toDataURL('image/jpeg', 0.82).slice('data:image/jpeg;base64,'.length);
 	}
@@ -746,8 +777,6 @@
 		state.selectedText = null;
 		state.selectedAsset = null;
 		state.iconAssets = null;
-		state.tilePolygons = [];
-		state.topologySessionId = null;
 		state.pathPreviewPoints = [];
 		state.pathPreviewPolygons = [];
 		state.pathPreviewEdges = [];
@@ -763,7 +792,8 @@
 		state.dirty = false;
 		state.hasFit = false;
 		state.previewVersion += 1;
-		map.removeAttribute('src');
+		map.width = 0;
+		map.height = 0;
 		mapSurface.removeAttribute('style');
 		overlay.replaceChildren();
 		emptyWorkspace.hidden = false;
@@ -771,7 +801,7 @@
 	}
 
 	function mapPoint(event) {
-		if (!state.metadata || !map.naturalWidth) return null;
+		if (!state.metadata || !map.width) return null;
 		const bounds = map.getBoundingClientRect();
 		return {
 			x: (event.clientX - bounds.left) / bounds.width * state.metadata.width,
@@ -781,7 +811,7 @@
 
 	function projectToPreview(point) {
 		if (!state.metadata) return { x: 0, y: 0 };
-		return { x: point.x / state.metadata.width * map.naturalWidth, y: point.y / state.metadata.height * map.naturalHeight };
+		return { x: point.x / state.metadata.width * map.width, y: point.y / state.metadata.height * map.height };
 	}
 
 	function projectToClient(point) {
@@ -791,7 +821,6 @@
 
 	function renderOverlay() {
 		overlay.replaceChildren();
-		if (state.showTiles) state.tilePolygons.forEach((polygon) => appendOverlayPolygon(polygon, 'tile-cell'));
 		if (state.pathPreviewEdges.length) {
 			state.pathPreviewEdges.filter((edge) => edge.internal).forEach((edge) => appendOverlayPath(edge.points, 'path-edge-internal'));
 			state.pathPreviewEdges.filter((edge) => !edge.internal).forEach((edge) => appendOverlayPath(edge.points, 'path-edge-boundary'));
@@ -807,7 +836,7 @@
 		const brush = brushFeedback();
 		if (brush && state.cursorPoint) {
 			const point = projectToPreview(state.cursorPoint);
-			const radius = brush.radius / state.metadata.width * map.naturalWidth;
+			const radius = brush.radius / state.metadata.width * map.width;
 			const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
 			circle.setAttribute('class', 'brush-radius');
 			circle.setAttribute('cx', String(point.x));
@@ -915,20 +944,6 @@
 		}
 	}
 
-	async function loadTopology() {
-		if (!state.sessionId || state.topologySessionId === state.sessionId) return;
-		const sessionId = state.sessionId;
-		try {
-			const json = await postJson('/api/editor/session/topology', { sessionId });
-			if (state.sessionId !== sessionId) return;
-			state.tilePolygons = Array.isArray(json.polygons) ? json.polygons : [];
-			state.topologySessionId = sessionId;
-			renderOverlay();
-		} catch {
-			state.tilePolygons = [];
-		}
-	}
-
 	function schedulePathPreview(points, type, radius) {
 		state.pathPreviewPoints = [];
 		state.pathPreviewPolygons = [];
@@ -996,7 +1011,7 @@
 			const response = await fetch('/api/editor/session/open-stream', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ sessionId: state.sessionId, projectBase64: data.projectBase64, previewMaxDimensionPixels: data.previewMaxDimensionPixels || 1536 })
+				body: JSON.stringify({ sessionId: state.sessionId, projectBase64: data.projectBase64, previewMaxDimensionPixels: data.previewMaxDimensionPixels || 1024 })
 			});
 			if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`);
 			await readSse(response.body, (event, payload) => {
@@ -1009,7 +1024,6 @@
 					const result = JSON.parse(payload);
 					setSessionMetadata(result.metadata);
 					setPreview(result.previewBase64, true, () => publishProjectThumbnail(false));
-					void loadTopology();
 					setStatus(label('ready'));
 				}
 				if (event === 'error') throw new Error('projectOpenFailed');
@@ -1033,6 +1047,7 @@
 		setStatus(label('save'));
 		try {
 			const projectBase64 = await currentProject(currentOperationId);
+			await previewPatchQueue;
 			const previewBase64 = createProjectThumbnailBase64();
 			if (previewBase64) state.projectPreviewData[state.sessionId] = `data:image/jpeg;base64,${previewBase64}`;
 			postParent('nortantis:save', { operationId: currentOperationId, projectId: state.sessionId, projectBase64, previewBase64 });
@@ -1048,6 +1063,7 @@
 		setStatus(label('export'));
 		try {
 			const projectBase64 = await currentProject(currentOperationId);
+			await previewPatchQueue;
 			const previewBase64 = createProjectThumbnailBase64();
 			if (previewBase64) state.projectPreviewData[state.sessionId] = `data:image/jpeg;base64,${previewBase64}`;
 			postParent('nortantis:export', { operationId: currentOperationId, projectId: state.sessionId, projectBase64, previewBase64, format: 'jpg' });
@@ -1074,7 +1090,6 @@
 		document.querySelectorAll('[data-tool-button]').forEach((button) => button.classList.toggle('active', button.dataset.toolButton === tool));
 		document.querySelectorAll('[data-tool-panel]').forEach((panel) => panel.classList.toggle('active', panel.dataset.toolPanel === tool));
 		if (tool === 'icons') void loadIconAssets();
-		if (tool === 'provinces' || tool === 'lines' || tool === 'settings') void loadTopology();
 		renderOverlay();
 	}
 
@@ -1090,6 +1105,7 @@
 			const json = await postJson('/api/editor/session/edit', { sessionId: state.sessionId, command: nextCommand, returnPreview: true, omitProjectBytes: true });
 			if (json.metadata) setSessionMetadata(json.metadata);
 			if (json.previewBase64) setPreview(json.previewBase64, false);
+			else if (json.previewPatchBase64 && json.previewPatch) applyPreviewPatch(json.previewPatchBase64, json.previewPatch);
 			state.dirty = true;
 			setStatus(label('unsaved'));
 			return json;
@@ -1405,10 +1421,7 @@
 					state.queuedHistory = null;
 					state.queuedEdit = null;
 					state.hasFit = false;
-					state.tilePolygons = [];
-					state.topologySessionId = null;
 					setPreview(result.previewBase64, true, () => publishProjectThumbnail(true));
-					void loadTopology();
 					state.dirty = true;
 					setStatus(label('unsaved'));
 				}
@@ -1458,8 +1471,7 @@
 	};
 	byId('createProjectForm').onsubmit = (event) => {
 		event.preventDefault();
-		const name = byId('newProjectName').value.trim();
-		if (!name) return;
+		const name = byId('newProjectName').value.trim() || label('defaultProjectName');
 		postParent('nortantis:project-create', { name });
 		byId('newProjectName').value = '';
 	};
@@ -1526,8 +1538,6 @@
 	byId('lineErase').onclick = () => setLineMode('erase');
 	byId('riverWidth').oninput = (event) => { state.lineWidth = Number(event.target.value); byId('riverWidthValue').value = String(state.lineWidth); };
 	byId('lineRadius').oninput = (event) => { state.lineRadius = Number(event.target.value); byId('lineRadiusValue').value = String(state.lineRadius); if (state.cursorPoint) updateBrushFeedback(state.cursorPoint); };
-	byId('showTiles').checked = state.showTiles;
-	byId('showTiles').onchange = (event) => { state.showTiles = event.target.checked; localStorage.setItem('regionsEditor.showTiles', String(state.showTiles)); if (state.showTiles) void loadTopology(); renderOverlay(); };
 	byId('textValue').onchange = () => void updateSelectedText({ text: byId('textValue').value.trim() });
 	byId('textTypeTrigger').onclick = () => {
 		const isOpen = byId('textTypeDropdown').dataset.open === 'true';
@@ -1680,18 +1690,17 @@
 	});
 	canvas.addEventListener('contextmenu', (event) => event.preventDefault());
 	canvas.addEventListener('wheel', (event) => {
-		if (!state.metadata || !map.naturalWidth) return;
+		if (!state.metadata || !map.width) return;
 		event.preventDefault();
-		const before = mapPoint(event);
 		const previousScale = state.scale;
 		state.scale = Math.max(0.08, Math.min(8, state.scale * (event.deltaY < 0 ? 1.1 : 0.9)));
 		const ratio = state.scale / previousScale;
-		const originX = event.clientX - canvas.getBoundingClientRect().left;
-		const originY = event.clientY - canvas.getBoundingClientRect().top;
-		state.panX = originX - (originX - state.panX) * ratio;
-		state.panY = originY - (originY - state.panY) * ratio;
+		const bounds = canvas.getBoundingClientRect();
+		const cursorX = event.clientX - bounds.left - bounds.width / 2;
+		const cursorY = event.clientY - bounds.top - bounds.height / 2;
+		state.panX = cursorX - (cursorX - state.panX) * ratio;
+		state.panY = cursorY - (cursorY - state.panY) * ratio;
 		applyTransform();
-		if (before) renderOverlay();
 	}, { passive: false });
 
 	window.addEventListener('keydown', (event) => {
@@ -1714,6 +1723,7 @@
 	window.addEventListener('message', (event) => {
 		if (event.source !== parent || !event.data || typeof event.data !== 'object') return;
 		if (event.data.type === 'nortantis:host-state') {
+			applyTheme(event.data.theme, { persist: false });
 			state.host = { ...state.host, ...event.data.state };
 			const activeProject = state.host.projects.find((project) => project.id === state.sessionId);
 			if (activeProject) state.projectName = activeProject.name;
