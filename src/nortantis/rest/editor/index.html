@@ -287,13 +287,57 @@
 								<output id="boundaryRadiusValue">36</output></span
 							><input id="boundaryRadius" type="range" min="8" max="90" value="36"
 						/></label>
-						<label class="field"
-							><span data-label="regionColor"></span
-							><input id="regionColor" type="color" value="#b9945d"
-						/></label>
-						<div class="field">
-							<span data-label="regionPalette"></span>
-							<div id="regionPalette" class="region-palette" role="group" data-label-aria="regionPalette"></div>
+						<div id="regionColorPicker" class="editor-color-picker field">
+							<span id="regionColorLabel" data-label="regionColor"></span>
+							<button
+								id="regionColorTrigger"
+								class="editor-color-picker-trigger"
+								type="button"
+								aria-haspopup="dialog"
+								aria-expanded="false"
+								aria-labelledby="regionColorLabel regionColorValue"
+							>
+								<span id="regionColorSwatch" class="editor-color-picker-trigger-swatch" aria-hidden="true"></span>
+								<span id="regionColorValue" class="editor-color-picker-trigger-value">#B9945D</span>
+							</button>
+							<div
+								id="regionColorPanel"
+								class="editor-color-picker-panel"
+								role="dialog"
+								aria-labelledby="regionColorLabel"
+								hidden
+							>
+								<div
+									id="regionColorSurface"
+									class="editor-color-picker-surface"
+									tabindex="0"
+									role="application"
+									data-label-aria="regionColorSurface"
+								>
+									<span id="regionColorSurfaceIndicator" class="editor-color-picker-surface-indicator" aria-hidden="true"></span>
+								</div>
+								<div
+									id="regionColorHue"
+									class="editor-color-picker-hue"
+									tabindex="0"
+									role="slider"
+									aria-valuemin="0"
+									aria-valuemax="360"
+									aria-valuenow="36"
+									data-label-aria="regionColorHue"
+								>
+									<span id="regionColorHueIndicator" class="editor-color-picker-hue-indicator" aria-hidden="true"></span>
+								</div>
+								<input id="regionColor" type="hidden" value="#b9945d" />
+								<label class="editor-color-picker-hex-field">
+									<span data-label="regionColorHex"></span>
+									<input id="regionColorHex" type="text" inputmode="text" maxlength="7" spellcheck="false" value="#B9945D" />
+								</label>
+								<div class="editor-color-picker-palette">
+									<span data-label="regionPalette"></span>
+									<div id="regionPalette" class="region-palette" role="group" data-label-aria="regionPalette"></div>
+								</div>
+							</div>
 						</div>
 						<p id="regionStatus" class="muted" data-label="regionHint"></p>
 					</section>

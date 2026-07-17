@@ -544,6 +544,159 @@ input[type='color'] {
 	padding: 3px;
 	cursor: pointer;
 }
+.editor-color-picker {
+	position: relative;
+}
+.editor-color-picker-trigger {
+	display: grid;
+	grid-template-columns: 30px minmax(0, 1fr);
+	align-items: center;
+	gap: 10px;
+	width: 100%;
+	min-height: 42px;
+	padding: 6px 10px;
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	color: var(--text);
+	background: var(--field);
+	cursor: pointer;
+}
+.editor-color-picker-trigger:hover,
+.editor-color-picker-trigger[aria-expanded='true'] {
+	border-color: var(--gold);
+	box-shadow: 0 0 0 3px rgba(216, 139, 53, 0.14);
+}
+.editor-color-picker-trigger-swatch {
+	width: 30px;
+	height: 28px;
+	border: 1px solid rgba(255, 233, 169, 0.52);
+	border-radius: 6px;
+	background: var(--picker-color, #b9945d);
+	box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.18);
+}
+.editor-color-picker-trigger-value {
+	min-width: 0;
+	overflow: hidden;
+	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	font-size: 13px;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	text-align: left;
+	text-overflow: ellipsis;
+}
+.editor-color-picker-panel {
+	position: relative;
+	z-index: 1;
+	display: grid;
+	gap: 12px;
+	width: 100%;
+	min-width: 0;
+	margin-top: 7px;
+	padding: 12px;
+	border: 1px solid var(--gold);
+	border-radius: 12px;
+	color: var(--text);
+	background:
+		radial-gradient(circle at 100% 0, rgba(216, 139, 53, 0.14), transparent 46%),
+		linear-gradient(180deg, #1b0d0a, #0b0303);
+	box-shadow:
+		0 12px 30px var(--shadow),
+		inset 0 0 0 1px rgba(255, 233, 169, 0.06);
+	isolation: isolate;
+}
+.editor-color-picker-panel[hidden] {
+	display: none;
+}
+.editor-color-picker-surface {
+	--picker-hue: 36;
+	position: relative;
+	height: 150px;
+	overflow: hidden;
+	border: 1px solid rgba(255, 233, 169, 0.45);
+	border-radius: 9px;
+	background:
+		linear-gradient(to top, #000, transparent),
+		linear-gradient(to right, #fff, transparent),
+		hsl(var(--picker-hue), 100%, 50%);
+	box-shadow:
+		inset 0 0 0 1px rgba(0, 0, 0, 0.16),
+		0 5px 14px rgba(0, 0, 0, 0.18);
+	cursor: crosshair;
+	outline: 0;
+	touch-action: none;
+}
+.editor-color-picker-surface:focus-visible,
+.editor-color-picker-hue:focus-visible {
+	box-shadow:
+		0 0 0 3px rgba(216, 139, 53, 0.22),
+		inset 0 0 0 1px rgba(255, 255, 255, 0.25);
+}
+.editor-color-picker-surface-indicator,
+.editor-color-picker-hue-indicator {
+	position: absolute;
+	pointer-events: none;
+	transform: translate(-50%, -50%);
+}
+.editor-color-picker-surface-indicator {
+	top: 27%;
+	left: 50%;
+	width: 18px;
+	height: 18px;
+	border: 2px solid #fff;
+	border-radius: 50%;
+	background: var(--picker-color, #b9945d);
+	box-shadow:
+		0 0 0 1px rgba(0, 0, 0, 0.74),
+		0 2px 7px rgba(0, 0, 0, 0.42);
+}
+.editor-color-picker-hue {
+	position: relative;
+	height: 22px;
+	border: 1px solid rgba(255, 233, 169, 0.45);
+	border-radius: 999px;
+	background: linear-gradient(
+		to right,
+		#f00 0%,
+		#ff0 16.67%,
+		#0f0 33.33%,
+		#0ff 50%,
+		#00f 66.67%,
+		#f0f 83.33%,
+		#f00 100%
+	);
+	box-shadow:
+		inset 0 0 0 1px rgba(0, 0, 0, 0.15),
+		0 3px 9px rgba(0, 0, 0, 0.18);
+	cursor: ew-resize;
+	outline: 0;
+	touch-action: none;
+}
+.editor-color-picker-hue-indicator {
+	top: 50%;
+	left: 10%;
+	width: 14px;
+	height: 28px;
+	border: 2px solid #fff;
+	border-radius: 999px;
+	background: transparent;
+	box-shadow:
+		0 0 0 1px rgba(0, 0, 0, 0.7),
+		0 2px 7px rgba(0, 0, 0, 0.38);
+}
+.editor-color-picker-hex-field,
+.editor-color-picker-palette {
+	display: grid;
+	gap: 6px;
+	color: var(--muted);
+	font-size: 12px;
+}
+.editor-color-picker-hex-field input {
+	height: 38px;
+	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+}
 .region-palette {
 	display: grid;
 	grid-template-columns: repeat(8, minmax(0, 1fr));
@@ -565,6 +718,7 @@ input[type='color'] {
 	border-color: var(--vellum);
 	box-shadow: 0 0 0 2px rgba(216, 139, 53, 0.42);
 }
+
 input[type='checkbox'] {
 	width: 18px;
 	height: 18px;
@@ -1558,6 +1712,46 @@ input[type='range']::-moz-range-thumb {
 :root[data-theme='light'] .storage-progress > span,
 :root[data-theme='light'] .generation-progress > span {
 	background: linear-gradient(90deg, var(--copper), var(--gold));
+}
+
+
+:root[data-theme='light'] .editor-color-picker-trigger {
+	color: var(--text);
+	border-color: var(--line);
+	background: #fffce8;
+}
+
+:root[data-theme='light'] .editor-color-picker-panel {
+	color: var(--text);
+	border-color: rgba(168, 108, 32, 0.58);
+	background:
+		radial-gradient(circle at 100% 0, rgba(168, 108, 32, 0.12), transparent 46%),
+		linear-gradient(180deg, #fffcef, #f3daaa);
+	box-shadow:
+		0 12px 30px rgba(105, 60, 29, 0.18),
+		inset 0 0 0 1px rgba(255, 255, 255, 0.48);
+}
+
+:root[data-theme='light'] .editor-color-picker-hex-field input {
+	color: var(--text);
+	border-color: var(--line);
+	background: #fffdf2;
+}
+
+:root[data-theme='light'] .region-color-swatch {
+	border-color: rgba(108, 45, 33, 0.34);
+}
+
+:root[data-theme='light'] .region-color-swatch:hover,
+:root[data-theme='light'] .region-color-swatch.active {
+	border-color: var(--wine-dark);
+	box-shadow: 0 0 0 2px rgba(168, 108, 32, 0.34);
+}
+
+:root[data-theme='light'] .editor-color-picker-trigger:hover,
+:root[data-theme='light'] .editor-color-picker-trigger[aria-expanded='true'] {
+	border-color: var(--gold);
+	background: rgba(255, 238, 191, 0.94);
 }
 
 :root[data-theme='light'] .ui-button.danger {

@@ -45,6 +45,9 @@
 		boundaryPoints: [],
 		provinceMode: 'paint',
 		regionColor: '#b9945d',
+		regionHue: 36,
+		regionSaturation: 50,
+		regionBrightness: 73,
 		lineType: 'road',
 		lineMode: 'draw',
 		lineRadius: 24,
@@ -208,6 +211,7 @@
 		byId('backLink').dataset.tooltip = label('back');
 		byId('backLink').setAttribute('aria-label', label('back'));
 		renderThemeToggle();
+		byId('regionColorTrigger')?.setAttribute('aria-label', label('regionColor'));
 		const createButton = byId('createProjectForm').querySelector('button');
 		createButton.dataset.tooltip = label('create');
 		createButton.setAttribute('aria-label', label('create'));
@@ -221,13 +225,149 @@
 		}
 		fillTextTypes();
 		renderRegionPalette();
+		setRegionColor(state.regionColor);
 		renderHostState();
 	}
 
-	function setRegionColor(color) {
-		state.regionColor = color;
-		byId('regionColor').value = color;
-		document.querySelectorAll('[data-region-color]').forEach((button) => button.classList.toggle('active', button.dataset.regionColor === color.toLowerCase()));
+	function clampRegionColorValue(value, min, max) {
+		return Math.min(max, Math.max(min, Number(value) || 0));
+	}
+
+	function normalizeRegionColor(color) {
+		const raw = String(color || '').trim();
+		const shortMatch = raw.match(/^#?([0-9a-f]{3})$/i);
+		if (shortMatch) {
+			const [r, g, b] = shortMatch[1];
+			return `#${r}${r}${g}${g}${b}${b}`.toLowerCase();
+		}
+		const fullMatch = raw.match(/^#?([0-9a-f]{6})$/i);
+		return fullMatch ? `#${fullMatch[1].toLowerCase()}` : null;
+	}
+
+	function regionHexToHsv(color) {
+		const normalized = normalizeRegionColor(color) || '#000000';
+		const r = Number.parseInt(normalized.slice(1, 3), 16) / 255;
+		const g = Number.parseInt(normalized.slice(3, 5), 16) / 255;
+		const b = Number.parseInt(normalized.slice(5, 7), 16) / 255;
+		const max = Math.max(r, g, b);
+		const min = Math.min(r, g, b);
+		const delta = max - min;
+		let hue = state.regionHue || 0;
+		if (delta > 0) {
+			if (max === r) hue = 60 * (((g - b) / delta) % 6);
+			else if (max === g) hue = 60 * ((b - r) / delta + 2);
+			else hue = 60 * ((r - g) / delta + 4);
+		}
+		if (hue < 0) hue += 360;
+		return { h: hue, s: max === 0 ? 0 : (delta / max) * 100, v: max * 100 };
+	}
+
+	function regionHsvToHex(hue, saturation, brightness) {
+		const h = ((Number(hue) % 360) + 360) % 360;
+		const s = clampRegionColorValue(saturation, 0, 100) / 100;
+		const v = clampRegionColorValue(brightness, 0, 100) / 100;
+		const chroma = v * s;
+		const x = chroma * (1 - Math.abs(((h / 60) % 2) - 1));
+		const m = v - chroma;
+		let red = 0;
+		let green = 0;
+		let blue = 0;
+		if (h < 60) [red, green, blue] = [chroma, x, 0];
+		else if (h < 120) [red, green, blue] = [x, chroma, 0];
+		else if (h < 180) [red, green, blue] = [0, chroma, x];
+		else if (h < 240) [red, green, blue] = [0, x, chroma];
+		else if (h < 300) [red, green, blue] = [x, 0, chroma];
+		else [red, green, blue] = [chroma, 0, x];
+		return `#${[red, green, blue].map((component) => Math.round((component + m) * 255).toString(16).padStart(2, '0')).join('')}`;
+	}
+
+	function renderRegionColorControls() {
+		const hue = clampRegionColorValue(state.regionHue, 0, 360);
+		const saturation = clampRegionColorValue(state.regionSaturation, 0, 100);
+		const brightness = clampRegionColorValue(state.regionBrightness, 0, 100);
+		const surface = byId('regionColorSurface');
+		const surfaceIndicator = byId('regionColorSurfaceIndicator');
+		const hueControl = byId('regionColorHue');
+		const hueIndicator = byId('regionColorHueIndicator');
+		surface?.style.setProperty('--picker-hue', String(hue));
+		if (surfaceIndicator) {
+			surfaceIndicator.style.left = `${saturation}%`;
+			surfaceIndicator.style.top = `${100 - brightness}%`;
+			surfaceIndicator.style.setProperty('--picker-color', state.regionColor);
+		}
+		if (hueControl) {
+			hueControl.setAttribute('aria-valuenow', String(Math.round(hue)));
+			hueControl.setAttribute('aria-valuetext', `${Math.round(hue)}°`);
+		}
+		if (hueIndicator) hueIndicator.style.left = `${(hue / 360) * 100}%`;
+	}
+
+	function regionColorPickerIsOpen() {
+		return byId('regionColorTrigger')?.getAttribute('aria-expanded') === 'true';
+	}
+
+	function openRegionColorPicker() {
+		byId('regionColorPanel').hidden = false;
+		byId('regionColorTrigger').setAttribute('aria-expanded', 'true');
+		requestAnimationFrame(() => byId('regionColorSurface')?.focus());
+	}
+
+	function closeRegionColorPicker({ restore = false } = {}) {
+		byId('regionColorPanel').hidden = true;
+		byId('regionColorTrigger').setAttribute('aria-expanded', 'false');
+		if (restore) byId('regionColorTrigger').focus();
+	}
+
+	function commitRegionColorInput() {
+		const color = normalizeRegionColor(byId('regionColorHex').value);
+		if (!color) {
+			byId('regionColorHex').value = state.regionColor.toUpperCase();
+			return false;
+		}
+		setRegionColor(color);
+		return true;
+	}
+
+	function setRegionColor(color, { preserveHsv = false } = {}) {
+		const normalized = normalizeRegionColor(color);
+		if (!normalized) return;
+		state.regionColor = normalized;
+		if (!preserveHsv) {
+			const hsv = regionHexToHsv(normalized);
+			state.regionHue = hsv.h;
+			state.regionSaturation = hsv.s;
+			state.regionBrightness = hsv.v;
+		}
+		byId('regionColor').value = normalized;
+		byId('regionColorHex').value = normalized.toUpperCase();
+		byId('regionColorValue').textContent = normalized.toUpperCase();
+		byId('regionColorSwatch').style.setProperty('--picker-color', normalized);
+		document.querySelectorAll('[data-region-color]').forEach((button) => button.classList.toggle('active', button.dataset.regionColor === normalized));
+		renderRegionColorControls();
+	}
+
+	function setRegionColorFromHsv({ h = state.regionHue, s = state.regionSaturation, v = state.regionBrightness }) {
+		state.regionHue = clampRegionColorValue(h, 0, 360);
+		state.regionSaturation = clampRegionColorValue(s, 0, 100);
+		state.regionBrightness = clampRegionColorValue(v, 0, 100);
+		setRegionColor(regionHsvToHex(state.regionHue, state.regionSaturation, state.regionBrightness), { preserveHsv: true });
+	}
+
+	function updateRegionColorSurfaceFromPointer(event) {
+		const surface = byId('regionColorSurface');
+		if (!surface) return;
+		const bounds = surface.getBoundingClientRect();
+		setRegionColorFromHsv({
+			s: ((event.clientX - bounds.left) / bounds.width) * 100,
+			v: 100 - ((event.clientY - bounds.top) / bounds.height) * 100
+		});
+	}
+
+	function updateRegionColorHueFromPointer(event) {
+		const hueControl = byId('regionColorHue');
+		if (!hueControl) return;
+		const bounds = hueControl.getBoundingClientRect();
+		setRegionColorFromHsv({ h: ((event.clientX - bounds.left) / bounds.width) * 360 });
 	}
 
 	function renderRegionPalette() {
@@ -1529,7 +1669,58 @@
 	byId('regionPaint').onclick = () => setProvinceMode('paint');
 	byId('regionPick').onclick = () => setProvinceMode('pick');
 	byId('islandLasso').onclick = () => setProvinceMode('lasso');
-	byId('regionColor').oninput = (event) => setRegionColor(event.target.value);
+	byId('regionColorTrigger').onclick = () => {
+		if (regionColorPickerIsOpen()) closeRegionColorPicker();
+		else openRegionColorPicker();
+	};
+	const regionColorSurface = byId('regionColorSurface');
+	const regionColorHue = byId('regionColorHue');
+	regionColorSurface.onpointerdown = (event) => {
+		event.preventDefault();
+		regionColorSurface.setPointerCapture(event.pointerId);
+		updateRegionColorSurfaceFromPointer(event);
+	};
+	regionColorSurface.onpointermove = (event) => {
+		if (regionColorSurface.hasPointerCapture(event.pointerId)) updateRegionColorSurfaceFromPointer(event);
+	};
+	regionColorSurface.onkeydown = (event) => {
+		const step = event.shiftKey ? 10 : 1;
+		if (event.key === 'ArrowLeft') setRegionColorFromHsv({ s: state.regionSaturation - step });
+		else if (event.key === 'ArrowRight') setRegionColorFromHsv({ s: state.regionSaturation + step });
+		else if (event.key === 'ArrowUp') setRegionColorFromHsv({ v: state.regionBrightness + step });
+		else if (event.key === 'ArrowDown') setRegionColorFromHsv({ v: state.regionBrightness - step });
+		else return;
+		event.preventDefault();
+	};
+	regionColorHue.onpointerdown = (event) => {
+		event.preventDefault();
+		regionColorHue.setPointerCapture(event.pointerId);
+		updateRegionColorHueFromPointer(event);
+	};
+	regionColorHue.onpointermove = (event) => {
+		if (regionColorHue.hasPointerCapture(event.pointerId)) updateRegionColorHueFromPointer(event);
+	};
+	regionColorHue.onkeydown = (event) => {
+		const step = event.shiftKey ? 10 : 1;
+		if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') setRegionColorFromHsv({ h: state.regionHue - step });
+		else if (event.key === 'ArrowRight' || event.key === 'ArrowUp') setRegionColorFromHsv({ h: state.regionHue + step });
+		else if (event.key === 'Home') setRegionColorFromHsv({ h: 0 });
+		else if (event.key === 'End') setRegionColorFromHsv({ h: 360 });
+		else return;
+		event.preventDefault();
+	};
+	byId('regionColorHex').onblur = () => commitRegionColorInput();
+	byId('regionColorHex').onkeydown = (event) => {
+		if (event.key === 'Enter') {
+			event.preventDefault();
+			if (commitRegionColorInput()) closeRegionColorPicker({ restore: true });
+		}
+		if (event.key === 'Escape') {
+			event.preventDefault();
+			byId('regionColorHex').value = state.regionColor.toUpperCase();
+			closeRegionColorPicker({ restore: true });
+		}
+	};
 	function setLineType(type) { state.lineType = type; byId('roadType').classList.toggle('active', type === 'road'); byId('riverType').classList.toggle('active', type === 'river'); byId('riverWidthField').hidden = type !== 'river'; }
 	function setLineMode(mode) { state.lineMode = mode; byId('lineDraw').classList.toggle('active', mode === 'draw'); byId('lineErase').classList.toggle('active', mode === 'erase'); }
 	byId('roadType').onclick = () => setLineType('road');
@@ -1555,6 +1746,9 @@
 		const dropdown = byId('textTypeDropdown');
 		const menu = byId('textTypeMenu');
 		if (!dropdown?.contains(event.target) && !menu?.contains(event.target)) closeTextTypeDropdown();
+
+		const colorPicker = byId('regionColorPicker');
+		if (regionColorPickerIsOpen() && !colorPicker?.contains(event.target)) closeRegionColorPicker();
 	});
 	document.querySelector('.tool-panel-scroll')?.addEventListener('scroll', () => {
 		if (textTypeDropdownIsOpen()) positionTextTypeMenu();
