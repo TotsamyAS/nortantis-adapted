@@ -111,6 +111,26 @@
 			<symbol id="icon-chevron-down" viewBox="0 0 24 24">
 				<path d="m6 9 6 6 6-6" />
 			</symbol>
+			<symbol id="icon-undo" viewBox="0 0 24 24">
+				<path d="M9 7 4 12l5 5" />
+				<path d="M4 12h9a7 7 0 0 1 7 7" />
+			</symbol>
+			<symbol id="icon-redo" viewBox="0 0 24 24">
+				<path d="m15 7 5 5-5 5" />
+				<path d="M20 12h-9a7 7 0 0 0-7 7" />
+			</symbol>
+			<symbol id="icon-zoom-in" viewBox="0 0 24 24">
+				<circle cx="11" cy="11" r="8" />
+				<path d="m21 21-4.35-4.35" /><path d="M11 8v6" /><path d="M8 11h6" />
+			</symbol>
+			<symbol id="icon-zoom-out" viewBox="0 0 24 24">
+				<circle cx="11" cy="11" r="8" />
+				<path d="m21 21-4.35-4.35" /><path d="M8 11h6" />
+			</symbol>
+			<symbol id="icon-fit" viewBox="0 0 24 24">
+				<path d="M8 3H5a2 2 0 0 0-2 2v3" /><path d="M16 3h3a2 2 0 0 1 2 2v3" />
+				<path d="M8 21H5a2 2 0 0 1-2-2v-3" /><path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+			</symbol>
 		</svg>
 
 		<div class="editor-shell">
@@ -141,6 +161,18 @@
 							<span></span>
 						</div>
 					</div>
+				</div>
+				<div class="canvas-controls" role="group" data-label-aria="viewControls">
+					<button id="zoomOut" class="canvas-control" type="button" data-tooltip="" aria-label="" disabled>
+						<svg><use href="#icon-zoom-out" /></svg>
+					</button>
+					<output id="zoomValue" class="zoom-value" aria-live="polite">100%</output>
+					<button id="fitMap" class="canvas-control" type="button" data-tooltip="" aria-label="" disabled>
+						<svg><use href="#icon-fit" /></svg>
+					</button>
+					<button id="zoomIn" class="canvas-control" type="button" data-tooltip="" aria-label="" disabled>
+						<svg><use href="#icon-zoom-in" /></svg>
+					</button>
 				</div>
 			</main>
 
@@ -179,6 +211,14 @@
 					</a>
 					<div class="session-title">
 						<strong id="projectTitle"></strong><span id="statusText"></span>
+					</div>
+					<div class="history-actions" role="group" data-label-aria="historyControls">
+						<button id="undoEdit" class="session-action" type="button" data-tooltip="" aria-label="" aria-keyshortcuts="Control+Z Meta+Z" disabled>
+							<svg><use href="#icon-undo" /></svg>
+						</button>
+						<button id="redoEdit" class="session-action" type="button" data-tooltip="" aria-label="" aria-keyshortcuts="Control+Y Control+Shift+Z Meta+Shift+Z" disabled>
+							<svg><use href="#icon-redo" /></svg>
+						</button>
 					</div>
 					<button id="saveProject" class="session-action" data-tooltip="" aria-label="">
 						<svg><use href="#icon-save" /></svg>

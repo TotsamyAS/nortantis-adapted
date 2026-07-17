@@ -1788,3 +1788,243 @@ input[type='range']::-moz-range-thumb {
 	border-color: rgba(159, 49, 40, 0.54);
 	background: rgba(159, 49, 40, 0.08);
 }
+
+
+/* Clean, compact editor chrome. */
+:root {
+	font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+	--panel: rgba(19, 12, 11, 0.94);
+	--panel-strong: rgba(9, 5, 5, 0.98);
+	--card: rgba(255, 255, 255, 0.055);
+	--field: rgba(255, 255, 255, 0.075);
+}
+
+.editor-shell {
+	grid-template-columns: minmax(0, 1fr) 52px clamp(340px, 25vw, 420px);
+}
+
+.editor-stage {
+	background:
+		linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+		linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+		radial-gradient(circle at 24% 8%, rgba(216, 139, 53, 0.08), transparent 34%),
+		#080403;
+	background-size: 28px 28px, 28px 28px, auto, auto;
+}
+
+.tool-rail {
+	gap: 8px;
+	padding: 10px 7px;
+	background: rgba(10, 6, 5, 0.96);
+}
+
+.tool-icon {
+	width: 38px;
+	height: 38px;
+	min-width: 38px;
+	min-height: 38px;
+	border-radius: 11px;
+}
+
+.tool-icon svg {
+	width: 19px;
+	height: 19px;
+}
+
+.tool-icon.active {
+	box-shadow: inset 3px 0 0 var(--gold), 0 6px 18px rgba(0, 0, 0, 0.22);
+}
+
+.tool-panel {
+	background: linear-gradient(180deg, var(--panel), var(--panel-strong));
+	backdrop-filter: blur(18px);
+}
+
+.tool-panel > .game-side-fire {
+	opacity: 0.18;
+}
+
+
+.session-bar {
+	gap: 6px;
+	min-height: 58px;
+	padding: 9px 10px;
+	background: rgba(255, 255, 255, 0.018);
+}
+
+.session-title strong {
+	font-family: Georgia, "Times New Roman", serif;
+	font-size: 14px;
+}
+
+.session-title span {
+	font-size: 11px;
+}
+
+.history-actions {
+	display: inline-flex;
+	gap: 4px;
+	padding-right: 4px;
+	border-right: 1px solid var(--line);
+}
+
+.session-action,
+.back-button,
+.theme-toggle,
+.theme-toggle.compact {
+	width: 32px;
+	height: 32px;
+	min-width: 32px;
+	min-height: 32px;
+	border-radius: 10px;
+}
+
+.session-action[disabled]:hover {
+	border-color: var(--line);
+	color: var(--text);
+	background: var(--card);
+	transform: none;
+}
+
+.tool-panel-scroll {
+	padding: 16px;
+}
+
+.tool-view {
+	gap: 14px;
+}
+
+.tool-view h2 {
+	font-family: Georgia, "Times New Roman", serif;
+	font-size: 18px;
+	letter-spacing: 0.01em;
+}
+
+input,
+select {
+	min-height: 40px;
+	border-radius: 10px;
+}
+
+.ui-button,
+.segmented button,
+.size-grid button {
+	min-height: 40px;
+	border-radius: 10px;
+	font-weight: 650;
+}
+
+.segmented {
+	gap: 4px;
+	padding: 3px;
+	border: 1px solid var(--line);
+	border-radius: 12px;
+	background: rgba(0, 0, 0, 0.12);
+}
+
+.segmented button {
+	border-color: transparent;
+}
+
+.project-card {
+	border-radius: 12px;
+	background: rgba(255, 255, 255, 0.045);
+}
+
+.field {
+	gap: 8px;
+}
+
+.canvas-controls {
+	position: absolute;
+	left: 16px;
+	bottom: 16px;
+	z-index: 4;
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 5px;
+	border: 1px solid var(--line);
+	border-radius: 13px;
+	background: rgba(10, 6, 5, 0.86);
+	box-shadow: 0 12px 32px rgba(0, 0, 0, 0.34);
+	backdrop-filter: blur(14px);
+}
+
+.canvas-control {
+	position: relative;
+	display: grid;
+	place-items: center;
+	width: 34px;
+	height: 34px;
+	padding: 0;
+	border: 0;
+	border-radius: 9px;
+	color: var(--text);
+	background: transparent;
+	cursor: pointer;
+}
+
+.canvas-control:hover:not(:disabled) {
+	color: var(--vellum);
+	background: rgba(216, 139, 53, 0.18);
+}
+
+.canvas-control:disabled {
+	opacity: 0.38;
+	cursor: not-allowed;
+}
+
+.zoom-value {
+	min-width: 52px;
+	padding: 0 5px;
+	color: var(--muted);
+	font-size: 12px;
+	font-variant-numeric: tabular-nums;
+	text-align: center;
+}
+
+.canvas-controls [data-tooltip]::after {
+	left: 50%;
+	right: auto;
+	top: auto;
+	bottom: calc(100% + 9px);
+	transform: translateX(-50%) translateY(4px);
+}
+
+.canvas-controls [data-tooltip]:hover::after,
+.canvas-controls [data-tooltip]:focus-visible::after {
+	transform: translateX(-50%) translateY(0);
+}
+
+:root[data-theme='light'] .editor-stage {
+	background:
+		linear-gradient(rgba(108, 45, 33, 0.035) 1px, transparent 1px),
+		linear-gradient(90deg, rgba(108, 45, 33, 0.035) 1px, transparent 1px),
+		radial-gradient(circle at 20% 10%, rgba(216, 139, 53, 0.12), transparent 34%),
+		linear-gradient(180deg, #fff4cb, #e8c487);
+	background-size: 28px 28px, 28px 28px, auto, auto;
+}
+
+:root[data-theme='light'] .canvas-controls {
+	background: rgba(255, 250, 229, 0.9);
+}
+
+:root[data-theme='light'] .segmented {
+	background: rgba(104, 54, 31, 0.055);
+}
+
+@media (max-width: 900px) {
+	.editor-shell {
+		grid-template-columns: minmax(0, 1fr) 48px minmax(300px, 68vw);
+	}
+	.tool-rail {
+		padding-inline: 5px;
+	}
+	.tool-icon {
+		width: 36px;
+		height: 36px;
+		min-width: 36px;
+		min-height: 36px;
+	}
+}

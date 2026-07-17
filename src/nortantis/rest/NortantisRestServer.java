@@ -1304,6 +1304,7 @@ public class NortantisRestServer
 		return "\"width\":" + width + ",\"height\":" + height + ",\"resolution\":" + resolution + ",\"previewWidth\":" + session.map.getWidth() + ",\"previewHeight\":"
 				+ session.map.getHeight() + ",\"borderPadding\":" + (borderPadding / resolution) + ",\"previewBorderPadding\":" + borderPadding
 				+ ",\"textStyles\":" + textStylesJson(session.settings)
+				+ ",\"canUndo\":" + session.canUndo() + ",\"canRedo\":" + session.canRedo()
 				+ ",\"capabilities\":{\"text\":true,\"landWaterBrush\":true,\"jpgExport\":true,\"icons\":true,\"roads\":true,\"regions\":true}";
 	}
 

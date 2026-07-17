@@ -52,3 +52,6 @@ Nortantis.jar
 build
 .claude
 .DS_Store
+
+
+*.zip

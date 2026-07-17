@@ -69,8 +69,10 @@
 		brushPolygons: [],
 		brushEdges: [],
 		editPending: false,
-		queuedEdit: null,
-		queuedHistory: null,
+		operationQueue: [],
+		operationIdleResolvers: [],
+		canUndo: false,
+		canRedo: false,
 		historyGroup: null,
 		historyCounter: 0,
 		dirty: false,
@@ -82,7 +84,8 @@
 		lastHostStatus: '',
 		loadingProgress: 0,
 		exportPreparing: false,
-		exportHostStarted: false
+		exportHostStarted: false,
+		workspaceRequestId: 0
 	};
 	let brushSelectionTimer = 0;
 	let brushSelectionVersion = 0;
@@ -135,7 +138,7 @@
 
 	function toggleTheme() {
 		const theme = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
-		applyTheme(theme, { persist: false });
+		applyTheme(theme);
 		postParent('nortantis:theme-change', { theme });
 	}
 	const canvas = byId('canvas');
@@ -152,32 +155,7 @@
 
 	function renderSideFire() {
 		const fire = byId('editorSideFire');
-		if (!fire || fire.childElementCount) return;
-
-		const fragment = document.createDocumentFragment();
-		Array.from({ length: 78 }, (_, index) => ({
-			x: `${4 + ((index * 47) % 93)}%`,
-			y: `${(index * 11) % 19}%`,
-			size: `${2 + ((index * 5) % 6)}px`,
-			rotation: `${-34 + ((index * 29) % 69)}deg`,
-			duration: `${3.4 + ((index * 13) % 47) / 10}s`,
-			delay: `${-((index * 17) % 83) / 10}s`,
-			drift: `${-34 + ((index * 31) % 69)}px`,
-			rise: `${150 + ((index * 37) % 361)}px`
-		})).forEach((spark) => {
-			const element = document.createElement('i');
-			element.className = 'game-side-spark';
-			element.style.setProperty('--spark-x', spark.x);
-			element.style.setProperty('--spark-y', spark.y);
-			element.style.setProperty('--spark-size', spark.size);
-			element.style.setProperty('--spark-rotation', spark.rotation);
-			element.style.setProperty('--spark-duration', spark.duration);
-			element.style.setProperty('--spark-delay', spark.delay);
-			element.style.setProperty('--spark-drift', spark.drift);
-			element.style.setProperty('--spark-rise', spark.rise);
-			fragment.append(element);
-		});
-		fire.append(fragment);
+		if (fire) fire.replaceChildren();
 	}
 
 	renderSideFire();
@@ -212,6 +190,12 @@
 		byId('exportProject').setAttribute('aria-label', label('export'));
 		byId('backLink').dataset.tooltip = label('back');
 		byId('backLink').setAttribute('aria-label', label('back'));
+		[['undoEdit', 'undo'], ['redoEdit', 'redo'], ['zoomOut', 'zoomOut'], ['fitMap', 'fitMap'], ['zoomIn', 'zoomIn']].forEach(([id, key]) => {
+			const control = byId(id);
+			if (!control) return;
+			control.dataset.tooltip = label(key);
+			control.setAttribute('aria-label', label(key));
+		});
 		renderThemeToggle();
 		byId('regionColorTrigger')?.setAttribute('aria-label', label('regionColor'));
 		const createButton = byId('createProjectForm').querySelector('button');
@@ -639,8 +623,12 @@
 
 	function setSessionMetadata(metadata) {
 		state.metadata = metadata || null;
+		state.canUndo = Boolean(metadata?.canUndo);
+		state.canRedo = Boolean(metadata?.canRedo);
 		closeTextTypeDropdown();
 		fillTextTypes();
+		renderHistoryControls();
+		renderViewControls();
 	}
 
 	function setStatus(text) {
@@ -694,6 +682,8 @@
 			if (host.statusCode === 'saved' || host.statusCode === 'exported') showToast(hostStatus);
 		}
 		setStatus(hostError || hostStatus || (host.saving ? label('save') : host.exporting ? label('export') : state.dirty ? label('unsaved') : state.sessionId ? label('ready') : ''));
+		renderHistoryControls();
+		renderViewControls();
 		byId('saveProject').disabled = !state.sessionId || host.saving;
 		const exportButton = byId('exportProject');
 		const exportBusy = state.exportPreparing || host.exporting;
@@ -821,6 +811,16 @@
 		return json;
 	}
 
+	function renderViewControls() {
+		const hasMap = Boolean(state.sessionId && map.width && map.height);
+		const zoomValue = byId('zoomValue');
+		if (zoomValue) zoomValue.textContent = `${Math.round(state.scale * 100)}%`;
+		['zoomOut', 'fitMap', 'zoomIn'].forEach((id) => {
+			const control = byId(id);
+			if (control) control.disabled = !hasMap;
+		});
+	}
+
 	function fit() {
 		if (!map.width || !map.height) return;
 		const bounds = canvas.getBoundingClientRect();
@@ -831,8 +831,23 @@
 		applyTransform();
 	}
 
+	function zoomAt(factor, clientX, clientY) {
+		if (!map.width || !map.height) return;
+		const bounds = canvas.getBoundingClientRect();
+		const anchorX = (clientX ?? (bounds.left + bounds.width / 2)) - bounds.left - bounds.width / 2;
+		const anchorY = (clientY ?? (bounds.top + bounds.height / 2)) - bounds.top - bounds.height / 2;
+		const previousScale = state.scale;
+		state.scale = Math.max(0.08, Math.min(8, state.scale * factor));
+		const ratio = state.scale / previousScale;
+		state.panX = anchorX - (anchorX - state.panX) * ratio;
+		state.panY = anchorY - (anchorY - state.panY) * ratio;
+		state.hasFit = true;
+		applyTransform();
+	}
+
 	function applyTransform() {
 		mapSurface.style.transform = `translate(${state.panX}px, ${state.panY}px) scale(${state.scale})`;
+		renderViewControls();
 	}
 
 	function setPreview(base64, resetView, onReady) {
@@ -917,6 +932,7 @@
 	}
 
 	function clearWorkspace() {
+		state.workspaceRequestId += 1;
 		state.sessionId = null;
 		state.projectName = '';
 		setSessionMetadata(null);
@@ -933,8 +949,9 @@
 		state.brushPolygons = [];
 		state.brushEdges = [];
 		state.historyGroup = null;
-		state.queuedHistory = null;
-		state.queuedEdit = null;
+		clearOperationQueue();
+		state.canUndo = false;
+		state.canRedo = false;
 		state.dirty = false;
 		state.hasFit = false;
 		state.previewVersion += 1;
@@ -1134,6 +1151,7 @@
 
 	async function openProject(data) {
 		if (!data?.projectId || !data?.projectBase64) return;
+		const workspaceRequestId = ++state.workspaceRequestId;
 		window.clearTimeout(pathPreviewTimer);
 		pathPreviewVersion += 1;
 		queuedPathPreview = null;
@@ -1145,8 +1163,9 @@
 		state.iconAssets = null;
 		state.selectedAsset = null;
 		state.historyGroup = null;
-		state.queuedHistory = null;
-		state.queuedEdit = null;
+		clearOperationQueue();
+		state.canUndo = false;
+		state.canRedo = false;
 		state.pathPreviewPoints = [];
 		state.pathPreviewPolygons = [];
 		state.pathPreviewEdges = [];
@@ -1161,6 +1180,7 @@
 			});
 			if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`);
 			await readSse(response.body, (event, payload) => {
+				if (workspaceRequestId !== state.workspaceRequestId) return;
 				if (event === 'phase') {
 					const phase = JSON.parse(payload);
 					byId('loadingText').textContent = state.labels.phases[phase.key] || label('phaseStarting');
@@ -1175,52 +1195,58 @@
 				if (event === 'error') throw new Error('projectOpenFailed');
 			});
 		} catch {
-			setStatus(label('genericError'));
+			if (workspaceRequestId === state.workspaceRequestId) setStatus(label('genericError'));
 		} finally {
-			hideLoading();
+			if (workspaceRequestId === state.workspaceRequestId) hideLoading();
 		}
 	}
 
-	async function currentProject(currentOperationId) {
-		if (!state.sessionId) throw new Error('Missing editor session');
-		const json = await postJson('/api/editor/session/project', { sessionId: state.sessionId, operationId: currentOperationId });
+	async function currentProject(currentOperationId, sessionId = state.sessionId) {
+		if (!sessionId) throw new Error('Missing editor session');
+		await whenEditorIdle();
+		if (state.sessionId !== sessionId) throw new Error('Editor session changed');
+		const json = await postJson('/api/editor/session/project', { sessionId, operationId: currentOperationId });
 		return json.projectBase64;
 	}
 
 	async function saveProject() {
 		if (!state.sessionId) return;
+		const sessionId = state.sessionId;
 		const currentOperationId = operationId('save');
 		setStatus(label('save'));
 		try {
-			const projectBase64 = await currentProject(currentOperationId);
+			const projectBase64 = await currentProject(currentOperationId, sessionId);
 			await previewPatchQueue;
+			if (state.sessionId !== sessionId) throw new Error('Editor session changed');
 			const previewBase64 = createProjectThumbnailBase64();
-			if (previewBase64) state.projectPreviewData[state.sessionId] = `data:image/jpeg;base64,${previewBase64}`;
-			postParent('nortantis:save', { operationId: currentOperationId, projectId: state.sessionId, projectBase64, previewBase64 });
+			if (previewBase64) state.projectPreviewData[sessionId] = `data:image/jpeg;base64,${previewBase64}`;
+			postParent('nortantis:save', { operationId: currentOperationId, projectId: sessionId, projectBase64, previewBase64 });
 			state.dirty = false;
 		} catch {
-			setStatus(label('genericError'));
+			if (state.sessionId === sessionId) setStatus(label('genericError'));
 		}
 	}
 
 	async function exportProject() {
 		if (!state.sessionId || state.exportPreparing || state.host.exporting) return;
+		const sessionId = state.sessionId;
 		const currentOperationId = operationId('export');
 		state.exportPreparing = true;
 		state.exportHostStarted = false;
 		renderHostState();
 		setStatus(label('export'));
 		try {
-			const projectBase64 = await currentProject(currentOperationId);
+			const projectBase64 = await currentProject(currentOperationId, sessionId);
 			await previewPatchQueue;
+			if (state.sessionId !== sessionId) throw new Error('Editor session changed');
 			const previewBase64 = createProjectThumbnailBase64();
-			if (previewBase64) state.projectPreviewData[state.sessionId] = `data:image/jpeg;base64,${previewBase64}`;
-			postParent('nortantis:export', { operationId: currentOperationId, projectId: state.sessionId, projectBase64, previewBase64, format: 'jpg' });
+			if (previewBase64) state.projectPreviewData[sessionId] = `data:image/jpeg;base64,${previewBase64}`;
+			postParent('nortantis:export', { operationId: currentOperationId, projectId: sessionId, projectBase64, previewBase64, format: 'jpg' });
 		} catch {
 			state.exportPreparing = false;
 			state.exportHostStarted = false;
 			renderHostState();
-			setStatus(label('genericError'));
+			if (state.sessionId === sessionId) setStatus(label('genericError'));
 		}
 	}
 
@@ -1245,73 +1271,119 @@
 		renderOverlay();
 	}
 
-	async function sendEdit(command, coalesce = false) {
-		if (!state.sessionId) return null;
-		const nextCommand = state.historyGroup && !command.historyGroup ? { ...command, historyGroup: state.historyGroup } : command;
-		if (state.editPending && coalesce) {
-			state.queuedEdit = nextCommand;
-			return null;
-		}
-		state.editPending = true;
-		try {
-			const json = await postJson('/api/editor/session/edit', { sessionId: state.sessionId, command: nextCommand, returnPreview: true, omitProjectBytes: true });
-			if (json.metadata) setSessionMetadata(json.metadata);
-			if (json.previewBase64) setPreview(json.previewBase64, false);
-			else if (json.previewPatchBase64 && json.previewPatch) applyPreviewPatch(json.previewPatchBase64, json.previewPatch);
-			state.dirty = true;
-			setStatus(label('unsaved'));
-			return json;
-		} catch {
-			setStatus(label('genericError'));
-			return null;
-		} finally {
-			state.editPending = false;
-			if (state.queuedEdit) {
-				const next = state.queuedEdit;
-				state.queuedEdit = null;
-				void sendEdit(next, true);
-			} else if (state.queuedHistory) {
-				const action = state.queuedHistory;
-				state.queuedHistory = null;
-				void applyHistory(action);
+	function notifyEditorIdle() {
+		if (state.editPending || state.operationQueue.length) return;
+		const resolvers = state.operationIdleResolvers.splice(0);
+		resolvers.forEach((resolve) => resolve());
+	}
+
+	function whenEditorIdle() {
+		if (!state.editPending && !state.operationQueue.length) return Promise.resolve();
+		return new Promise((resolve) => state.operationIdleResolvers.push(resolve));
+	}
+
+	function clearOperationQueue() {
+		const queued = state.operationQueue.splice(0);
+		queued.forEach((item) => item.resolve?.(null));
+		notifyEditorIdle();
+		renderHistoryControls();
+	}
+
+	function renderHistoryControls() {
+		const undo = byId('undoEdit');
+		const redo = byId('redoEdit');
+		if (!undo || !redo) return;
+		const hasSession = Boolean(state.sessionId);
+		undo.disabled = !hasSession || !state.canUndo;
+		redo.disabled = !hasSession || !state.canRedo;
+		undo.setAttribute('aria-busy', String(state.editPending));
+		redo.setAttribute('aria-busy', String(state.editPending));
+	}
+
+	function enqueueEditorOperation(kind, payload, { coalesce = false } = {}) {
+		if (!state.sessionId) return Promise.resolve(null);
+		const sessionId = state.sessionId;
+		return new Promise((resolve) => {
+			if (coalesce && kind === 'edit') {
+				const previous = state.operationQueue.at(-1);
+				if (previous?.kind === 'edit' && previous.sessionId === sessionId
+						&& previous.payload.type === payload.type
+						&& previous.payload.historyGroup === payload.historyGroup) {
+					previous.resolve?.(null);
+					state.operationQueue[state.operationQueue.length - 1] = { kind, payload, sessionId, resolve, coalesce };
+					return;
+				}
 			}
+			state.operationQueue.push({ kind, payload, sessionId, resolve, coalesce });
+			void processEditorOperations();
+		});
+	}
+
+	async function processEditorOperations() {
+		if (state.editPending) return;
+		const item = state.operationQueue.shift();
+		if (!item) {
+			notifyEditorIdle();
+			renderHistoryControls();
+			return;
+		}
+
+		state.editPending = true;
+		renderHistoryControls();
+		let result = null;
+		try {
+			if (item.kind === 'edit') {
+				result = await postJson('/api/editor/session/edit', {
+					sessionId: item.sessionId,
+					command: item.payload,
+					returnPreview: true,
+					omitProjectBytes: true
+				});
+				if (item.sessionId === state.sessionId) {
+					if (result.metadata) setSessionMetadata(result.metadata);
+					if (result.previewBase64) setPreview(result.previewBase64, false);
+					else if (result.previewPatchBase64 && result.previewPatch) applyPreviewPatch(result.previewPatchBase64, result.previewPatch);
+					state.dirty = true;
+					setStatus(label('unsaved'));
+				}
+			} else {
+				result = await postJson('/api/editor/session/history', { sessionId: item.sessionId, action: item.payload });
+				if (item.sessionId === state.sessionId) {
+					if (result.metadata) setSessionMetadata(result.metadata);
+					else {
+						state.canUndo = Boolean(result.canUndo);
+						state.canRedo = Boolean(result.canRedo);
+					}
+					if (result.previewBase64) setPreview(result.previewBase64, false);
+					if (result.changed) {
+						state.dirty = true;
+						state.selectedText = null;
+						state.textDragPoint = null;
+						byId('deleteText').disabled = true;
+						byId('textValue').value = '';
+						setStatus(label('unsaved'));
+						renderOverlay();
+					}
+				}
+			}
+		} catch {
+			if (item.sessionId === state.sessionId) setStatus(label('genericError'));
+		} finally {
+			item.resolve?.(result);
+			state.editPending = false;
+			renderHistoryControls();
+			void processEditorOperations();
 		}
 	}
 
-	async function applyHistory(action) {
-		if (!state.sessionId) return;
-		if (state.editPending || state.queuedEdit) {
-			state.queuedHistory = action;
-			return;
-		}
-		state.editPending = true;
-		try {
-			const json = await postJson('/api/editor/session/history', { sessionId: state.sessionId, action });
-			if (json.metadata) setSessionMetadata(json.metadata);
-			if (json.previewBase64) setPreview(json.previewBase64, false);
-			if (json.changed) {
-				state.dirty = true;
-				state.selectedText = null;
-				state.textDragPoint = null;
-				byId('deleteText').disabled = true;
-				byId('textValue').value = '';
-				setStatus(label('unsaved'));
-				renderOverlay();
-			}
-		} catch {
-			setStatus(label('genericError'));
-		} finally {
-			state.editPending = false;
-			if (state.queuedEdit) {
-				const next = state.queuedEdit;
-				state.queuedEdit = null;
-				void sendEdit(next, true);
-			} else if (state.queuedHistory) {
-				const nextAction = state.queuedHistory;
-				state.queuedHistory = null;
-				void applyHistory(nextAction);
-			}
-		}
+	function sendEdit(command, coalesce = false) {
+		const nextCommand = state.historyGroup && !command.historyGroup ? { ...command, historyGroup: state.historyGroup } : command;
+		return enqueueEditorOperation('edit', nextCommand, { coalesce });
+	}
+
+	function applyHistory(action) {
+		if (action !== 'undo' && action !== 'redo') return Promise.resolve(null);
+		return enqueueEditorOperation('history', action);
 	}
 
 	function beginHistoryGesture() {
@@ -1415,6 +1487,13 @@
 		inlineText.style.top = `${Math.min(window.innerHeight - 52, Math.max(12, client.y))}px`;
 		inlineText.placeholder = label('textPlaceholder');
 		inlineText.focus();
+	}
+
+	function cancelInlineText() {
+		inlineText.hidden = true;
+		inlineText.value = '';
+		delete inlineText.dataset.x;
+		delete inlineText.dataset.y;
 	}
 
 	async function commitInlineText() {
@@ -1547,9 +1626,14 @@
 	};
 
 	async function generateMap(size) {
+		const sessionId = state.sessionId;
+		if (!sessionId) return;
+		await whenEditorIdle();
+		if (state.sessionId !== sessionId) return;
 		const useCustomRegionCount = !state.generationBlank && byId('customRegionCount').checked;
 		const regionCountInput = byId('regionCount');
 		if (useCustomRegionCount && !regionCountInput.reportValidity()) return;
+		const workspaceRequestId = ++state.workspaceRequestId;
 		const regionCount = useCustomRegionCount ? Number(regionCountInput.value) : null;
 		byId('generationDialog').close();
 		showLoading(label('generating'), label('phaseStarting'), 1);
@@ -1557,10 +1641,11 @@
 			const response = await fetch('/api/editor/session/generate-stream', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ sessionId: state.sessionId, name: state.projectName, size, blank: state.generationBlank, regionCount, locale: state.locale || FALLBACK_LOCALE })
+				body: JSON.stringify({ sessionId, name: state.projectName, size, blank: state.generationBlank, regionCount, locale: state.locale || FALLBACK_LOCALE })
 			});
 			if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`);
 			await readSse(response.body, (event, data) => {
+				if (workspaceRequestId !== state.workspaceRequestId) return;
 				if (event === 'phase') {
 					const phase = JSON.parse(data);
 					byId('loadingText').textContent = state.labels.phases[phase.key] || label('phaseStarting');
@@ -1570,8 +1655,7 @@
 					const result = JSON.parse(data);
 					setSessionMetadata(result.metadata);
 					state.historyGroup = null;
-					state.queuedHistory = null;
-					state.queuedEdit = null;
+					clearOperationQueue();
 					state.hasFit = false;
 					setPreview(result.previewBase64, true, () => publishProjectThumbnail(true));
 					state.dirty = true;
@@ -1580,9 +1664,9 @@
 				if (event === 'error') throw new Error('generationFailed');
 			});
 		} catch {
-			setStatus(label('genericError'));
+			if (workspaceRequestId === state.workspaceRequestId) setStatus(label('genericError'));
 		} finally {
-			hideLoading();
+			if (workspaceRequestId === state.workspaceRequestId) hideLoading();
 		}
 	}
 
@@ -1769,9 +1853,17 @@
 		if (textTypeDropdownIsOpen()) positionTextTypeMenu();
 	});
 	byId('themeToggle').onclick = toggleTheme;
+	byId('undoEdit').onclick = () => void applyHistory('undo');
+	byId('redoEdit').onclick = () => void applyHistory('redo');
+	byId('zoomOut').onclick = () => zoomAt(1 / 1.2);
+	byId('fitMap').onclick = fit;
+	byId('zoomIn').onclick = () => zoomAt(1.2);
 	byId('textType').onchange = () => void updateSelectedText({ textType: byId('textType').value });
 	byId('deleteText').onclick = () => void deleteSelectedText();
-	inlineText.onkeydown = (event) => { if (event.key === 'Enter' || event.key === 'Escape') { event.preventDefault(); void commitInlineText(); } };
+	inlineText.onkeydown = (event) => {
+		if (event.key === 'Enter') { event.preventDefault(); void commitInlineText(); }
+		if (event.key === 'Escape') { event.preventDefault(); cancelInlineText(); canvas.focus({ preventScroll: true }); }
+	};
 	inlineText.onblur = () => void commitInlineText();
 	byId('iconPlace').onclick = () => { state.iconMode = 'place'; byId('iconPlace').classList.add('active'); byId('iconErase').classList.remove('active'); byId('treeRadiusField').hidden = state.selectedAsset?.type !== 'trees'; };
 	byId('iconErase').onclick = () => { state.iconMode = 'erase'; byId('iconErase').classList.add('active'); byId('iconPlace').classList.remove('active'); byId('treeRadiusField').hidden = false; if (state.cursorPoint) updateBrushFeedback(state.cursorPoint); };
@@ -1780,6 +1872,7 @@
 
 	canvas.addEventListener('pointerdown', (event) => {
 		if (!state.metadata || !state.sessionId) return;
+		canvas.focus({ preventScroll: true });
 		canvas.setPointerCapture(event.pointerId);
 		if (event.button === 1 || state.space) {
 			state.panning = true;
@@ -1898,30 +1991,60 @@
 	canvas.addEventListener('wheel', (event) => {
 		if (!state.metadata || !map.width) return;
 		event.preventDefault();
-		const previousScale = state.scale;
-		state.scale = Math.max(0.08, Math.min(8, state.scale * (event.deltaY < 0 ? 1.1 : 0.9)));
-		const ratio = state.scale / previousScale;
-		const bounds = canvas.getBoundingClientRect();
-		const cursorX = event.clientX - bounds.left - bounds.width / 2;
-		const cursorY = event.clientY - bounds.top - bounds.height / 2;
-		state.panX = cursorX - (cursorX - state.panX) * ratio;
-		state.panY = cursorY - (cursorY - state.panY) * ratio;
-		applyTransform();
+		zoomAt(event.deltaY < 0 ? 1.1 : 0.9, event.clientX, event.clientY);
 	}, { passive: false });
 
+	function isTextEditingTarget(target) {
+		if (!(target instanceof Element)) return false;
+		if (target.isContentEditable) return true;
+		if (target instanceof HTMLTextAreaElement) return true;
+		if (!(target instanceof HTMLInputElement)) return false;
+		return !['button', 'checkbox', 'color', 'file', 'radio', 'range', 'reset', 'submit'].includes(target.type);
+	}
+
+	function matchesPhysicalShortcut(event, code, fallbackKeys = []) {
+		const key = String(event.key || '').toLocaleLowerCase();
+		return fallbackKeys.includes(key) || event.code === code;
+	}
+
+	function historyShortcutAction(event) {
+		const key = String(event.key || '').toLocaleLowerCase();
+		if (key === 'z') return event.shiftKey ? 'redo' : 'undo';
+		if (key === 'y') return 'redo';
+		if (event.code === 'KeyZ') return event.shiftKey ? 'redo' : 'undo';
+		if (event.code === 'KeyY') return 'redo';
+		return null;
+	}
+
 	window.addEventListener('keydown', (event) => {
-		if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return;
+		const commandKey = event.ctrlKey || event.metaKey;
+		const editingText = isTextEditingTarget(event.target);
+		if (commandKey && matchesPhysicalShortcut(event, 'KeyS', ['s', 'ы'])) {
+			event.preventDefault();
+			void saveProject();
+			return;
+		}
+		const historyAction = commandKey && !editingText ? historyShortcutAction(event) : null;
+		if (historyAction) {
+			event.preventDefault();
+			void applyHistory(historyAction);
+			return;
+		}
+		if (editingText || event.target instanceof HTMLSelectElement) return;
 		if (event.code === 'Space') { state.space = true; event.preventDefault(); }
-		if ((event.ctrlKey || event.metaKey) && event.code === 'KeyZ') { event.preventDefault(); void applyHistory(event.shiftKey ? 'redo' : 'undo'); return; }
-		if ((event.ctrlKey || event.metaKey) && event.code === 'KeyY') { event.preventDefault(); void applyHistory('redo'); return; }
-		if ((event.ctrlKey || event.metaKey) && event.code === 'KeyS') { event.preventDefault(); void saveProject(); return; }
 		const step = event.shiftKey ? 72 : 32;
 		if (event.code === 'ArrowUp' || event.code === 'KeyW') panBy(0, step);
 		if (event.code === 'ArrowDown' || event.code === 'KeyS') panBy(0, -step);
 		if (event.code === 'ArrowLeft' || event.code === 'KeyA') panBy(step, 0);
 		if (event.code === 'ArrowRight' || event.code === 'KeyD') panBy(-step, 0);
-	});
+	}, { capture: true });
+
 	window.addEventListener('keyup', (event) => { if (event.code === 'Space') state.space = false; });
+	window.addEventListener('blur', () => {
+		state.space = false;
+		state.panning = false;
+		canvas.classList.remove('is-panning');
+	});
 	window.addEventListener('resize', () => { if (!state.hasFit) fit(); else applyTransform(); });
 	window.addEventListener('storage', (event) => {
 		if (event.key === THEME_STORAGE_KEY) applyTheme(event.newValue, { persist: false });
