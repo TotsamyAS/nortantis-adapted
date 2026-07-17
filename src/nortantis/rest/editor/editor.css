@@ -464,6 +464,29 @@ svg:not(.map-overlay) {
 	opacity: 0.42;
 	cursor: not-allowed;
 }
+.session-action-spinner {
+	display: none;
+	width: 16px;
+	height: 16px;
+	border: 2px solid rgba(216, 139, 53, 0.28);
+	border-top-color: var(--gold);
+	border-radius: 50%;
+	animation: session-action-spin 0.75s linear infinite;
+}
+.session-action.loading {
+	opacity: 1;
+}
+.session-action.loading .session-action-export-icon {
+	display: none;
+}
+.session-action.loading .session-action-spinner {
+	display: block;
+}
+@keyframes session-action-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
 
 .tool-panel-scroll {
 	position: relative;
@@ -1617,6 +1640,12 @@ input[type='range']::-moz-range-thumb {
 	border-color: var(--line);
 	background: rgba(255, 252, 232, 0.92);
 	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.32);
+}
+
+:root[data-theme='light'] input[type='range'] {
+	background: transparent;
+	background-color: transparent;
+	box-shadow: none;
 }
 
 :root[data-theme='light'] input::placeholder {

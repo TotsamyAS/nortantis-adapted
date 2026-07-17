@@ -80,7 +80,9 @@
 		deleteProjectCandidate: null,
 		renameProjectCandidate: null,
 		lastHostStatus: '',
-		loadingProgress: 0
+		loadingProgress: 0,
+		exportPreparing: false,
+		exportHostStarted: false
 	};
 	let brushSelectionTimer = 0;
 	let brushSelectionVersion = 0;
@@ -693,7 +695,11 @@
 		}
 		setStatus(hostError || hostStatus || (host.saving ? label('save') : host.exporting ? label('export') : state.dirty ? label('unsaved') : state.sessionId ? label('ready') : ''));
 		byId('saveProject').disabled = !state.sessionId || host.saving;
-		byId('exportProject').disabled = !state.sessionId || host.exporting;
+		const exportButton = byId('exportProject');
+		const exportBusy = state.exportPreparing || host.exporting;
+		exportButton.disabled = !state.sessionId || exportBusy;
+		exportButton.classList.toggle('loading', exportBusy);
+		exportButton.setAttribute('aria-busy', String(exportBusy));
 		const storage = host.storage;
 		const meter = byId('storageMeter');
 		meter.hidden = !storage;
@@ -1198,8 +1204,11 @@
 	}
 
 	async function exportProject() {
-		if (!state.sessionId) return;
+		if (!state.sessionId || state.exportPreparing || state.host.exporting) return;
 		const currentOperationId = operationId('export');
+		state.exportPreparing = true;
+		state.exportHostStarted = false;
+		renderHostState();
 		setStatus(label('export'));
 		try {
 			const projectBase64 = await currentProject(currentOperationId);
@@ -1208,6 +1217,9 @@
 			if (previewBase64) state.projectPreviewData[state.sessionId] = `data:image/jpeg;base64,${previewBase64}`;
 			postParent('nortantis:export', { operationId: currentOperationId, projectId: state.sessionId, projectBase64, previewBase64, format: 'jpg' });
 		} catch {
+			state.exportPreparing = false;
+			state.exportHostStarted = false;
+			renderHostState();
 			setStatus(label('genericError'));
 		}
 	}
@@ -1919,6 +1931,11 @@
 		if (event.data.type === 'nortantis:host-state') {
 			applyTheme(event.data.theme, { persist: false });
 			state.host = { ...state.host, ...event.data.state };
+			if (state.host.exporting) state.exportHostStarted = true;
+			else if (state.exportHostStarted) {
+				state.exportPreparing = false;
+				state.exportHostStarted = false;
+			}
 			const activeProject = state.host.projects.find((project) => project.id === state.sessionId);
 			if (activeProject) state.projectName = activeProject.name;
 			renderHostState();
